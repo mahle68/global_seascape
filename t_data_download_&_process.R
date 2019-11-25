@@ -4,8 +4,6 @@
 library(tidyverse)
 library(reticulate)
 library(ncdf4)
-library(ggthemes)
-library(viridis)
 library(sf)
 library(lubridate)
 library(parallel)
@@ -71,8 +69,9 @@ clusterEvalQ(mycl, {
   library(dplyr)
 })
 
-data_list <- parLapply(cl = mycl,file_list,function(x){
 
+data_list <- parLapply(cl = mycl,file_list,function(x){
+  
   nc <- nc_open(x)
   
   #extract lon and lat
