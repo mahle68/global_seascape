@@ -221,49 +221,24 @@ lapply(ann_ls,summary)
 #open data
 load("R_files/GFB_HB_temp_sp_filtered_15km_ann.RData") #called ann_df 
 
-
-
-#for each point, create a bunch of alternative points with different time variable.
-#ann_df_alt <- ann_df %>%
-#  mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"),
-#         obs_id = row_number(),
-#         used = 1) %>%
-#  mutate(alt_pts = alt_pts_week(date_time))
-
-
-ann_df_alt2 <- ann_df %>%
+#for each point, create a alternative points a week before and a week after the observed point. year and hour dont change.
+ann_df_alt <- ann_df %>%
   mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"),
          obs_id = row_number()) %>%
-  slice(rep(row_number(),15)) %>% #copy each row 3 times
+  slice(rep(row_number(),15)) %>% #copy each row 15 times. 1 used, 14 alternative
   arrange(date_time) %>%
   mutate(used = ifelse(row_number() == 1,1,
-                       ifelse((row_number() - 1) %% 15 == 0, 1, 0))) %>% #assign used and available values
-  group_by(obs_id) %>%
-  nest() %>% #create a list column
-  mutate(date_time_alt = map(data, alt_pts_week))
-  #mutate( date_time_alt = map(date_time,ifelse(used == 1,date_time,
-  #                              ifelse(cumsum(used)))))
-
-  ann_df_alt_ls <- lapply( split(ann_df_alt,ann_df_alt$obs_id),function(x){
+                       ifelse((row_number() - 1) %% 15 == 0, 1, 0))) #assign used and available values
+  
+  ann_alt_ls <- lapply( split(ann_df_alt,ann_df_alt$obs_id),function(x){ #didnt manage to write this part using dplyr and purrr
     alt_times <- alt_pts_week(x$date_time[1])
-    x$date_time[-1 ] <- alt_times
+    x$date_time[-1 ] <- as.POSIXct(strptime(alt_times,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")
     x
   })
 
-  #mutate(used = ifelse(nrow(.) == 1,1,
-  #                   ifelse(row_number())))
-  #mutate(used = rep(c(1,rep(0,14)),nrow(.)))
+  ann_df_alt_cmpl <- do.call(rbind,ann_alt_ls)
 
-
-
-  purrr::map_dfr(.f = seq_len(14), ~.)
-
-
-ann_df_alt %>%
-  accummulate(reduce()) #apply a ftn recursively to 
-
-
-
+  save(ann_df_alt_cmpl,file = "R_files/GFB_HB_temp_sp_filtered_15km_ann_alt.RData")
 
 
 ####---PLOTTINTG #####
