@@ -6,7 +6,7 @@
 #Scripts for meta-analysis of relationship between delta_T and sea-crossing behavior in soaring birds
 
 
-#### ---Libraries and misc ####
+#### ---Libraries, ftns, and misc ####
 library(dplyr)
 library(purrr)
 library(lubridate)
@@ -17,11 +17,25 @@ library(rgdal)
 library(sf)
 library(mapview)
 library(move)
+library(readr) #read_csv()
+library(tidyverse) #nest()
 
 setwd("C:/Users/mahle/ownCloud/Work/Projects/delta_t")
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
+alt_pts_week <- function(date_time) {
+  #same year, same hour, only day changes
+  alt_pts_before <- vector()
+  alt_pts_after <- vector()
+  
+  for (i in 1:7) {
+    alt_pts_before[i] <- as.character(date_time - days(i))  
+    alt_pts_after[i] <- as.character(date_time + days(i)) 
+  }
+  c(alt_pts_before,alt_pts_after)
+}
+
 
 #### ---PREP geographic layers ####
 
@@ -187,11 +201,10 @@ write.csv(sea_data_15_1hr_movebank[[2]],"R_files/movebank_sea_data_15_1hr_OHB.cs
 #open annotated file
 file_ls <- list.files("movebank_annotation",pattern = ".csv",full.names = T)
 
-#define com_col as a vector of common columns between the two files: com_col <- intersect(colnames(ann_ls[[1]]),colnames(ann_ls[[2]]))
-
 ann_df <- file_ls %>%
-  map(read.csv) %>%
-  reduce(full_join, by = com_col) %>%
+  map(read.csv, stringsAsFactors = F) %>%
+  map(dplyr::select, com_col) %>% #define com_col as a vector of common columns between the two files: com_col <- intersect(colnames(ann_ls[[1]]),colnames(ann_ls[[2]]))
+  reduce(rbind) %>%
   mutate(delta_t = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature - ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.)
 
 save(ann_df,file = "R_files/GFB_HB_temp_sp_filtered_15km_ann.RData") #save
@@ -206,8 +219,48 @@ lapply(ann_ls,summary)
 #produce alternative points in time.... within the migration period or outside? or both.... or, separately for before and after.
 
 #open data
-load("R_files/GFB_HB_temp_sp_filtered_15km_ann.RData")#called ann_df 
+load("R_files/GFB_HB_temp_sp_filtered_15km_ann.RData") #called ann_df 
 
+
+
+#for each point, create a bunch of alternative points with different time variable.
+#ann_df_alt <- ann_df %>%
+#  mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"),
+#         obs_id = row_number(),
+#         used = 1) %>%
+#  mutate(alt_pts = alt_pts_week(date_time))
+
+
+ann_df_alt2 <- ann_df %>%
+  mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"),
+         obs_id = row_number()) %>%
+  slice(rep(row_number(),15)) %>% #copy each row 3 times
+  arrange(date_time) %>%
+  mutate(used = ifelse(row_number() == 1,1,
+                       ifelse((row_number() - 1) %% 15 == 0, 1, 0))) %>% #assign used and available values
+  group_by(obs_id) %>%
+  nest() %>% #create a list column
+  mutate(date_time_alt = map(data, alt_pts_week))
+  #mutate( date_time_alt = map(date_time,ifelse(used == 1,date_time,
+  #                              ifelse(cumsum(used)))))
+
+  ann_df_alt_ls <- lapply( split(ann_df_alt,ann_df_alt$obs_id),function(x){
+    alt_times <- alt_pts_week(x$date_time[1])
+    x$date_time[-1 ] <- alt_times
+    x
+  })
+
+  #mutate(used = ifelse(nrow(.) == 1,1,
+  #                   ifelse(row_number())))
+  #mutate(used = rep(c(1,rep(0,14)),nrow(.)))
+
+
+
+  purrr::map_dfr(.f = seq_len(14), ~.)
+
+
+ann_df_alt %>%
+  accummulate(reduce()) #apply a ftn recursively to 
 
 
 
