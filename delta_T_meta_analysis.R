@@ -19,6 +19,7 @@ library(mapview)
 library(move)
 library(readr) #read_csv()
 library(tidyverse) #nest()
+library(lme4)
 
 setwd("C:/Users/mahle/ownCloud/Work/Projects/delta_t")
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
@@ -215,8 +216,8 @@ save(ann_df,file = "R_files/GFB_HB_temp_sp_filtered_15km_ann.RData") #save
 lapply(ann_ls,summary)
 
 
-#### ---STEP 6: analysis ####
-#produce alternative points in time.... within the migration period or outside? or both.... or, separately for before and after.
+#### ---STEP 6: produce alternative points in time #####
+#.... within the migration period or outside? or both.... or, separately for before and after.
 
 #open data
 load("R_files/GFB_HB_temp_sp_filtered_15km_ann.RData") #called ann_df 
@@ -237,10 +238,29 @@ ann_df_alt <- ann_df %>%
   })
 
   ann_df_alt_cmpl <- do.call(rbind,ann_alt_ls)
+save(ann_df_alt_cmpl,file = "R_files/GFB_HB_temp_sp_filtered_15km_ann_alt.RData")
+  
+#prep for track annotation on movebank
+ann_df_alt_cmpl_mb <- ann_df_alt_cmpl %>%
+  dplyr::select(-contains("ECMWF")) %>% #remove the already existing movebank columns
+  mutate(timestamp = paste(as.character(date_time),"000",sep = ".")) 
+  
+#rename columns
+colnames(ann_df_alt_cmpl_mb)[c(8,9)] <- c("location-long","location-lat")
 
-  save(ann_df_alt_cmpl,file = "R_files/GFB_HB_temp_sp_filtered_15km_ann_alt.RData")
+write.csv(ann_df_alt_cmpl_mb,"R_files/GFB_HB_temp_sp_filtered_15km_ann_alt.csv")
 
+  
 
+#### ---STEP 7: annotate alternative points with delta T #####
+  
+  
+#### ---STEP 8: analysis #####
+  
+load("R_files/GFB_HB_temp_sp_filtered_15km_ann_alt.RData") #called ann_df_alt_cmpl
+
+model <- glmer(used ~ delta_t + (1 | obs_id), family = binomial, data = ann_df_alt_cmpl)
+  
 ####---PLOTTINTG #####
 windows()
 plot(land_asia)
