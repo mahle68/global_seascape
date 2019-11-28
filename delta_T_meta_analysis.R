@@ -178,49 +178,11 @@ load("R_files/GFB_HB_sea_data_15_1hr.RData") #called sea_data_15_1hr
 
 
 
-#### ---STEP 4: annotae with delta T #####
-#change column names to match movebank generic file standards and save to file
-
-sea_data_15_1hr_movebank <- lapply(sea_data_15_1hr,function(x){
-  x_df <- data.frame(x)
-  x_df <- x_df[,-which(names(x_df) == "geometry")]
-  #add miliseconds
-  x_df$timestamp <- paste(as.character(x_df$date_time),"000",sep = ".")
-  #coordinate columns
-  x_df$X <- st_coordinates(x)[,"X"]
-  x_df$Y <- st_coordinates(x)[,"Y"]
-  x_df
-})
-
-colnames(sea_data_15_1hr_movebank[[1]])[c(9,10)] <- c("location-long","location-lat")
-colnames(sea_data_15_1hr_movebank[[2]])[c(14,15)] <- c("location-long","location-lat")
-
-#files to submit to movebank
-write.csv(sea_data_15_1hr_movebank[[1]],"R_files/movebank_sea_data_15_1hr_GFB.csv")
-write.csv(sea_data_15_1hr_movebank[[2]],"R_files/movebank_sea_data_15_1hr_OHB.csv")
-
-#open annotated file
-file_ls <- list.files("movebank_annotation",pattern = ".csv",full.names = T)
-
-ann_df <- file_ls %>%
-  map(read.csv, stringsAsFactors = F) %>%
-  map(dplyr::select, com_col) %>% #define com_col as a vector of common columns between the two files: com_col <- intersect(colnames(ann_ls[[1]]),colnames(ann_ls[[2]]))
-  reduce(rbind) %>%
-  mutate(delta_t = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature - ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.)
-
-save(ann_df,file = "R_files/GFB_HB_temp_sp_filtered_15km_ann.RData") #save
-
-
-
-#### ---STEP 5: explore delta T values ####
-lapply(ann_ls,summary)
-
-
-#### ---STEP 6: produce alternative points in time #####
+#### ---STEP 4: produce alternative points in time #####
 #.... within the migration period or outside? or both.... or, separately for before and after.
 
 #open data
-load("R_files/GFB_HB_temp_sp_filtered_15km_ann.RData") #called ann_df 
+load("R_files/GFB_HB_temp_sp_filtered_15km_ann.RData") #called ann_df ...this is from STEP 4 of the previous version. just combine the two datasets without annotation
 
 #for each point, create a alternative points a week before and a week after the observed point. year and hour dont change.
 ann_df_alt <- ann_df %>%
@@ -240,6 +202,8 @@ ann_df_alt <- ann_df %>%
   ann_df_alt_cmpl <- do.call(rbind,ann_alt_ls)
 save(ann_df_alt_cmpl,file = "R_files/GFB_HB_temp_sp_filtered_15km_ann_alt.RData")
   
+#### ---STEP 5: annotate alternative points with delta T #####
+
 #prep for track annotation on movebank
 ann_df_alt_cmpl_mb <- ann_df_alt_cmpl %>%
   dplyr::select(-contains("ECMWF")) %>% #remove the already existing movebank columns
@@ -249,18 +213,46 @@ ann_df_alt_cmpl_mb <- ann_df_alt_cmpl %>%
 colnames(ann_df_alt_cmpl_mb)[c(8,9)] <- c("location-long","location-lat")
 
 write.csv(ann_df_alt_cmpl_mb,"R_files/GFB_HB_temp_sp_filtered_15km_ann_alt.csv")
+  
+#downloaded from movebank
+ann <- read.csv("movebank_annotation/GFB_HB_temp_sp_filtered_15km_ann_alt.csv-6211481147456303917.csv") %>%
+  mutate(delta_T = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature - ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.) %>%
+  drop_na() #remove NAs
+  
+save(ann, file = "R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_ann.RData")
 
-  
 
-#### ---STEP 7: annotate alternative points with delta T #####
+#### ---STEP 6: analysis #####
   
-  
-#### ---STEP 8: analysis #####
-  
-load("R_files/GFB_HB_temp_sp_filtered_15km_ann_alt.RData") #called ann_df_alt_cmpl
+load("R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_ann.RData") #called ann
 
-model <- glmer(used ~ delta_t + (1 | obs_id), family = binomial, data = ann_df_alt_cmpl)
-  
+#are used and available density plots different
+plot(density(ann[ann$used == 1,"delta_T"]),col = "red")
+lines(density(ann[ann$used == 0,"delta_T"]),col = "green")
+
+#library(sm)
+#sm.density.compare(ann$delta_T,ann$used,xlab = "delta T")
+#legend(locator(1),levels(ann$used))
+
+#create training and testing set?
+model <- glmer(used ~ delta_T + (1 | obs_id) + (1 | species), family = binomial, data = ann)
+
+model <- glmer(used ~ delta_T + (1 | obs_id), family = binomial, data = ann)
+
+model2 <- glm(used ~ scale(delta_T) , family = binomial, data = ann)
+
+#use conditional logistic regressoin
+library(survival)
+form1a <- (used ~ scale(delta_T) + strata(obs_id))
+
+#build the model using all the data
+model <- clogit(form1a, data = ann)
+model
+
+
+#evaluate the model
+
+
 ####---PLOTTINTG #####
 windows()
 plot(land_asia)
@@ -279,6 +271,9 @@ lapply(sea_data,points,pch = 16,cex = 0.5,col = "orange")
 library(mapview)
 mapview(x, col.regions = sf.colors(10))
 mapview(pts_over_water, col.regions = "red")
+
+points(ann[is.na(ann$delta_T),c("location.long","location.lat")])
+
 
 lapply(sea_data_15,mapview)
 #### end ####
