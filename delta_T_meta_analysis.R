@@ -25,16 +25,20 @@ setwd("C:/Users/mahle/ownCloud/Work/Projects/delta_t")
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
-alt_pts_week <- function(date_time) {
+
+alt_pts_temporal <- function(date_time,n_days) {
   #same year, same hour, only day changes
   alt_pts_before <- vector()
   alt_pts_after <- vector()
   
-  for (i in 1:7) {
-    alt_pts_before[i] <- as.character(date_time - days(i))  
+  for (i in 1:as.integer(n_days/2)) {
+    alt_pts_before[i] <- as.character(date_time - days(i)) 
+    
     alt_pts_after[i] <- as.character(date_time + days(i)) 
   }
-  c(alt_pts_before,alt_pts_after)
+  
+  rbind( data.frame(dt = alt_pts_before, period =  "before", stringsAsFactors = F),
+  data.frame(dt = alt_pts_after, period =  "after", stringsAsFactors = F))
 }
 
 
@@ -188,48 +192,91 @@ load("R_files/GFB_HB_temp_sp_filtered_15km_ann.RData") #called ann_df ...this is
 ann_df_alt <- ann_df %>%
   mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"),
          obs_id = row_number()) %>%
-  slice(rep(row_number(),15)) %>% #copy each row 15 times. 1 used, 14 alternative
+  slice(rep(row_number(),61)) %>% #copy each row 60 times. 1 used, 60 alternative
   arrange(date_time) %>%
   mutate(used = ifelse(row_number() == 1,1,
-                       ifelse((row_number() - 1) %% 15 == 0, 1, 0))) #assign used and available values
+                       ifelse((row_number() - 1) %% 61 == 0, 1, 0))) #assign used and available values
   
   ann_alt_ls <- lapply( split(ann_df_alt,ann_df_alt$obs_id),function(x){ #didnt manage to write this part using dplyr and purrr
-    alt_times <- alt_pts_week(x$date_time[1])
-    x$date_time[-1 ] <- as.POSIXct(strptime(alt_times,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")
-    x
+    alt_times <- alt_pts_temporal(x$date_time[1],60)
+    x %>%
+      mutate(timestamp = as.POSIXct(strptime(c(as.character(x$date_time[1]),alt_times$dt),format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"),
+      period = c("now",alt_times$period))
   })
 
   ann_df_alt_cmpl <- do.call(rbind,ann_alt_ls)
-save(ann_df_alt_cmpl,file = "R_files/GFB_HB_temp_sp_filtered_15km_ann_alt.RData")
+  
+save(ann_df_alt_cmpl,file = "R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_60days.RData")
   
 #### ---STEP 5: annotate alternative points with delta T #####
+load("R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_60days.RData") #called ann_df_alt_cmpl
 
 #prep for track annotation on movebank
 ann_df_alt_cmpl_mb <- ann_df_alt_cmpl %>%
   dplyr::select(-contains("ECMWF")) %>% #remove the already existing movebank columns
-  mutate(timestamp = paste(as.character(date_time),"000",sep = ".")) 
+  mutate(timestamp = paste(as.character(timestamp),"000",sep = ".")) 
   
 #rename columns
 colnames(ann_df_alt_cmpl_mb)[c(8,9)] <- c("location-long","location-lat")
 
-write.csv(ann_df_alt_cmpl_mb,"R_files/GFB_HB_temp_sp_filtered_15km_ann_alt.csv")
+write.csv(ann_df_alt_cmpl_mb,"R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_60days.csv")
   
 #downloaded from movebank
-ann <- read.csv("movebank_annotation/GFB_HB_temp_sp_filtered_15km_ann_alt.csv-6211481147456303917.csv") %>%
+ann <- read.csv("movebank_annotation/GFB_HB_temp_sp_filtered_15km_ann_alt_60days.csv-5317423982503990720.csv", stringsAsFactors = F) %>%
   mutate(delta_T = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature - ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.) %>%
   drop_na() #remove NAs
   
-save(ann, file = "R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_ann.RData")
+save(ann, file = "R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_ann_60days.RData")
 
 
 #### ---STEP 6: analysis #####
   
-load("R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_ann.RData") #called ann
+load("R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_ann_60days.RData") #called ann
 
 #are used and available density plots different
-plot(density(ann[ann$used == 1,"delta_T"]),col = "red")
-lines(density(ann[ann$used == 0,"delta_T"]),col = "green")
+plot(density(ann[ann$period == "now","delta_T"]),col = "red")
+lines(density(ann[ann$period == "before","delta_T"]),col = "green")
+lines(density(ann[ann$period == "after","delta_T"]),col = "blue")
 
+legend("topleft",legend = c("used","available-before","available-after"), col = c("red","green","blue"),pch = 20, bty = "n", cex = 0.9)
+
+#are used and available density plots different... season-specific
+windows()
+par(mfrow = c(1,2))
+plot(density(ann[ann$period == "now" & ann$month %in% c(3,4),"delta_T"]),col = "red", main = "spring")
+lines(density(ann[ann$period == "before" & ann$month %in% c(3,4),"delta_T"]),col = "green")
+lines(density(ann[ann$period == "after" & ann$month %in% c(3,4),"delta_T"]),col = "blue")
+
+legend("topleft",legend = c("used","available-before","available-after"), col = c("red","green","blue"),pch = 20, bty = "n", cex = 0.9)
+
+plot(density(ann[ann$period == "now" & ann$month %in% c(9,10),"delta_T"]),col = "red", main = "autumn")
+lines(density(ann[ann$period == "before" & ann$month %in% c(9,10),"delta_T"]),col = "green")
+lines(density(ann[ann$period == "after" & ann$month %in% c(9,10),"delta_T"]),col = "blue")
+
+#are used and available density plots different.. weekly plots
+#assign a week variable
+ann <- ann %>%
+  mutate(timestamp,date_time = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
+  group_by(obs_id,period) %>%
+  mutate(position = 1:n()) %>%
+  mutate(week = ifelse( used == 1, "obs_day",
+                        ifelse(position <= 8, "week_one",
+                               ifelse(between(position, 9, 16), "week_two",
+                                      ifelse(between(position, 17, 24), "week_three",
+                                             "week_four")))),
+         season = ifelse(month %in% c(3,4),"spring","autumn")) %>%
+  ungroup() %>%
+  as.data.frame()
+
+
+save(ann, file = "R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_ann_60days_weeks.RData")
+
+#create weekly plots
+par(mfrow = c(2,4))
+ann %>%
+  filter(used == 0) %>%
+  group_by(season, period, week)
+ 
 #library(sm)
 #sm.density.compare(ann$delta_T,ann$used,xlab = "delta T")
 #legend(locator(1),levels(ann$used))
