@@ -234,11 +234,12 @@ save(ann, file = "R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_ann_60days.RData"
 load("R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_ann_60days.RData") #called ann
 
 #are used and available density plots different
+windows()
 plot(density(ann[ann$period == "now","delta_T"]),col = "red")
 lines(density(ann[ann$period == "before","delta_T"]),col = "green")
 lines(density(ann[ann$period == "after","delta_T"]),col = "blue")
 
-legend("topleft",legend = c("used","available-before","available-after"), col = c("red","green","blue"),pch = 20, bty = "n", cex = 0.9)
+legend("topleft",legend = c("used","available-before","available-after"), col = c("red","green","blue"),lty = 1, bty = "n", cex = 0.9)
 
 #are used and available density plots different... season-specific
 windows()
@@ -271,29 +272,109 @@ ann <- ann %>%
 
 save(ann, file = "R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_ann_60days_weeks.RData")
 
-#create weekly plots
+#create weekly plots-spring
+windows()
 par(mfrow = c(2,4))
-ann %>%
-  filter(used == 0) %>%
-  group_by(season, period, week)
+#before
+  plot(density(ann[ann$period == "now" & ann$month %in% c(3,4),"delta_T"]),col = "green", main = "spring-one week before")
+  lines(density(ann[ann$period == "before" & ann$month %in% c(3,4) & ann$week == "week_one","delta_T"]),col = "darkred")
+  legend(-6.5,0.18,legend = c("used","available"), 
+         col = c("green","darkred"),lty = 1, bty = "n", cex = 0.9)
+  
+  plot(density(ann[ann$period == "now" & ann$month %in% c(3,4),"delta_T"]),col = "green", main = "two weeks before")
+  lines(density(ann[ann$period == "before" & ann$month %in% c(3,4) & ann$week %in% c("week_one","week_two"),"delta_T"]),col = "darkred")
+  plot(density(ann[ann$period == "now" & ann$month %in% c(3,4),"delta_T"]),col = "green", main = "three weeks before")
+  lines(density(ann[ann$period == "before" & ann$month %in% c(3,4) & ann$week %in% c("week_one","week_two","week_three"),"delta_T"]),col = "darkred")
+  plot(density(ann[ann$period == "now" & ann$month %in% c(3,4),"delta_T"]),col = "green", main = "four weeks before")
+  lines(density(ann[ann$period == "before" & ann$month %in% c(3,4) & ann$week %in% c("week_one","week_two", "week_three","week_four"),"delta_T"]),col = "darkred")
+  
+  
+#after
+  plot(density(ann[ann$period == "now" & ann$month %in% c(3,4),"delta_T"]),col = "green", main = "one week after")
+  lines(density(ann[ann$period == "after" & ann$month %in% c(3,4) & ann$week == "week_one","delta_T"]),col = "darkred")
+  plot(density(ann[ann$period == "now" & ann$month %in% c(3,4),"delta_T"]),col = "green", main = "two weeks after")
+  lines(density(ann[ann$period == "after" & ann$month %in% c(3,4) & ann$week %in% c("week_one","week_two"),"delta_T"]),col = "darkred")
+  plot(density(ann[ann$period == "now" & ann$month %in% c(3,4),"delta_T"]),col = "green", main = "three weeks after")
+  lines(density(ann[ann$period == "after" & ann$month %in% c(3,4) & ann$week %in% c("week_one","week_two","week_three"),"delta_T"]),col = "darkred")
+  plot(density(ann[ann$period == "now" & ann$month %in% c(3,4),"delta_T"]),col = "green", main = "four weeks after")
+  lines(density(ann[ann$period == "after" & ann$month %in% c(3,4) & ann$week %in% c("week_one","week_two", "week_three","week_four"),"delta_T"]),col = "darkred")
+  
+
+  
+  #create weekly plots-autumn
+  windows()
+  par(mfrow = c(2,4))
+  #before
+  plot(density(ann[ann$period == "now" & ann$season == "autumn","delta_T"]),col = "green", main = "autumn-one week before")
+  lines(density(ann[ann$period == "before" & ann$season  == "autumn" & ann$week == "week_one","delta_T"]),col = "darkred")
+  legend(-5,0.2,legend = c("used","available"), 
+         col = c("green","darkred"),lty = 1, bty = "n", cex = 0.9)
+  
+  plot(density(ann[ann$period == "now" & ann$season  == "autumn","delta_T"]),col = "green", main = "two weeks before")
+  lines(density(ann[ann$period == "before" & ann$season  == "autumn" & ann$week %in% c("week_one","week_two"),"delta_T"]),col = "darkred")
+  plot(density(ann[ann$period == "now" & ann$season  == "autumn","delta_T"]),col = "green", main = "three weeks before")
+  lines(density(ann[ann$period == "before" & ann$season  == "autumn" & ann$week %in% c("week_one","week_two","week_three"),"delta_T"]),col = "darkred")
+  plot(density(ann[ann$period == "now" & ann$season  == "autumn","delta_T"]),col = "green", main = "four weeks before")
+  lines(density(ann[ann$period == "before" & ann$season  == "autumn" & ann$week %in% c("week_one","week_two", "week_three","week_four"),"delta_T"]),col = "darkred")
+  
+  
+  #after
+  plot(density(ann[ann$period == "now" & ann$season  == "autumn","delta_T"]),col = "green", main = "one week after")
+  lines(density(ann[ann$period == "after" & ann$season  == "autumn" & ann$week == "week_one","delta_T"]),col = "darkred")
+  plot(density(ann[ann$period == "now" & ann$season  == "autumn","delta_T"]),col = "green", main = "two weeks after")
+  lines(density(ann[ann$period == "after" & ann$season  == "autumn" & ann$week %in% c("week_one","week_two"),"delta_T"]),col = "darkred")
+  plot(density(ann[ann$period == "now" & ann$season  == "autumn","delta_T"]),col = "green", main = "three weeks after")
+  lines(density(ann[ann$period == "after" & ann$season  == "autumn" & ann$week %in% c("week_one","week_two","week_three"),"delta_T"]),col = "darkred")
+  plot(density(ann[ann$period == "now" & ann$season  == "autumn","delta_T"]),col = "green", main = "four weeks after")
+  lines(density(ann[ann$period == "after" & ann$season  == "autumn" & ann$week %in% c("week_one","week_two", "week_three","week_four"),"delta_T"]),col = "darkred")
+  
+
+  ann %>%
+    filter(period %in% c("now","before") & ann$week %in% c("obs_day", "week_one")) %>%
+    group_by(used) %>%
+    summarise(mean = mean(delta_T),
+              min = min(delta_T),
+              max = max(delta_T),
+              var = var(delta_T))
+  
  
-#library(sm)
-#sm.density.compare(ann$delta_T,ann$used,xlab = "delta T")
-#legend(locator(1),levels(ann$used))
+#model only for autumn
+autumn_one_week_before <- ann %>%
+  filter(period %in% c("now","before") & week %in% c("obs_day", "week_one") & season == "autumn" ) %>%
+  #select(-delta_t) %>%
+  map_if(is.factor, as.character) %>%
+  as.data.frame()
+  
+
+model <- glmer(used ~ delta_T + (1 | obs_id) + (1 | species), family = binomial, data = autumn_one_week_before)
+  
+model <- glm(used ~ delta_T  , family = binomial, data = autumn_one_week_before)
+
+#autumn four weeks before
+autumn_four_week_before <- ann %>%
+  filter(period %in% c("now","before") & season == "autumn" ) %>%
+  #select(-delta_t) %>%
+  map_if(is.factor, as.character) %>%
+  as.data.frame()
+
+
+model <- glmer(used ~ delta_T + (1 | obs_id) + (1 | species), family = binomial, data = autumn_four_week_before)
+
+model <- glm(used ~ delta_T  , family = binomial, data = autumn_one_week_before)
 
 #create training and testing set?
-model <- glmer(used ~ delta_T + (1 | obs_id) + (1 | species), family = binomial, data = ann)
+model <- glmer(used ~ delta_t + (1 | obs_id) + (1 | species), family = binomial, data = ann)
 
-model <- glmer(used ~ delta_T + (1 | obs_id), family = binomial, data = ann)
+model <- glmer(used ~ delta_t + (1 | obs_id), family = binomial, data = ann)
 
-model2 <- glm(used ~ scale(delta_T) , family = binomial, data = ann)
+model2 <- glm(used ~ scale(delta_t) , family = binomial, data = ann)
 
 #use conditional logistic regressoin
 library(survival)
 form1a <- (used ~ scale(delta_T) + strata(obs_id))
 
 #build the model using all the data
-model <- clogit(form1a, data = ann)
+model <- clogit(form1a, data = autumn_one_week_before)
 model
 
 
@@ -324,4 +405,3 @@ points(ann[is.na(ann$delta_T),c("location.long","location.lat")])
 
 lapply(sea_data_15,mapview)
 #### end ####
-sdfhjksdhfkj

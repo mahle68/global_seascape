@@ -110,7 +110,81 @@ save(ls_lt_lakes,file = "R_files/processed_era_interim_data/samples_with_local_t
 #errors following the cluster computing attempt. trying it in QGIS
 
 
-###step 4: modeling-testing-subset testing and training set #####
+
+###step 4: visualizations #####
+load("R_files/processed_era_interim_data/sample_of_samples_no_lakes.RData")
+
+#plot delta_t agains yday, separtely for each latitudinal zone
+windows(12,13)
+par(mfrow = c(2,1),
+    par(oma = c(5.1, 0,0,0), xpd = NA))
+
+#noon
+plot(delta_t ~ yday, data = sample2[sample2$local_hour == 12,],
+     type = "n",
+     xlab = "day of the year",
+     ylab = "delta T",
+     bty = "n",
+     ylim = c(-2.2,5), xlim = c(0,365), main = "global delta_t at local noon")
+axis(1,seq(0,350,50), c(seq(0,350,50)))
+lines(x = c(0,350),y = c(0,0),lty = 2, col = "gray")
+lines(lowess(sample2[between(sample2$lat,0,30) & sample2$local_hour == 12,c("yday","delta_t")]), col = "deepskyblue",lwd = 2) 
+lines(lowess(sample2[between(sample2$lat,-30,0) & sample2$local_hour == 12,c("yday","delta_t")]), col = "forestgreen",lwd = 2) 
+lines(lowess(sample2[between(sample2$lat,30,60) & sample2$local_hour == 12,c("yday","delta_t")]), col = "darkviolet",lwd = 2) 
+lines(lowess(sample2[between(sample2$lat,-60,-30) & sample2$local_hour == 12,c("yday","delta_t")]), col = "firebrick",lwd = 2) 
+
+#mid-day
+plot(delta_t ~ yday, data = sample2[sample2$local_hour %in% c(11:15),],
+     type = "n",
+     xlab = "day of the year",
+     ylab = "delta T",
+     bty = "n",
+     ylim = c(-1,2), xlim = c(0,365), main = "global delta_t at local mid-day (11:00 - 15:00)")
+axis(1,seq(0,350,50), c(seq(0,350,50)))
+lines(x = c(0,350),y = c(0,0),lty = 2, col = "gray")
+lines(lowess(sample2[between(sample2$lat,0,30) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","delta_t")]), col = "deepskyblue",lwd = 2) 
+lines(lowess(sample2[between(sample2$lat,-30,0) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","delta_t")]), col = "forestgreen",lwd = 2) 
+lines(lowess(sample2[between(sample2$lat,30,60) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","delta_t")]), col = "darkviolet",lwd = 2) 
+lines(lowess(sample2[between(sample2$lat,-60,-30) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","delta_t")]), col = "firebrick",lwd = 2) 
+
+
+legend("bottom",legend = c("0°- 30° N","0°- 30° S","30°- 60° N","30°- 60° S"),horiz = T, 
+       col = c("deepskyblue", "forestgreen", "darkviolet", "firebrick"), bty = "n", cex = 0.9,lty = 1, lwd = 2,inset = c(0,-0.6))
+
+
+
+#plot temperature
+#sst
+plot(sst ~ yday, data = sample2[sample2$local_hour %in% c(11:15),],
+     type = "n",
+     xlab = "day of the year",
+     ylab = "delta T",
+     bty = "n",
+     ylim =  c(270,310), xlim = c(0,365), main = "global sst at local mid-day (11:00 - 15:00)")
+axis(1,seq(0,350,50), c(seq(0,350,50)))
+lines(lowess(sample2[between(sample2$lat,0,30) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","sst")]), col = "deepskyblue",lwd = 2) 
+lines(lowess(sample2[between(sample2$lat,-30,0) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","sst")]), col = "forestgreen",lwd = 2) 
+lines(lowess(sample2[between(sample2$lat,30,60) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","sst")]), col = "darkviolet",lwd = 2) 
+lines(lowess(sample2[between(sample2$lat,-60,-30) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","sst")]), col = "firebrick",lwd = 2) 
+
+#t2m
+plot(t2m ~ yday, data = sample2[sample2$local_hour %in% c(11:15),],
+     type = "n",
+     xlab = "day of the year",
+     ylab = "delta T",
+     bty = "n",
+     ylim = c(270,310), xlim = c(0,365), main = "global t2m at local mid-day (11:00 - 15:00)")
+axis(1,seq(0,350,50), c(seq(0,350,50)))
+lines(lowess(sample2[between(sample2$lat,0,30) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","t2m")]), col = "deepskyblue",lwd = 2) 
+lines(lowess(sample2[between(sample2$lat,-30,0) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","t2m")]), col = "forestgreen",lwd = 2) 
+lines(lowess(sample2[between(sample2$lat,30,60) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","t2m")]), col = "darkviolet",lwd = 2) 
+lines(lowess(sample2[between(sample2$lat,-60,-30) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","t2m")]), col = "firebrick",lwd = 2) 
+
+legend("bottom",legend = c("0°- 30° N","0°- 30° S","30°- 60° N","30°- 60° S"),horiz = T, 
+       col = c("deepskyblue", "forestgreen", "darkviolet", "firebrick"), bty = "n", cex = 0.9,lty = 1, lwd = 2,inset = c(0,-0.6))
+
+
+###step 5: modeling-testing-subset testing and training set #####
 #include in the model: delta T ~ s(yday)+ s(lon+lat) + local hour of day (as a random effect or just a factor?)
 #perhaps an interaction term for local hour and latitude to take into account seasonality?
 
@@ -207,9 +281,9 @@ dev.off()
 #make predictions with the model for the periods of adult and juvenile migration
 #juvenile Sep. 25-Oct. 23 (i.e. ydays 268-296); adults Aug 30-Oct. 4 (i.e. ydays 242-277)
 #create a set for each..... conclusion: the two prediction maps look very similar. so, just do one map for the entire autumn
-seasons<-list(
-  juv=data_aut_sea[data_aut_sea$yday %in% c(268:296),],
-  adlt=data_aut_sea[data_aut_sea$yday %in% c(242:277),]
+seasons <- list(
+  juv = data_aut_sea[data_aut_sea$yday %in% c(268:296),],
+  adlt = data_aut_sea[data_aut_sea$yday %in% c(242:277),]
 )
 
 #predict
@@ -239,7 +313,7 @@ load("delta_T_gam/predictions_with_model1.RData")
 
 #####
 windows()
-map("world",fill = TRUE,col = "gray",border = "gray")
+maps::map("world",fill = TRUE,col = "gray",border = "gray")
 points(sample$lon,sample$lat,cex = 0.5,pch = 16,col = "red")
 points(sample2$lon,sample2$lat,cex = 0.3,pch = 16,col = "green")
 points(train_set$lon,train_set$lat,cex = 0.5,pch = 16,col = "red")
