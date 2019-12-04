@@ -229,7 +229,7 @@ ann <- read.csv("movebank_annotation/GFB_HB_temp_sp_filtered_15km_ann_alt_60days
 save(ann, file = "R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_ann_60days.RData")
 
 
-#### ---STEP 6: analysis #####
+#### ---STEP 6: visualizations #####
   
 load("R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_ann_60days.RData") #called ann
 
@@ -337,7 +337,71 @@ par(mfrow = c(2,4))
               max = max(delta_T),
               var = var(delta_T))
   
- 
+  
+#### ---STEP 7: delta delta T investigations #####
+load("R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_ann_60days_weeks.RData")
+  
+#calculate delta delta T
+  ann <- ann %>%
+    group_by(obs_id) %>%
+    mutate(delta_delta_t = delta_t - delta_T, #delta_t is the value of the observed point. obs-available
+           delta_delta_t_max = delta_t - max(delta_T), 
+           yday = yday(date_time)) %>%
+        as.data.frame()
+  
+#look at one week before and after
+  ann_one_week <- ann %>% 
+    filter(week %in% c("obs_day", "week_one")) %>%
+    group_by(obs_id) %>%
+    mutate(delta_delta_t_max = delta_t - max(delta_T)) %>% 
+    as.data.frame()
+    
+  #look at delta_delta_t_max
+  
+  par(mfrow = c(2,2))
+  hist(ann_one_week[ann_one_week$used == 1 & ann_one_week$season == "spring","delta_delta_t_max"],main = "one week before and after, spring")
+  hist(ann_one_week[ann_one_week$used == 1 & ann_one_week$season == "autumn","delta_delta_t_max"],main = "one week before and after, autumn")
+  
+  ####delta_delta_t_max only before
+  ann_one_week_before <- ann %>% 
+    filter(week %in% c("obs_day", "week_one") & period %in% c("now","before")) %>%
+    group_by(obs_id) %>%
+    mutate(delta_delta_t_max = delta_t - max(delta_T)) %>% 
+    as.data.frame()
+  
+  #look at delta_delta_t_max
+  
+  hist(ann_one_week_before[ann_one_week_before$used == 1 & ann_one_week_before$season == "spring","delta_delta_t_max"],main = "one week before, spring")
+  hist(ann_one_week_before[ann_one_week_before$used == 1 & ann_one_week_before$season == "autumn","delta_delta_t_max"],main = "one week before, autumn")
+  
+           
+#plot delta-delta-t agains yday for each observation point. overlay points for one season
+
+  #pdata <- ann[ann$season == "autumn" & ann$obs_id == 4,c("yday","delta_delta_t")]
+  pdata <- ann[ann$obs_id == 140,]
+  
+  plot(1,
+       type = "n",
+       xlab = "day of the year",
+       ylab = "delta delta T",
+       bty = "n",
+       ylim = range(pdata$delta_delta_t), xlim = range(pdata$yday), main = "variation in delta delta T over time")
+#axis(1,seq(0,350,50), c(seq(0,350,50)))
+  lines(x = rep(pdata[pdata$used == 1,"yday"],2),y = range(pdata$delta_delta_t),col = "grey")
+  lines(x =  range(pdata$yday), y = c(0,0), col = "grey")
+  lines(lowess(pdata$yday,pdata$delta_delta_t,f = 0.2),col = "red")
+  points(pdata$yday,pdata$delta_delta_t, pch = 16, cex = 0.3)
+
+  
+  #look at delta_delta_t_max
+
+hist(ann[ann$used == 1 & ann$season == "spring","delta_delta_t_max"])
+hist(ann[ann$used == 1 & ann$season == "autumn","delta_delta_t_max"])
+  
+####  
+  
+  
+#### ---STEP 8: modeling #####
 #model only for autumn
 autumn_one_week_before <- ann %>%
   filter(period %in% c("now","before") & week %in% c("obs_day", "week_one") & season == "autumn" ) %>%
