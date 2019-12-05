@@ -13,14 +13,14 @@ library(lutz) #local time zone assignment
 
 setwd("C:/Users/mahle/ownCloud/Work/Projects/delta_t")
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
 source("R_files/alt_pts_temporal.R")
 
 # STEP 1: create a dataset for autumn #####
 
 #select points in space
-ocean <- st_read("C:/Users/mahle/ownCloud/Work/GIS_files/ne_110m_ocean/ne_110m_ocean.shp") %>% 
-  st_combine()
+ocean <- st_read("C:/Users/mahle/ownCloud/Work/GIS_files/ne_110m_ocean/ne_110m_ocean.shp")
 
 set.seed(555)
 twz <- st_crop(ocean,xmin = -180, ymin = 0, xmax = 180, ymax = 30)  %>% #trade-wind zone N
@@ -69,7 +69,7 @@ load("R_files/thr_dataset_14_alt_days.RData")
 
 #prep for track annotation on movebank
 dataset_mb <- dataset %>%
-  mutate(timestamp = paste(as.character(date_time),"000",sep = ".")) 
+  mutate(timestamp = paste(as.character(timestamp),"000",sep = ".")) 
 
 #rename columns
 colnames(dataset_mb)[c(1,2)] <- c("location-long","location-lat")
@@ -86,37 +86,30 @@ dataset_env <- read.csv("movebank_annotation/thr_dataset_14_alt_days.csv-2329527
             v_925 = ECMWF.Interim.Full.Daily.PL.V.Wind,
             w_925 = ECMWF.Interim.Full.Daily.PL.Pressure.Vertical.Velocity) 
   
-  save(dataset_env, file = "R_files/thr_dataset_14_alt_days_env.RData")
+save(dataset_env, file = "R_files/thr_dataset_14_alt_days_env.RData")
   
 # STEP 3: compare variances between the two zones ##### 
-  
-lapply(split(dataset_env, dataset_env$obs_id), function(x){
+
+dataset_env_delta <- lapply(split(dataset_env, dataset_env$obs_id), function(x){
   obs <- x[1,]
-  x$delta_delta_t <- obs$delta_t - x$delta_t
-  x$delta_u <- obs$u_925 - x$u_925
-  x$delta_v <- obs$v_925 - x$v_925
-  x$delta_w <- obs$w_925 - x$w_925
+  #  x$delta_delta_t <- obs$delta_t - x$delta_t
+  #  x$delta_u <- obs$u_925 - x$u_925
+  #  x$delta_v <- obs$v_925 - x$v_925
+  #  x$delta_w <- obs$w_925 - x$w_925
   
   x <- x %>% 
     mutate(delta_delta_t = obs$delta_t - delta_t,
            delta_u = obs$u_925 - u_925,
            delta_v = obs$v_925 - v_925,
            delta_w = obs$w_925 - w_925)
-})
+}) %>%
+  reduce(rbind)
   
-  
-  obs_values <- dataset_env %>%
-    group_by(obs_id) %>% 
-    top_n(1,used) %>%
-    select()
-    summarise(obs_delta_t = head(delta_t,1))
-    ann <- ann %>%
-    group_by(obs_id) %>%
-    mutate(delta_delta_t = delta_t - delta_T, #delta_t is the value of the observed point. obs-available
-           yday = yday(date_time)) %>%
-    as.data.frame()
-  
-  boxplot(delta_t ~ zone, data = dataset_env)
+par(mfrow = c(2,2))
+boxplot(delta_delta_t ~ zone, data = dataset_env_delta)
+boxplot(delta_w ~ zone, data = dataset_env_delta)
+boxplot(delta_u ~ zone, data = dataset_env_delta)
+boxplot(delta_v ~ zone, data = dataset_env_delta)
 
   
   
