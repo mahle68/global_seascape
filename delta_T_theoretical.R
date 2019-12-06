@@ -1,5 +1,7 @@
 # This script investigates theoretically the hypothesis that there is higher vatiation in wind than delta T in the trade wind zone and therefore route selection (time/space)
 # should depend more on the wind, while the opposite is true in the temperate zone.
+# first version: points were categorized as used vs. available. second version: points are considered as available.
+# also: add a 15 km buffer within the ocean layer before selecting random points.
 # by: Elham Nourani. Dec, 4, 2019. Radolfzell, Germany.
 
 library(sf)
@@ -20,17 +22,27 @@ source("R_files/alt_pts_temporal.R")
 # STEP 1: create a dataset for autumn #####
 
 #select points in space
-ocean <- st_read("C:/Users/mahle/ownCloud/Work/GIS_files/ne_110m_ocean/ne_110m_ocean.shp")
+point_on_caspian <- st_point(c(52.3,4.25)) %>% proj4string(wgs)
 
-set.seed(555)
+ocean_03 <- st_read("C:/Users/mahle/ownCloud/Work/GIS_files/ne_110m_ocean/ne_110m_ocean.shp") %>% 
+  st_difference(point_on_caspian)
+  st_buffer(dist = -0.3) %>% 
+  filter(st_is(.,"MULTIPOLYGON"))
+
+ocean_15 <- st_read("C:/Users/mahle/ownCloud/Work/GIS_files/ne_110m_ocean/ne_110m_ocean.shp") %>%   
+st_transform(meters_proj) %>% 
+ st_buffer( dist = units::set_units(-15000, 'm')) %>% #put a 15 km buffer within the oceans layer. ideally should match the res of env vars
+  st_transform(wgs) 
+  
+                           
 twz <- st_crop(ocean,xmin = -180, ymin = 0, xmax = 180, ymax = 30)  %>% #trade-wind zone N
   st_sample(100) %>%
   st_coordinates() %>% 
   as.data.frame() %>% 
   mutate(zone = "tradewind")
 
-  tmz <- st_crop(ocean,xmin = -180, ymin = 30, xmax = 180, ymax = 60)  %>% #temperate zone N
-  st_sample(100) %>%  #get rid of any points over the caspian sea.. if any points fall on it ;)
+tmz <- st_crop(ocean_15,xmin = -180, ymin = 30, xmax = 180, ymax = 60)  %>% #temperate zone N
+  st_sample(100) %>%  
   st_coordinates() %>% 
   as.data.frame() %>%
   mutate(zone = "temperate")
@@ -188,3 +200,4 @@ boxplot(log(av_v_var) ~ zone, data = dataset_env_alt_before_var)#, log = "y")
 
 # MAPPING #####
 mapview(list(twz,tmz))
+mapview(twz$X,twz$Y)
