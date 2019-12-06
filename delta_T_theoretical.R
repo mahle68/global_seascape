@@ -22,73 +22,56 @@ source("R_files/alt_pts_temporal.R")
 # STEP 1: create a dataset for autumn #####
 
 #select points in space
-point_on_caspian <- st_point(c(52.3,4.25)) %>% proj4string(wgs)
-
-ocean_03 <- st_read("C:/Users/mahle/ownCloud/Work/GIS_files/ne_110m_ocean/ne_110m_ocean.shp") %>% 
-  st_difference(point_on_caspian)
-  st_buffer(dist = -0.3) %>% 
-  filter(st_is(.,"MULTIPOLYGON"))
-
-ocean_15 <- st_read("C:/Users/mahle/ownCloud/Work/GIS_files/ne_110m_ocean/ne_110m_ocean.shp") %>%   
-st_transform(meters_proj) %>% 
- st_buffer( dist = units::set_units(-15000, 'm')) %>% #put a 15 km buffer within the oceans layer. ideally should match the res of env vars
-  st_transform(wgs) 
+ocean <- st_read("C:/Users/mahle/ownCloud/Work/GIS_files/ne_110m_ocean/ne_110m_ocean.shp") %>% 
+  slice(2) #remove the caspian sea
   
-                           
+#ocean_2 <- st_read("C:/Users/mahle/ownCloud/Work/GIS_files/ne_110m_ocean/ne_110m_ocean.shp") %>% 
+#  slice(2) %>% #remove the caspian sea
+#  st_buffer(dist = -0.2) #create a buffer of 0.2 arcdegrees within the layer #selecting sample points is considerably faster if this step is skipped
+
 twz <- st_crop(ocean,xmin = -180, ymin = 0, xmax = 180, ymax = 30)  %>% #trade-wind zone N
-  st_sample(100) %>%
+  st_sample(500) %>%
   st_coordinates() %>% 
   as.data.frame() %>% 
   mutate(zone = "tradewind")
 
-tmz <- st_crop(ocean_15,xmin = -180, ymin = 30, xmax = 180, ymax = 60)  %>% #temperate zone N
-  st_sample(100) %>%  
+tmz <- st_crop(ocean,xmin = -180, ymin = 30, xmax = 180, ymax = 60)  %>% #temperate zone N
+  st_sample(500) %>%  
   st_coordinates() %>% 
   as.data.frame() %>%
   mutate(zone = "temperate")
 
+
 #assingn time values to the points and create alternative points.
 dataset <- list(twz,tmz) %>%
-    reduce(rbind) %>%
-    mutate(tz = tz_lookup_coords(lat = Y, lon = X, method = "accurate")) %>%  #find the time zone
-    rowwise %>%
-    mutate(local_date_time = as.character(as.POSIXlt(x = paste(paste(sample(2007:2018, 1),month = sample(8:10, 1),sample(1:30, 1),sep = "-"),
-                                                               paste(sample(11:15, 1),"00","00",sep = ":"), sep = " "), tz = tz))) %>%
-    mutate(date_time = as.POSIXct(local_date_time, format = "%Y-%m-%d %H:%M:%OS",tz = tz)) %>% 
-    ungroup() %>% #stop applying functions rowwise
-    mutate(obs_id = row_number()) %>%
-    slice(rep(row_number(),15)) %>% #copy each row 15 times. 1 used, 14 alternative
-    arrange(date_time) %>%
-    #group_by(obs_id) %>%
-    mutate(used = ifelse(row_number() == 1,1,
-                         ifelse((row_number() - 1) %% 15 == 0, 1, 0))) %>% #assign used and available values
-    as.data.frame()
+  reduce(rbind) %>%
+  mutate(obs_id = row_number()) %>%
+  mutate(tz = tz_lookup_coords(lat = Y, lon = X, method = "accurate")) %>%  #find the time zone
+  rowwise() %>%
+  mutate(local_date_time = as.character(as.POSIXlt(x = paste(paste(sample(2007:2018, 1),month = sample(8:10, 1),sample(1:30, 1),sep = "-"),
+                                                             paste(sample(11:15, 1),"00","00",sep = ":"), sep = " "), tz = tz))) %>%
+  mutate(date_time = as.POSIXct(local_date_time, format = "%Y-%m-%d %H:%M:%OS",tz = tz)) %>%  #date_time in UTC
+  ungroup() %>% #stop applying functions rowwise
+  slice(rep(row_number(),14)) %>% #copy each row 14 times
+  group_by(obs_id) %>% 
+  mutate(date_time = ifelse(row_number() == 1, as.character(date_time),
+                           as.character(date_time - lubridate::days(row_number() - 1)))) %>% 
+  as.data.frame()
 
-data_ls <- lapply( split(dataset,dataset$obs_id),function(x){ #didnt manage to write this part using dplyr and purrr
-    alt_times <- alt_pts_temporal(x$date_time[1],15)
-    alt_x <- cbind(x,alt_times)
-    alt_x
-  })
+save(dataset,file = "R_files/thr_dataset_14_days.RData")
 
-dataset_alt <- do.call(rbind,data_ls)
-
-dataset_alt[which(is.na(dataset_alt$timestamp)),] #make sure there are no NA values for date_time
-
-save(dataset_alt,file = "R_files/thr_dataset_14_alt_days.RData")
-
- ########### CONSIDER A 15 KM BUFFER FOR CHOOSING THE POINTS
 # STEP 2: annotate each point with delta T and wind #####
 
-load("R_files/thr_dataset_14_alt_days.RData")
+load("R_files/thr_dataset_14_days.RData")
 
 #prep for track annotation on movebank
-dataset_mb <- dataset_alt %>%
-  mutate(timestamp = paste(as.character(timestamp),"000",sep = ".")) 
+dataset_mb <- dataset %>%
+  mutate(timestamp = paste(date_time,"000",sep = ".")) 
 
 #rename columns
 colnames(dataset_mb)[c(1,2)] <- c("location-long","location-lat")
 
-write.csv(dataset_mb,"R_files/thr_dataset_14_alt.csv") #request track annotation with sst and t2m (nearest neighbour),u, v and omega at 925 (bilinear)
+write.csv(dataset_mb,"R_files/thr_dataset_14_days.csv") #request track annotation with sst and t2m (nearest neighbour),u, v and omega at 925 (bilinear)
   
 #downloaded from movebank
 dataset_env <- read.csv("movebank_annotation/thr_dataset_14_alt.csv-818519971622438358.csv", stringsAsFactors = F) %>%
