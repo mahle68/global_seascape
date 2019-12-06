@@ -54,39 +54,41 @@ dataset <- list(twz,tmz) %>%
 
 data_ls <- lapply( split(dataset,dataset$obs_id),function(x){ #didnt manage to write this part using dplyr and purrr
     alt_times <- alt_pts_temporal(x$date_time[1],15)
-    x %>%
-      mutate(timestamp = as.POSIXct(strptime(c(as.character(x$date_time[1]),alt_times$dt),format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"),
-             period = c("now",alt_times$period))
+    alt_x <- cbind(x,alt_times)
+    alt_x
   })
-  
-dataset <- do.call(rbind,data_ls)
 
-save(dataset,file = "R_files/thr_dataset_14_alt_days.RData")
+dataset_alt <- do.call(rbind,data_ls)
+
+dataset_alt[which(is.na(dataset_alt$timestamp)),] #make sure there are no NA values for date_time
+
+save(dataset_alt,file = "R_files/thr_dataset_14_alt_days.RData")
+
  ########### CONSIDER A 15 KM BUFFER FOR CHOOSING THE POINTS
 # STEP 2: annotate each point with delta T and wind #####
 
 load("R_files/thr_dataset_14_alt_days.RData")
 
 #prep for track annotation on movebank
-dataset_mb <- dataset %>%
+dataset_mb <- dataset_alt %>%
   mutate(timestamp = paste(as.character(timestamp),"000",sep = ".")) 
 
 #rename columns
 colnames(dataset_mb)[c(1,2)] <- c("location-long","location-lat")
 
-write.csv(dataset_mb,"R_files/thr_dataset_14_alt_days.csv") #request track annotation with sst and t2m (nearest neighbour),u, v and omega at 925 (bilinear)
+write.csv(dataset_mb,"R_files/thr_dataset_14_alt.csv") #request track annotation with sst and t2m (nearest neighbour),u, v and omega at 925 (bilinear)
   
 #downloaded from movebank
-dataset_env <- read.csv("movebank_annotation/thr_dataset_14_alt_days.csv-2329527662435034296.csv", stringsAsFactors = F) %>%
-    mutate(delta_t = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature - ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.) %>%
+dataset_env <- read.csv("movebank_annotation/thr_dataset_14_alt.csv-818519971622438358.csv", stringsAsFactors = F) %>%
     drop_na() %>% #remove NAs
     rename( t2m = ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.,
             sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature,
             u_925 = ECMWF.Interim.Full.Daily.PL.U.Wind,
             v_925 = ECMWF.Interim.Full.Daily.PL.V.Wind,
-            w_925 = ECMWF.Interim.Full.Daily.PL.Pressure.Vertical.Velocity) 
-  
-save(dataset_env, file = "R_files/thr_dataset_14_alt_days_env.RData")
+            w_925 = ECMWF.Interim.Full.Daily.PL.Pressure.Vertical.Velocity) %>%
+  mutate(delta_t = sst - t2m) 
+
+save(dataset_env, file = "R_files/thr_dataset_14_alt_env.RData")
   
 # STEP 3: compare variances between the two zones ##### 
 
@@ -104,14 +106,85 @@ dataset_env_delta <- lapply(split(dataset_env, dataset_env$obs_id), function(x){
            delta_w = obs$w_925 - w_925)
 }) %>%
   reduce(rbind)
-  
+
 par(mfrow = c(2,2))
 boxplot(delta_delta_t ~ zone, data = dataset_env_delta)
 boxplot(delta_w ~ zone, data = dataset_env_delta)
 boxplot(delta_u ~ zone, data = dataset_env_delta)
 boxplot(delta_v ~ zone, data = dataset_env_delta)
 
+#look at the variance of alternative values, regardless of the choice (week)
+dataset_env_alt_var <- dataset_env %>%
+  group_by(obs_id) %>%
+  slice(-1) %>%  #remove the first row of each obs_id (i.e. remove the used value)
+  summarise(av_delta_t_var = var(delta_t),
+            av_u_var = var(u_925),
+            av_v_var = var(v_925),
+            av_w_var = var(w_925),
+            zone = head(zone,1))
+
+windows()
+par(mfrow = c(4,2))
+boxplot(log(av_delta_t_var) ~ zone, data = dataset_env_alt_var)
+title("one week before and after")
+boxplot(log(av_w_var) ~ zone, data = dataset_env_alt_var)#, log = "y")
+boxplot(log(av_u_var) ~ zone, data = dataset_env_alt_var)#, log = "y")
+boxplot(log(av_v_var) ~ zone, data = dataset_env_alt_var)#, log = "y")
   
+#look at the variance of alternative values only BEFORE, regardless of the choice (week)
+dataset_env_alt_before_var <- dataset_env %>%
+  filter(period != "after") %>% 
+  group_by(obs_id) %>%
+  slice(-1) %>%  #remove the first row of each obs_id (i.e. remove the used value)
+  summarise(av_delta_t_var = var(delta_t),
+            av_u_var = var(u_925),
+            av_v_var = var(v_925),
+            av_w_var = var(w_925),
+            zone = head(zone,1))
+
+#par(mfrow = c(2,2))
+boxplot(log(av_delta_t_var) ~ zone, data = dataset_env_alt_before_var)#, log = "y")
+title("one week before")
+boxplot(log(av_w_var) ~ zone, data = dataset_env_alt_before_var)#, log = "y")
+boxplot(log(av_u_var) ~ zone, data = dataset_env_alt_before_var)#, log = "y")
+boxplot(log(av_v_var) ~ zone, data = dataset_env_alt_before_var)#, log = "y")
   
+###
+#look at the variance of alternative values, regardless of the choice (month)
+dataset_env_alt_var <- dataset_env %>%
+  group_by(obs_id) %>%
+  slice(-1) %>%  #remove the first row of each obs_id (i.e. remove the used value)
+  summarise(av_delta_t_var = var(delta_t),
+            av_u_var = var(u_925),
+            av_v_var = var(v_925),
+            av_w_var = var(w_925),
+            zone = head(zone,1))
+
+windows()
+par(mfrow = c(4,2))
+boxplot(log(av_delta_t_var) ~ zone, data = dataset_env_alt_var)
+title("one week before and after")
+boxplot(log(av_w_var) ~ zone, data = dataset_env_alt_var)#, log = "y")
+boxplot(log(av_u_var) ~ zone, data = dataset_env_alt_var)#, log = "y")
+boxplot(log(av_v_var) ~ zone, data = dataset_env_alt_var)#, log = "y")
+
+#look at the variance of alternative values only BEFORE, regardless of the choice (month)
+dataset_env_alt_before_var <- dataset_env %>%
+  filter(period != "after") %>% 
+  group_by(obs_id) %>%
+  slice(-1) %>%  #remove the first row of each obs_id (i.e. remove the used value)
+  summarise(av_delta_t_var = var(delta_t),
+            av_u_var = var(u_925),
+            av_v_var = var(v_925),
+            av_w_var = var(w_925),
+            zone = head(zone,1))
+
+#par(mfrow = c(2,2))
+boxplot(log(av_delta_t_var) ~ zone, data = dataset_env_alt_before_var)#, log = "y")
+title("one week before")
+boxplot(log(av_w_var) ~ zone, data = dataset_env_alt_before_var)#, log = "y")
+boxplot(log(av_u_var) ~ zone, data = dataset_env_alt_before_var)#, log = "y")
+boxplot(log(av_v_var) ~ zone, data = dataset_env_alt_before_var)#, log = "y")
+
 # MAPPING #####
 mapview(list(twz,tmz))
