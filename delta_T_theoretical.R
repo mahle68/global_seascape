@@ -13,7 +13,7 @@ library(lwgeom)
 library(lubridate)
 library(lutz) #local time zone assignment
 
-setwd("C:/Users/mahle/ownCloud/Work/Projects/delta_t")
+setwd("/home/mahle68/ownCloud/Work/Projects/delta_t")
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
@@ -74,112 +74,65 @@ colnames(dataset_mb)[c(1,2)] <- c("location-long","location-lat")
 write.csv(dataset_mb,"R_files/thr_dataset_14_days.csv") #request track annotation with sst and t2m (nearest neighbour),u, v and omega at 925 (bilinear)
   
 #downloaded from movebank
-dataset_env <- read.csv("movebank_annotation/thr_dataset_14_alt.csv-818519971622438358.csv", stringsAsFactors = F) %>%
+dataset_env <- read.csv("movebank_annotation/thr_dataset_14_day.csv-6470248576325268580.csv", stringsAsFactors = F) %>%
     drop_na() %>% #remove NAs
     rename( t2m = ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.,
             sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature,
             u_925 = ECMWF.Interim.Full.Daily.PL.U.Wind,
-            v_925 = ECMWF.Interim.Full.Daily.PL.V.Wind,
-            w_925 = ECMWF.Interim.Full.Daily.PL.Pressure.Vertical.Velocity) %>%
+            v_925 = ECMWF.Interim.Full.Daily.PL.V.Wind) %>%
   mutate(delta_t = sst - t2m) 
 
 save(dataset_env, file = "R_files/thr_dataset_14_alt_env.RData")
   
 # STEP 3: compare variances between the two zones ##### 
 
-dataset_env_delta <- lapply(split(dataset_env, dataset_env$obs_id), function(x){
-  obs <- x[1,]
-  #  x$delta_delta_t <- obs$delta_t - x$delta_t
-  #  x$delta_u <- obs$u_925 - x$u_925
-  #  x$delta_v <- obs$v_925 - x$v_925
-  #  x$delta_w <- obs$w_925 - x$w_925
-  
-  x <- x %>% 
-    mutate(delta_delta_t = obs$delta_t - delta_t,
-           delta_u = obs$u_925 - u_925,
-           delta_v = obs$v_925 - v_925,
-           delta_w = obs$w_925 - w_925)
-}) %>%
-  reduce(rbind)
+load("R_files/thr_dataset_14_alt_env.RData")
 
-par(mfrow = c(2,2))
-boxplot(delta_delta_t ~ zone, data = dataset_env_delta)
-boxplot(delta_w ~ zone, data = dataset_env_delta)
-boxplot(delta_u ~ zone, data = dataset_env_delta)
-boxplot(delta_v ~ zone, data = dataset_env_delta)
+#density plots for the two zones
+X11()
+par(mfrow = c(1,3))
+plot(density(dataset_env[dataset_env$zone == "tradewind","delta_t"]),col = "red", main = "delta t")
+lines(density(dataset_env[dataset_env$zone == "temperate","delta_t"]),col = "blue")
+legend("topleft",legend = c("tradewind","temperate"), col = c("red","blue"),lty = 1, bty = "n", cex = 0.9)
+plot(density(dataset_env[dataset_env$zone == "tradewind","u_925"]),col = "red", main = "u wind")
+lines(density(dataset_env[dataset_env$zone == "temperate","u_925"]),col = "blue")
+plot(density(dataset_env[dataset_env$zone == "tradewind","v_925"]),col = "red", main = "v wind")
+lines(density(dataset_env[dataset_env$zone == "temperate","v_925"]),col = "blue")
 
-#look at the variance of alternative values, regardless of the choice (week)
+
+#variance of alternative values
 dataset_env_alt_var <- dataset_env %>%
   group_by(obs_id) %>%
-  slice(-1) %>%  #remove the first row of each obs_id (i.e. remove the used value)
   summarise(av_delta_t_var = var(delta_t),
             av_u_var = var(u_925),
             av_v_var = var(v_925),
-            av_w_var = var(w_925),
             zone = head(zone,1))
 
-windows()
-par(mfrow = c(4,2))
+X11()
+par(mfrow = c(1,3))
 boxplot(log(av_delta_t_var) ~ zone, data = dataset_env_alt_var)
 title("one week before and after")
-boxplot(log(av_w_var) ~ zone, data = dataset_env_alt_var)#, log = "y")
-boxplot(log(av_u_var) ~ zone, data = dataset_env_alt_var)#, log = "y")
-boxplot(log(av_v_var) ~ zone, data = dataset_env_alt_var)#, log = "y")
-  
-#look at the variance of alternative values only BEFORE, regardless of the choice (week)
-dataset_env_alt_before_var <- dataset_env %>%
-  filter(period != "after") %>% 
-  group_by(obs_id) %>%
-  slice(-1) %>%  #remove the first row of each obs_id (i.e. remove the used value)
-  summarise(av_delta_t_var = var(delta_t),
-            av_u_var = var(u_925),
-            av_v_var = var(v_925),
-            av_w_var = var(w_925),
-            zone = head(zone,1))
-
-#par(mfrow = c(2,2))
-boxplot(log(av_delta_t_var) ~ zone, data = dataset_env_alt_before_var)#, log = "y")
-title("one week before")
-boxplot(log(av_w_var) ~ zone, data = dataset_env_alt_before_var)#, log = "y")
-boxplot(log(av_u_var) ~ zone, data = dataset_env_alt_before_var)#, log = "y")
-boxplot(log(av_v_var) ~ zone, data = dataset_env_alt_before_var)#, log = "y")
-  
-###
-#look at the variance of alternative values, regardless of the choice (month)
-dataset_env_alt_var <- dataset_env %>%
-  group_by(obs_id) %>%
-  slice(-1) %>%  #remove the first row of each obs_id (i.e. remove the used value)
-  summarise(av_delta_t_var = var(delta_t),
-            av_u_var = var(u_925),
-            av_v_var = var(v_925),
-            av_w_var = var(w_925),
-            zone = head(zone,1))
-
-windows()
-par(mfrow = c(4,2))
-boxplot(log(av_delta_t_var) ~ zone, data = dataset_env_alt_var)
-title("one week before and after")
-boxplot(log(av_w_var) ~ zone, data = dataset_env_alt_var)#, log = "y")
 boxplot(log(av_u_var) ~ zone, data = dataset_env_alt_var)#, log = "y")
 boxplot(log(av_v_var) ~ zone, data = dataset_env_alt_var)#, log = "y")
 
-#look at the variance of alternative values only BEFORE, regardless of the choice (month)
-dataset_env_alt_before_var <- dataset_env %>%
-  filter(period != "after") %>% 
-  group_by(obs_id) %>%
-  slice(-1) %>%  #remove the first row of each obs_id (i.e. remove the used value)
-  summarise(av_delta_t_var = var(delta_t),
-            av_u_var = var(u_925),
-            av_v_var = var(v_925),
-            av_w_var = var(w_925),
-            zone = head(zone,1))
+###print out the plots
+pdf("theoretical_results.pdf", height = 7, width = 9)
+par(mfrow = c(2,3))
+plot(density(dataset_env[dataset_env$zone == "tradewind","delta_t"]),col = "red", main = "delta t")
+lines(density(dataset_env[dataset_env$zone == "temperate","delta_t"]),col = "blue")
+legend("topleft",legend = c("tradewind","temperate"), col = c("red","blue"),lty = 1, bty = "n", cex = 0.9)
+plot(density(dataset_env[dataset_env$zone == "tradewind","u_925"]),col = "red", main = "u wind")
+lines(density(dataset_env[dataset_env$zone == "temperate","u_925"]),col = "blue")
+plot(density(dataset_env[dataset_env$zone == "tradewind","v_925"]),col = "red", main = "v wind")
+lines(density(dataset_env[dataset_env$zone == "temperate","v_925"]),col = "blue")
 
-#par(mfrow = c(2,2))
-boxplot(log(av_delta_t_var) ~ zone, data = dataset_env_alt_before_var)#, log = "y")
-title("one week before")
-boxplot(log(av_w_var) ~ zone, data = dataset_env_alt_before_var)#, log = "y")
-boxplot(log(av_u_var) ~ zone, data = dataset_env_alt_before_var)#, log = "y")
-boxplot(log(av_v_var) ~ zone, data = dataset_env_alt_before_var)#, log = "y")
+boxplot(log(av_delta_t_var) ~ zone, data = dataset_env_alt_var)
+title("one week before and after")
+boxplot(log(av_u_var) ~ zone, data = dataset_env_alt_var)#, log = "y")
+boxplot(log(av_v_var) ~ zone, data = dataset_env_alt_var)#, log = "y")
+
+
+dev.off()
 
 # MAPPING #####
 mapview(list(twz,tmz))
