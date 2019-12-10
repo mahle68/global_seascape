@@ -21,7 +21,7 @@ library(readr) #read_csv()
 library(tidyverse) #nest()
 library(lme4)
 
-setwd("C:/Users/mahle/ownCloud/Work/Projects/delta_t")
+setwd("/home/mahle68/ownCloud/Work/Projects/delta_t")
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
@@ -125,7 +125,6 @@ save(sea_data,file = "R_files/GFB_HB_temp_sp_filtered.RData")
 
 
 #filter spatially with 15 km buffer
-
 data_sf <- lapply(data_sp,st_as_sf,crs = wgs) #convert points to sf object
 
 sea_data_15 <- lapply(data_sf,function(x){
@@ -147,7 +146,7 @@ load("R_files/GFB_HB_temp_sp_filtered_15km.RData") #called sea_data_15
 getDuplicatedTimestamps(x = as.factor(sea_data_15[[1]]$track),timestamps = sea_data_15[[1]]$date_time,sensorType = "ptt")
 getDuplicatedTimestamps(x = as.factor(sea_data_15[[2]]$track),timestamps = sea_data_15[[2]]$date_time,sensorType = "ptt") #two cases of duplicated timestamps. the points are very close to each other though.
 mapview(sea_data_15[[2]][c(111:114),])
-sea_data_15[[2]] <- sea_data_15[[2]][-c(17,112,273),] #remove the first records of duplicate timestamps; also remove the very unlikely record near india (row 273)
+sea_data_15[[2]] <- sea_data_15[[2]][-c(17,112,275),] #remove the first records of duplicate timestamps; also remove the very unlikely record near india (row 275)
 
 
 #create a move list
@@ -159,34 +158,39 @@ move_ls <- lapply(sea_data_15,function(x){
 #thin the data to have one-hour difference?
 sea_data_15_1hr <- lapply(move_ls,function(group){ #for each of the groups (each species) 
   
-  sp_obj_ls <- lapply(split(group),function(track){ #for each track within the group
+  sp_obj_ls <- lapply(split(group),function(one_track){ #for each track within the group
     
-    thinned_track <- track %>%
+    thinned_track <- one_track %>%
       thinTrackTime(interval = as.difftime(1, units = 'hours'), 
                     tolerance = as.difftime(15, units = 'mins'))
     
     #convert back to a move object (from move burst)
     thinned_track <- as(thinned_track,"Move")
+    thinned_track$track <- one_track@idData$track #reassign the track
     thinned_track
   })
   
   sp <- do.call(rbind,sp_obj_ls)
-  sp$track <- track@idData$track #reassign the track
-  st_as_sf(sp) #conver the spatialdataframe to an sf object
-})
+  #st_as_sf(sp) #conver the spatialdataframe to an sf object
+  as.data.frame(sp)
+}) 
+
+sea_data_15_1hr[[1]]$species <- "GFB"
+sea_data_15_1hr[[2]]$species <- "OHB"
+
+sea_data_15_1hr <- sea_data_15_1hr[[1]] %>%
+  full_join(sea_data_15_1hr[[2]], by = c("coords.x1","coords.x2","date_time","month","class","species","track")) %>% 
+  dplyr::select(c(coords.x1,coords.x2,date_time,month,class,species,track)) %>% 
+  rename(long = coords.x1, lat = coords.x2)
 
 save(sea_data_15_1hr,file = "R_files/GFB_HB_sea_data_15_1hr.RData")
 
-#temporal filter for autocorrelation (1-hourly thinned data)
-load("R_files/GFB_HB_sea_data_15_1hr.RData") #called sea_data_15_1hr
-
-
 
 #### ---STEP 4: produce alternative points in time #####
-#.... within the migration period or outside? or both.... or, separately for before and after.
 
 #open data
-load("R_files/GFB_HB_temp_sp_filtered_15km_ann.RData") #called ann_df ...this is from STEP 4 of the previous version. just combine the two datasets without annotation
+load("R_files/GFB_HB_sea_data_15_1hr.RData") #called sea_data_15_1hr
+#load("R_files/GFB_HB_temp_sp_filtered_15km_ann.RData") #called ann_df ...this is from STEP 4 of the previous version. just combine the two datasets without annotation
 
 #for each point, create a alternative points a week before and a week after the observed point. year and hour dont change.
 ann_df_alt <- ann_df %>%
