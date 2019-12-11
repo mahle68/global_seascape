@@ -193,57 +193,79 @@ load("R_files/GFB_HB_sea_data_15_1hr.RData") #called sea_data_15_1hr
 #load("R_files/GFB_HB_temp_sp_filtered_15km_ann.RData") #called ann_df ...this is from STEP 4 of the previous version. just combine the two datasets without annotation
 
 #for each point, create a alternative points a week before and a week after the observed point. year and hour dont change.
-ann_df_alt <- ann_df %>%
-  mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"),
+alts <- sea_data_15_1hr %>%
+  mutate(#date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"),
          obs_id = row_number()) %>%
-  slice(rep(row_number(),61)) %>% #copy each row 60 times. 1 used, 60 alternative
+  slice(rep(row_number(),15)) %>% #copy each row 60 times. 1 used, 60 alternative
   arrange(date_time) %>%
   mutate(used = ifelse(row_number() == 1,1,
-                       ifelse((row_number() - 1) %% 61 == 0, 1, 0))) #assign used and available values
+                       ifelse((row_number() - 1) %% 15 == 0, 1, 0))) #assign used and available values
   
-  ann_alt_ls <- lapply( split(ann_df_alt,ann_df_alt$obs_id),function(x){ #didnt manage to write this part using dplyr and purrr
-    alt_times <- alt_pts_temporal(x$date_time[1],60)
+
+  alt_ls <- lapply( split(alts,alts$obs_id),function(x){ #didnt manage to write this part using dplyr and purrr
+    alt_times <- alt_pts_temporal(x$date_time[1],14)
     x %>%
       mutate(timestamp = as.POSIXct(strptime(c(as.character(x$date_time[1]),alt_times$dt),format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"),
       period = c("now",alt_times$period))
   })
 
-  ann_df_alt_cmpl <- do.call(rbind,ann_alt_ls)
+  alt_cmpl <- do.call(rbind,alt_ls)
   
-save(ann_df_alt_cmpl,file = "R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_60days.RData")
+save(alt_cmpl,file = "R_files/GFB_HB_temp_sp_filtered_15km_alt_14days.RData")
   
 #### ---STEP 5: annotate alternative points with delta T #####
-load("R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_60days.RData") #called ann_df_alt_cmpl
+
+load("R_files/GFB_HB_temp_sp_filtered_15km_alt_14days.RData") #called ann_df_alt_cmpl
 
 #prep for track annotation on movebank
-ann_df_alt_cmpl_mb <- ann_df_alt_cmpl %>%
-  dplyr::select(-contains("ECMWF")) %>% #remove the already existing movebank columns
+alt_cmpl_mb <- alt_cmpl %>%
   mutate(timestamp = paste(as.character(timestamp),"000",sep = ".")) 
   
 #rename columns
-colnames(ann_df_alt_cmpl_mb)[c(8,9)] <- c("location-long","location-lat")
+colnames(alt_cmpl_mb)[c(1,2)] <- c("location-long","location-lat")
 
-write.csv(ann_df_alt_cmpl_mb,"R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_60days.csv")
+write.csv(alt_cmpl_mb,"R_files/GFB_HB_temp_sp_filtered_15km_alt_14days.csv")
   
 #downloaded from movebank
-ann <- read.csv("movebank_annotation/GFB_HB_temp_sp_filtered_15km_ann_alt_60days.csv-5317423982503990720.csv", stringsAsFactors = F) %>%
-  mutate(delta_T = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature - ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.) %>%
+ann <- read.csv("movebank_annotation/GFB_HB_temp_sp_filtered_15km_alt_14days.csv-799772115122349617.csv", stringsAsFactors = F) %>%
+  rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature,
+         t2m = ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.,
+         u925 = ECMWF.Interim.Full.Daily.PL.U.Wind,
+         v925 = ECMWF.Interim.Full.Daily.PL.V.Wind) %>% 
+  mutate(delta_t = sst - t2m) %>%
   drop_na() #remove NAs
   
-save(ann, file = "R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_ann_60days.RData")
+save(ann, file = "R_files/GFB_HB_temp_sp_filtered_15km_alt_ann_14days.RData")
 
 
 #### ---STEP 6: visualizations #####
   
-load("R_files/GFB_HB_temp_sp_filtered_15km_ann_alt_ann_60days.RData") #called ann
+load("R_files/GFB_HB_temp_sp_filtered_15km_alt_ann_14days.RData") #called ann
+
+spring <- ann %>% 
+  filter(month %in% c(3,4))
+
+autumn <- ann %>% 
+  filter(month %in% c(9,10))
+
+for(i in list(spring,autumn)){
 
 #are used and available density plots different
-windows()
-plot(density(ann[ann$period == "now","delta_T"]),col = "red")
-lines(density(ann[ann$period == "before","delta_T"]),col = "green")
-lines(density(ann[ann$period == "after","delta_T"]),col = "blue")
+X11()
+par(mfrow = c(1,3))
+plot(density(ann[ann$period == "now","delta_t"]),col = "red", main = "delta t")
+lines(density(ann[ann$period != "now","delta_t"]),col = "green")
+legend("topleft",legend = c("used","available"), col = c("red","green"),lty = 1, bty = "n", cex = 0.9)
 
-legend("topleft",legend = c("used","available-before","available-after"), col = c("red","green","blue"),lty = 1, bty = "n", cex = 0.9)
+plot(density(ann[ann$period == "now","u925"]),col = "red", main = "u-wind")
+lines(density(ann[ann$period != "now","u925"]),col = "green")
+
+plot(density(ann[ann$period == "now","v925"]),col = "red", main = "v-wind")
+lines(density(ann[ann$period != "now","v925"]),col = "green")
+
+}
+
+
 
 #are used and available density plots different... season-specific
 windows()
