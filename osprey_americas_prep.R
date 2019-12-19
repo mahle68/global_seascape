@@ -5,7 +5,6 @@
 #description:
 #preparing the osprey dataset for meta-analysis of relationship between delta_T and wind and sea-crossing behavior in soaring birds
 
-
 #### ---Libraries, ftns, and misc ####
 library(dplyr)
 library(purrr)
@@ -24,6 +23,7 @@ library(survival)
 library(rstanarm)
 library(parallel)
 
+setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
 setwd("/home/mahle68/ownCloud/Work/Projects/delta_t")
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
@@ -152,7 +152,13 @@ save(sf,file = "R_files/AO_sea_mgr_15_1hr.RData")
 #### ---STEP 5: produce alternative points in time #####
 
 #open data
-load("R_files/AO_sea_mgr_15_1hr.RData") #called sf
+load("R_files/AO_sea_mgr_15_1hr.RData") #called sf. with original times
+
+#timestamps at midnight cause a problem becuase hour becomes NA. add 5 minutes to all timestamps at midnight
+sf <- sf %>% 
+  mutate(date_time = ifelse(hour(date_time) == 0 & minute(date_time) == 0, as.character(date_time + minutes(5)), as.character(date_time))) %>% 
+  mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"))
+
 
 #for each point, create a alternative points a week before and a week after the observed point. year and hour dont change.
 alts <- sf %>%
@@ -172,18 +178,18 @@ alts <- sf %>%
 alt_ls <- lapply( split(alts,alts$obs_id),function(x){ #didnt manage to write this part using dplyr and purrr
     alt_times <- alt_pts_temporal(x$date_time[1],14)
     x %>%
-      mutate(timestamp = as.POSIXct(strptime(c(as.character(x$date_time[1]),alt_times$dt),format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"),
+      mutate(timestamp = as.POSIXct(strptime(c(as.character(x$date_time[1]),alt_times$dt),format = "%Y-%m-%d %H:%M:%S"),tz = "UTC",),
       period = c("now",alt_times$period))
 })
 
 alt_cmpl <- do.call(rbind,alt_ls)
 
   
-save(alt_cmpl,file = "R_files/AO_temp_sp_filtered_15km_alt_14days.RData")
+save(alt_cmpl,file = "R_files/AO_temp_sp_filtered_15km_alt_14days.RData") #with 5 minutes added to 00:00
   
 #### ---STEP 6: annotate alternative points with delta T #####
 
-load("R_files/AO_temp_sp_filtered_15km_alt_14days.RData") #called ann_df_alt_cmpl
+load("R_files/AO_temp_sp_filtered_15km_alt_14days.RData") #called alt_cmpl
 
 #prep for track annotation on movebank
 alt_cmpl_mb <- alt_cmpl %>%
@@ -192,10 +198,10 @@ alt_cmpl_mb <- alt_cmpl %>%
 #rename columns
 colnames(alt_cmpl_mb)[c(11,12)] <- c("location-long","location-lat")
 
-write.csv(alt_cmpl_mb,"R_files/AO_temp_sp_filtered_15km_alt_14days.csv")
+write.csv(alt_cmpl_mb,"R_files/AO_temp_sp_filtered_15km_alt_14days.csv") #with 5 minutes added to 00:00
   
 #downloaded from movebank
-ann <- read.csv("movebank_annotation/GFB_HB_temp_sp_filtered_15km_alt_14days.csv-799772115122349617.csv", stringsAsFactors = F) %>%
+ann <- read.csv("movebank_annotation/AO_temp_sp_filtered_15km_alt_14days.csv-2568627422738596992.csv", stringsAsFactors = F) %>%
   rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature,
          t2m = ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.,
          u925 = ECMWF.Interim.Full.Daily.PL.U.Wind,
@@ -203,7 +209,7 @@ ann <- read.csv("movebank_annotation/GFB_HB_temp_sp_filtered_15km_alt_14days.csv
   mutate(delta_t = sst - t2m) %>%
   drop_na() #remove NAs
   
-save(ann, file = "R_files/GFB_HB_temp_sp_filtered_15km_alt_ann_14days.RData")
+save(ann, file = "R_files/AO_temp_sp_filtered_15km_alt_ann_14days.RData")
 
 
 #### ---STEP 7: visualizations #####
@@ -244,35 +250,35 @@ ann_sc <- ann %>%
 #one glm for both seasons together
 model <- glm(used ~ delta_t + u925 + v925 , family = binomial, data = ann_sc ) #higher selection on u-wind
 
-model <- glmer(used ~ delta_t + u925 + v925 + (1 | obs_id) + (1 | species), family = binomial, data = ann ) #singularity error
+model <- glmer(used ~ delta_t + u925 + v925 + (1 | obs_id), family = binomial, data = ann ) #singularity error
 
 #clogit for both seasons together
 model_cl <- clogit(used ~ delta_t + u925 + v925 + strata(obs_id), data = ann_sc)
 model_cl
 
 #ann_sc <- ann_sc[order(ann_sc,ann_sc$obs_id),]
-        model_cl_b <- stan_clogit(used ~ delta_t + u925 + v925, strata = obs_id, data = ann_sc)
+model_cl_b <- stan_clogit(used ~ delta_t + u925 + v925, strata = obs_id, data = ann_sc)
 
 
 #### ---STEP 9: modeling #####
 #model only for autumn
-autumn_one_week_before <- ann %>%
-  filter(period %in% c("now","before") & week %in% c("obs_day", "week_one") & season == "autumn" ) %>%
+#autumn_one_week_before <- ann %>%
+#  filter(period %in% c("now","before") & week %in% c("obs_day", "week_one") & season == "autumn" ) %>%
   #select(-delta_t) %>%
-  map_if(is.factor, as.character) %>%
-  as.data.frame()
+#  map_if(is.factor, as.character) %>%
+#  as.data.frame()
   
 
-model <- glmer(used ~ delta_T + (1 | obs_id) + (1 | species), family = binomial, data = autumn_one_week_before)
+#model <- glmer(used ~ delta_T + (1 | obs_id) + (1 | species), family = binomial, data = autumn_one_week_before)
   
-model <- glm(used ~ delta_T  , family = binomial, data = autumn_one_week_before)
+#model <- glm(used ~ delta_T  , family = binomial, data = autumn_one_week_before)
 
 #autumn four weeks before
-autumn_four_week_before <- ann %>%
-  filter(period %in% c("now","before") & season == "autumn" ) %>%
+##autumn_four_week_before <- ann %>%
+#  filter(period %in% c("now","before") & season == "autumn" ) %>%
   #select(-delta_t) %>%
-  map_if(is.factor, as.character) %>%
-  as.data.frame()
+#  map_if(is.factor, as.character) %>%
+#  as.data.frame()
 
 
 model <- glmer(used ~ delta_T + (1 | obs_id) + (1 | species), family = binomial, data = autumn_four_week_before)
@@ -326,5 +332,5 @@ lapply(sea_data_15,mapview)
 
 plot(land_am_15km)
 points(sp,cex = 0.3, col = factor(sp$month))
-
+points(alt_cmpl[alt_cmpl$used == 1,c("lon","lat")], pch = 16, cex= 0.3, col = factor(alt_cmpl[alt_cmpl$used == 1,"zone"]))
 #### end ####
