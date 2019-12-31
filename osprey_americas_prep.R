@@ -28,7 +28,7 @@ setwd("/home/mahle68/ownCloud/Work/Projects/delta_t")
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
 mycl <- makeCluster(detectCores() - 1)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
+
 
 alt_pts_temporal <- function(date_time,n_days) {
   #same year, same hour, only day changes
@@ -42,7 +42,7 @@ alt_pts_temporal <- function(date_time,n_days) {
   }
   
   rbind( data.frame(dt = alt_pts_before, period =  "before", stringsAsFactors = F),
-  data.frame(dt = alt_pts_after, period =  "after", stringsAsFactors = F))
+         data.frame(dt = alt_pts_after, period =  "after", stringsAsFactors = F))
 }
 
 
@@ -96,7 +96,7 @@ sea_data_migr <-sea_data %>%
                          ifelse (month %in% c(9,10), "autumn",
                                  "other"))) %>% 
   filter(season != "other")
-  
+
 save(sea_data_migr, file = "R_files/OA_GPS_sea_migration.RData")
 
 #### ---STEP 4: temporal filter for autocorrelation #####
@@ -113,28 +113,28 @@ mv <- move(x = st_coordinates(sea_data)[,"X"],y = st_coordinates(sea_data)[,"Y"]
 
 #start the cluster
 clusterExport(mycl, "mv") #define the variable that will be used within the function
-  
+
 clusterEvalQ(mycl, {
-    library(move)
-    library(lubridate)
-    library(dplyr)
-    library(raster)
+  library(move)
+  library(lubridate)
+  library(dplyr)
+  library(raster)
 })
-  
+
 sp_obj_ls <- parLapply(cl = mycl,split(mv),function(one_track){ #for each track within the group
-    
-    thinned_track <- one_track %>%
-      thinTrackTime(interval = as.difftime(1, units = 'hours'), 
-                    tolerance = as.difftime(15, units = 'mins'))
-    
-    #convert back to a move object (from move burst)
-    thinned_track <- as(thinned_track,"Move")
-    thinned_track$track <- one_track@idData$track #reassign the track
-    thinned_track
+  
+  thinned_track <- one_track %>%
+    thinTrackTime(interval = as.difftime(1, units = 'hours'), 
+                  tolerance = as.difftime(15, units = 'mins'))
+  
+  #convert back to a move object (from move burst)
+  thinned_track <- as(thinned_track,"Move")
+  thinned_track$track <- one_track@idData$track #reassign the track
+  thinned_track
 })
-  
+
 stopCluster(mycl)
-  
+
 sp <- do.call(rbind,sp_obj_ls)
 sf <- st_as_sf(sp)
 
@@ -145,7 +145,7 @@ sf <- st_as_sf(sp)
 sf <-sf %>% 
   mutate(zone = ifelse(st_coordinates(.)[,"Y"] <= 30, "tradewind",
                        ifelse(between(st_coordinates(.)[,"Y"], 30,60), "temperate",
-         "other")))
+                              "other")))
 
 save(sf,file = "R_files/AO_sea_mgr_15_1hr.RData")
 
@@ -163,7 +163,7 @@ sf <- sf %>%
 #for each point, create a alternative points a week before and a week after the observed point. year and hour dont change.
 alts <- sf %>%
   mutate(#date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"),
-         obs_id = row_number()) %>%
+    obs_id = row_number()) %>%
   slice(rep(row_number(),15)) %>% #copy each row 60 times. 1 used, 60 alternative
   arrange(date_time) %>%
   mutate(used = ifelse(row_number() == 1,1,
@@ -173,20 +173,20 @@ alts <- sf %>%
   st_drop_geometry()%>% 
   filter(individual.local.identifier %in% c("Holly","Hackett","Daphne","Shanawdithit","Gundersen","Wausau",
                                             "Crabby","Charlie","Roger Tory"))
-  
+
 
 alt_ls <- lapply( split(alts,alts$obs_id),function(x){ #didnt manage to write this part using dplyr and purrr
-    alt_times <- alt_pts_temporal(x$date_time[1],14)
-    x %>%
-      mutate(timestamp = as.POSIXct(strptime(c(as.character(x$date_time[1]),alt_times$dt),format = "%Y-%m-%d %H:%M:%S"),tz = "UTC",),
-      period = c("now",alt_times$period))
+  alt_times <- alt_pts_temporal(x$date_time[1],14)
+  x %>%
+    mutate(timestamp = as.POSIXct(strptime(c(as.character(x$date_time[1]),alt_times$dt),format = "%Y-%m-%d %H:%M:%S"),tz = "UTC",),
+           period = c("now",alt_times$period))
 })
 
 alt_cmpl <- do.call(rbind,alt_ls)
 
-  
+
 save(alt_cmpl,file = "R_files/AO_temp_sp_filtered_15km_alt_14days.RData") #with 5 minutes added to 00:00
-  
+
 #### ---STEP 6: annotate alternative points with delta T #####
 
 load("R_files/AO_temp_sp_filtered_15km_alt_14days.RData") #called alt_cmpl
@@ -194,12 +194,12 @@ load("R_files/AO_temp_sp_filtered_15km_alt_14days.RData") #called alt_cmpl
 #prep for track annotation on movebank
 alt_cmpl_mb <- alt_cmpl %>%
   mutate(timestamp = paste(as.character(timestamp),"000",sep = "."))
-  
+
 #rename columns
 colnames(alt_cmpl_mb)[c(11,12)] <- c("location-long","location-lat")
 
 write.csv(alt_cmpl_mb,"R_files/AO_temp_sp_filtered_15km_alt_14days.csv") #with 5 minutes added to 00:00
-  
+
 #downloaded from movebank
 ann <- read.csv("movebank_annotation/AO_temp_sp_filtered_15km_alt_14days.csv-2568627422738596992.csv", stringsAsFactors = F) %>%
   rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature,
@@ -208,13 +208,13 @@ ann <- read.csv("movebank_annotation/AO_temp_sp_filtered_15km_alt_14days.csv-256
          v925 = ECMWF.Interim.Full.Daily.PL.V.Wind) %>% 
   mutate(delta_t = sst - t2m) %>%
   drop_na() #remove NAs
-  
+
 save(ann, file = "R_files/AO_temp_sp_filtered_15km_alt_ann_14days.RData")
 
 
 #### ---STEP 7: visualizations #####
-  
-load("R_files/GFB_HB_temp_sp_filtered_15km_alt_ann_14days.RData") #called ann
+
+load("R_files/AO_temp_sp_filtered_15km_alt_ann_14days.RData") #called ann
 
 spring <- ann %>% 
   filter(month %in% c(3,4))
@@ -223,38 +223,41 @@ autumn <- ann %>%
   filter(month %in% c(9,10))
 
 for(i in list(spring,autumn)){
-
-#are used and available density plots different for each season
-X11()
-par(mfrow = c(1,3))
-plot(density(ann[ann$period == "now","delta_t"]),col = "red", main = "delta t")
-lines(density(ann[ann$period != "now","delta_t"]),col = "green")
-legend("topleft",legend = c("used","available"), col = c("red","green"),lty = 1, bty = "n", cex = 0.9)
-
-plot(density(ann[ann$period == "now","u925"]),col = "red", main = "u-wind")
-lines(density(ann[ann$period != "now","u925"]),col = "green")
-
-plot(density(ann[ann$period == "now","v925"]),col = "red", main = "v-wind")
-lines(density(ann[ann$period != "now","v925"]),col = "green")
-
+  
+  #are used and available density plots different for each season
+  X11()
+  par(mfrow = c(1,3))
+  plot(density(ann[ann$period == "now","delta_t"]),col = "red", main = "delta t")
+  lines(density(ann[ann$period != "now","delta_t"]),col = "green")
+  legend("topleft",legend = c("used","available"), col = c("red","green"),lty = 1, bty = "n", cex = 0.9)
+  
+  plot(density(ann[ann$period == "now","u925"]),col = "red", main = "u-wind")
+  lines(density(ann[ann$period != "now","u925"]),col = "green")
+  
+  plot(density(ann[ann$period == "now","v925"]),col = "red", main = "v-wind")
+  lines(density(ann[ann$period != "now","v925"]),col = "green")
+  
 } #not much seasonal difference. there seems to be selection for u-wind
 
-  
-#### ---STEP 8: analysis #####
 
+#### ---STEP 8: analysis #####
+#---------------------------------------make sure to model only the tradewind zone. and perhaps seasonal
 #standardize the variables to have comparable effect sizes
 ann_sc <- ann %>%
   mutate_at(c("delta_t","u925","v925"), scale) %>% 
   as.data.frame
 
-#one glm for both seasons together
-model <- glm(used ~ delta_t + u925 + v925 , family = binomial, data = ann_sc ) #higher selection on u-wind
+#one glm for both seasons together... for zone-specific models, make sure to scale the data only based on values in that zone :p
+model <- glm(used ~ delta_t + u925 + v925 , family = binomial, data = ann_sc[ann_sc$zone == "tradewind",] ) #higher selection on u-wind
 
-model <- glmer(used ~ delta_t + u925 + v925 + (1 | obs_id), family = binomial, data = ann ) #singularity error
+model <- glmer(used ~ delta_t + u925 + v925 + (1 | obs_id), family = binomial, data = ann_sc[ann_sc$zone == "tradewind",]  ) #singularity error
 
 #clogit for both seasons together
-model_cl <- clogit(used ~ delta_t + u925 + v925 + strata(obs_id), data = ann_sc)
+model_cl <- clogit(used ~ delta_t + u925 + v925 + strata(obs_id), data = ann_sc[ann_sc$zone == "tradewind",] )
 model_cl
+
+model_cl2 <- clogit(used ~ delta_t + u925 + v925 + strata(obs_id), data = ann_sc[ann_sc$zone == "temperate",] )
+model_cl2
 
 #ann_sc <- ann_sc[order(ann_sc,ann_sc$obs_id),]
 model_cl_b <- stan_clogit(used ~ delta_t + u925 + v925, strata = obs_id, data = ann_sc)
@@ -264,19 +267,19 @@ model_cl_b <- stan_clogit(used ~ delta_t + u925 + v925, strata = obs_id, data = 
 #model only for autumn
 #autumn_one_week_before <- ann %>%
 #  filter(period %in% c("now","before") & week %in% c("obs_day", "week_one") & season == "autumn" ) %>%
-  #select(-delta_t) %>%
+#select(-delta_t) %>%
 #  map_if(is.factor, as.character) %>%
 #  as.data.frame()
-  
+
 
 #model <- glmer(used ~ delta_T + (1 | obs_id) + (1 | species), family = binomial, data = autumn_one_week_before)
-  
+
 #model <- glm(used ~ delta_T  , family = binomial, data = autumn_one_week_before)
 
 #autumn four weeks before
 ##autumn_four_week_before <- ann %>%
 #  filter(period %in% c("now","before") & season == "autumn" ) %>%
-  #select(-delta_t) %>%
+#select(-delta_t) %>%
 #  map_if(is.factor, as.character) %>%
 #  as.data.frame()
 
