@@ -240,7 +240,7 @@ save(ann, file = "R_files/all_spp_temp_sp_filtered_15km_alt_ann_14days.RData")
 
 ##### STEP 7: analysis #####
 
-load("R_files/all_spp_temp_sp_filtered_15km_alt_ann_14days.RData")
+load("R_files/all_spp_temp_sp_filtered_15km_alt_ann_14days.RData") #called ann
 
 #ann_twz <- ann %>%
 #  filter(zone == "tradewind") %>% 
@@ -271,7 +271,9 @@ summary(model_twz4_spd)
 #one glm for both seasons together... for zone-specific models, make sure to scale the data only based on values in that zone :p
 model_tmpz <- glm(used ~ scale(delta_t) + scale(u925) + scale(v925) , family = binomial, data = ann[ann$zone == "temperate",]) #higher selection on u-wind
 
-model_tmpz2 <- glmer(used ~ scale(delta_t) + scale(u925) + scale(v925) + (1 | obs_id), family = binomial, data = ann[ann$zone == "temperate",]  ) #singularity error
+#model_tmpz7 <- glmer(used ~ -1 + delta_t + u925 + v925 + (delta_t | obs_id) + (u925 | obs_id) + (v925 | obs_id), family = poisson, data =  ann[ann$zone == "temperate",]) #singularity error
+
+model_tmpz2 <- glmer(used ~ scale(delta_t) + scale(u925) + scale(v925) + (1 | obs_id), family = binomial, data = ann[ann$zone == "temperate",]  ) #not converge
 
 #clogit for both seasons together
 model_tmpz3 <- clogit(used ~ scale(delta_t) + scale(u925) + scale(v925) + strata(obs_id), data = ann[ann$zone == "temperate",] )
