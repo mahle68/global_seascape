@@ -2,11 +2,16 @@
 #Elham Nourani,
 #Dec. 31. 2019. Radolfzell, Germany.
 
+library(tidyverse)
 library(readxl) #read_excel()
 library(lubridate)
 library(move)
 library(mapview)
-
+library(rWind)
+library(lme4)
+library(survival)
+library(TwoStepCLogit)
+library(rstanarm)
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
 setwd("/home/mahle68/ownCloud/Work/Projects/delta_t")
@@ -219,12 +224,59 @@ colnames(alt_cmpl_mb)[c(10,11)] <- c("location-long","location-lat")
 write.csv(alt_cmpl_mb,"R_files/all_spp_temp_sp_filtered_15km_alt_14days.csv") #with 5 minutes added to 00:00
 
 #downloaded from movebank
-ann <- read.csv("movebank_annotation/PF_temp_sp_filtered_15km_alt_14days.csv-5813773760251615680.csv", stringsAsFactors = F) %>%
+ann <- read.csv("movebank_annotation/all_spp_temp_sp_filtered_15km_alt_14days.csv-6653387681147029371.csv", stringsAsFactors = F) %>%
+  drop_na() %>%# NA values are for the 2019 tracks. with a transition to ERA5, I should be able to use this data as well
+  mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
   rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature,
          t2m = ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.,
          u925 = ECMWF.Interim.Full.Daily.PL.U.Wind,
-         v925 = ECMWF.Interim.Full.Daily.PL.V.Wind) %>% 
-  mutate(delta_t = sst - t2m) %>%
-  drop_na() #remove NAs...for european osprey, the NA values are for the 2019 track. with a transition to ERA5, I should be able to use this data as well
+         v925 = ECMWF.Interim.Full.Daily.PL.V.Wind) %>%
+  mutate(wspd = uv2ds(u925,v925)[,2],
+         wdir = uv2ds(u925,v925)[,1],
+         year = year(timestamp)) %>% 
+  mutate(delta_t = sst - t2m)
 
-save(ann, file = "R_files/PF_temp_sp_filtered_15km_alt_ann_14days.RData")
+save(ann, file = "R_files/all_spp_temp_sp_filtered_15km_alt_ann_14days.RData")
+
+##### STEP 7: analysis #####
+
+load("R_files/all_spp_temp_sp_filtered_15km_alt_ann_14days.RData")
+
+#ann_twz <- ann %>%
+#  filter(zone == "tradewind") %>% 
+#  mutate_at(c("delta_t","u925","v925"), scale) %>% 
+#  as.data.frame()
+
+#tradewind zone
+formula1 <- used ~ scale(delta_t) + scale(u925) + scale(v925)
+formula2 <- used ~ scale(delta_t) + scale(wspd)
+
+#one glm for both seasons together... for zone-specific models, make sure to scale the data only based on values in that zone :p
+model_twz <- glm(formula1 , family = binomial, data = ann[ann$zone == "tradewind",]) #higher selection on u-wind
+model_twz_wspd <- glm(formula2 , family = binomial, data = ann[ann$zone == "tradewind",])
+
+model_twz2 <- glmer(used ~ scale(delta_t) + scale(u925) + scale(v925) + (1 | obs_id), family = binomial, data = ann[ann$zone == "tradewind",]  ) #singularity error
+
+#clogit for both seasons together
+model_twz3 <- clogit(used ~ scale(delta_t) + scale(u925) + scale(v925) + strata(obs_id), data = ann[ann$zone == "tradewind",] )
+model_twz3
+
+model_twz4 <- stan_clogit(formula1, strata = obs_id, data = ann[ann$zone == "tradewind",])
+summary(model_twz4)
+model_twz4_spd <- stan_clogit(formula2, strata = obs_id, data = ann[ann$zone == "tradewind",])
+summary(model_twz4_spd)
+
+#temperate zone 
+
+#one glm for both seasons together... for zone-specific models, make sure to scale the data only based on values in that zone :p
+model_tmpz <- glm(used ~ scale(delta_t) + scale(u925) + scale(v925) , family = binomial, data = ann[ann$zone == "temperate",]) #higher selection on u-wind
+
+model_tmpz2 <- glmer(used ~ scale(delta_t) + scale(u925) + scale(v925) + (1 | obs_id), family = binomial, data = ann[ann$zone == "temperate",]  ) #singularity error
+
+#clogit for both seasons together
+model_tmpz3 <- clogit(used ~ scale(delta_t) + scale(u925) + scale(v925) + strata(obs_id), data = ann[ann$zone == "temperate",] )
+model_tmpz3
+
+model_tmpz4 <- stan_clogit(used ~ scale(delta_t) + scale(u925) + scale(v925), strata = obs_id, data = ann[ann$zone == "temperate",])
+model_tmpz4_2 <- stan_clogit(formula2, strata = obs_id, data = ann[ann$zone == "temperate",])
+summary(model_tmpz4_2)
