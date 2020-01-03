@@ -8,15 +8,7 @@ library(lubridate)
 library(move)
 library(mapview)
 library(rWind)
-library(lme4)
-library(survival)
-library(TwoStepCLogit)
-library(rstanarm)
-library(INLA)
-library(TwoStepCLogit)
-library(jtools) #summ ftn
-#library(ggstance)
-library(MuMIn) #adjusted r squared
+
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
 setwd("/home/mahle68/ownCloud/Work/Projects/delta_t")
@@ -215,7 +207,7 @@ alt_cmpl <- alt_cmpl %>%
 
 save(alt_cmpl,file = "R_files/all_spp_temp_sp_filtered_15km_alt_14days.RData") #with 5 minutes added to 00:00; extra columns removed
 
-##### STEP 6: annotate alternative points #####
+##### STEP 6: annotate all points #####
 
 load("R_files/all_spp_temp_sp_filtered_15km_alt_14days.RData") #called alt_cmpl
 
@@ -240,6 +232,17 @@ ann <- read.csv("movebank_annotation/all_spp_temp_sp_filtered_15km_alt_14days.cs
          wdir = uv2ds(u925,v925)[,1],
          year = year(timestamp)) %>% 
   mutate(delta_t = sst - t2m)
+
+#identify observed id's with less than 15 observations (the rest were removed because they produced NAs in the annotation step)
+NA_obs_ids <- ann %>% 
+  group_by(obs_id) %>% 
+  summarise(count = n()) %>% 
+  filter(count < 15) %>% 
+  .$obs_id
+
+ann <- ann %>% 
+  filter(!(obs_id %in% NA_obs_ids))
+
 
 save(ann, file = "R_files/all_spp_temp_sp_filtered_15km_alt_ann_14days.RData")
 

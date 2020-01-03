@@ -1,5 +1,6 @@
 #scripts for meta-analysis of sea-crossing behavior
 #follows the data preparation in all_data_prep.R
+#Jan 3. 2020. Elham Nourani. Radolfzell, Germany.
 
 library(lme4)
 library(survival)
@@ -7,12 +8,19 @@ library(TwoStepCLogit)
 library(rstanarm)
 library(INLA)
 library(TwoStepCLogit)
+library(mclogit)
 library(jtools) #summ ftn
 #library(ggstance)
 library(MuMIn) #adjusted r squared
 
 
-##### STEP 7: analysis #####
+setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
+setwd("/home/mahle68/ownCloud/Work/Projects/delta_t")
+wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+meters_proj <- CRS("+proj=moll +ellps=WGS84")
+mycl <- makeCluster(detectCores() - 2)
+
+##### STEP 1: check the data #####
 
 load("R_files/all_spp_temp_sp_filtered_15km_alt_ann_14days.RData") #called ann
 
@@ -22,12 +30,26 @@ lapply(split(ann,ann$zone), function(x){
   hist(ann[ann])
 })
 
+#correlation
+
+
+##### STEP 2: modeling #####
+
+#scale the variables, zone-specific
+ann_z<-ann%>%
+  group_by(zone) %>% 
+  mutate_at(c(21,17,14),
+            list(z=~scale(.)))%>%
+  as.data.frame()
+
+
 formula1 <- used ~ scale(delta_t) + scale(u925) + scale(v925) + strata(obs_id)
+formula1_sc <- used ~ delta_t + u925 + v925 + strata(obs_id)
 
 m_twz1 <- clogit(formula1, data = ann[ann$zone == "tradewind",])
 summary(m_twz1)
 
-m_twz2 <- update(m_twz1,- scale(v925))
+#m_twz2 <- update(m_twz1,- scale(v925))
 
 m_tmpz1 <- clogit(formula1, data = ann[ann$zone == "temperate",])
 summary(m_tmpz1)
@@ -52,12 +74,12 @@ ann_model <- ann %>%
   mutate(model = map(data, clogit_ftn))
 
 
-ann_sc <- ann %>%
-  group_by(zone) %>% 
-  mutate_at(c("delta_t","u925","v925"), scale) %>% 
-  mutate(species1 = species,
-         species2 = species) %>% 
-  as.data.frame()
+#ann_sc <- ann %>%
+#  group_by(zone) %>% 
+#  mutate_at(c("delta_t","u925","v925"), scale) %>% 
+#  mutate(species1 = species,
+#         species2 = species) %>% 
+#  as.data.frame()
 
 clogit_ftn <- function(df) clogit(formula1, data = df)
 clogit_mixed_ftn <- function(df) clogit(formula1, data = df)
@@ -178,3 +200,167 @@ model_tmpz_ms <- stan_clogit(formula1_mixed_slopes,
                              cores = 10) #how many cores should the computer utilize
 Sys.time()-d
 summary(model_tmpz_ms)
+
+
+
+##### STEP 3: model evalution #####
+#codes for assessing the robustness of ssf using Fortin et al 2009's method
+
+lapply(split(ann_z,ann_z$zone), function(zone){
+  
+  k_fold_eval<-rep(NA,100)
+  
+  for (i in 1:length(k_fold_eval)){
+  
+  #STEP 1: partition the strata 80%-20%
+  partition <- as.numeric(sample(levels(factor(zone$obs_id)),0.2*length(levels(factor(zone$obs_id)))))
+  testing <- zone %>% 
+    filter(obs_id %in% partition)
+  
+  training <- zone %>% 
+    filter(!(obs_id %in% partition))
+
+  #STEP 2: clogit using training set
+  #m_eval <- mclogit(cbind(used,obs_id) ~ delta_t + u925 + v925, 
+  #                       random=~1|species, data = training)
+  m_eval <- clogit(formula1_sc, data = training)
+
+  #STEP 3: predict values of suitability for testing set (used and available)
+  testing$pred <- as.numeric(predict(m_eval,type = "risk",newdata = testing))
+  
+  #STEP 4: rank data in each obs_id based on their pred value (1 the lowest, length(levels(testing$obs_id)) or 116 the highest)
+  testing <- testing[order(testing$obs_id),]
+  testing$ranks <- unlist(with(testing, tapply(pred, obs_id, rank)))
+  
+  #STEP 5: extract ranks of used points
+  used_ranks<-subset(testing,used==1)
+  
+  #STEP 6:create bins for each possible rank
+  bins_df<-data.frame(bins=c(1:116))
+  
+  for (i in 1:nrow(bins_df)){
+    tally<-subset(used_ranks,ranks==i)
+    bins_df$freq[i]<-nrow(tally)
+  }
+  
+  #STEP 7: Spearman's rank correlation
+  k_fold_eval[30]<-cor(bins_df,method="spearman")[2]
+  
+  rm(testing,training,bins_df)
+  
+  
+}
+  
+})
+
+
+#results for k_fold_eval[1:50] (model: m_6b_eval <- mclogit(cbind(used,obs_id) ~ cos(rel.angle) + dist + BLH +
+#dist_coast.sqrt.l.z * wind_support.z +  dist_coast.sqrt.l.z * cross_wind.z,random=~1|id, data = training))
+#mean(k_fold_eval[1:50])
+#[1] 0.338549
+#range(k_fold_eval[1:50])
+#[1] 0.2203467 0.4064363
+
+
+
+#codes for calculating mean and range of correlation coefficients assuming random pattern of habitat selection
+
+
+k_fold_random<-rep(NA,100)
+
+for (i in 1:length(k_fold_random){
+  
+  #STEP 1: partition the strata 80%-20%
+  partition<-sample(levels(zone$obs_id),0.2*length(levels(zone$obs_id))) 
+  testing<-subset(zone,zone$obs_id %in% partition)
+  testing$obs_id<-droplevels(testing$obs_id) #remove empty levels
+  
+  training<-subset(zone,!(zone$obs_id %in% partition))
+  training$obs_id<-droplevels(training$obs_id) #remove empty levels
+  
+  #STEP 2: calculate SSF using training set
+  
+  m_6b_eval <- mclogit(cbind(used,obs_id) ~ cos(rel.angle) + dist + 
+                       dist_coast.sqrt.l.z * wind_support.z +  dist_coast.sqrt.l.z * cross_wind.z,random=~1|id, data = training)
+  
+  
+  #STEP 3: predict values of suitability for testing set (used and available)
+  testing$pred<-as.numeric(predict(m_6b_eval,type="response",newdata=testing))
+  
+  #STEP 4: rank data in each obs_id based on their pred value (1 the lowest, length(levels(testing$obs_id)) or 116 the highest)
+  testing <- testing[order(testing$obs_id),]
+  testing$ranks <- unlist(with(testing, tapply(pred, obs_id, rank)))
+  
+  #STEP 5: extract ranks of used points
+  randoms<-subset(testing,used==0)
+  random_ranks_df<-randoms %>% group_by(obs_id) %>% sample_n(size = 1) #package dplyr
+  #random_ranks<-random_ranks_df$ranks
+  
+  #STEP 6:create bins for each possible rank
+  bins_df<-data.frame(bins=c(1:116))
+  
+  for (i in 1:nrow(bins_df)){
+    tally<-subset(random_ranks_df,ranks==i)
+    bins_df$freq[i]<-nrow(tally)
+  }
+  
+  #STEP 7: Spearman's rank correlation
+  k_fold_random[30]<-cor(bins_df,method="spearman")[2]
+  
+  rm(testing,training,bins_df)
+  
+  
+})
+
+
+########################
+#uhc plots
+#library(dev.tools)
+install_github("aaarchmiller/uhcplots")
+
+#formula1_sc <- used ~ delta_t + u925 + v925 + strata(obs_id)
+formula1_sc_uhc <- ~ delta_t + u925 + v925 -1
+
+
+design.mat.test.full <- model.matrix(formula1_sc_uhc, data=testing)
+z <- model.matrix(~delta_t + u925 + v925 -1, 
+                  data = testing)
+xchoice.full <- uhcsimstrat(nsims = 1000,
+                            xmat = design.mat.test.full, 
+                            stratum = testing$obs_id, 
+                            fit_ssf = m_eval,
+                            z = z)    
+denshats.delta_t.full <- uhcdenscalc(rand_sims = xchoice.full[,,1], 
+                                   dat = z[testing$used==1,1], 
+                                   avail = z[testing$used==0,1]) 
+denshats.u925.full <- uhcdenscalc(rand_sims=xchoice.full[,,2], 
+                                   dat=z[testing$used==1,2], 
+                                   avail=z[testing$used==0,2])  
+denshats.v925.full <- uhcdenscalc(rand_sims=xchoice.full[,,3], 
+                                   dat=z[testing$used==1,3], 
+                                   avail=z[testing$used==0,3]) 
+
+
+X11()
+par(mfrow=c(1,3), mar=c(4,2,2,2), oma=c(3, 4, 7, 0), bty="L")
+
+# First, the density plots
+uhcdensplot(densdat = denshats.delta_t.full$densdat, 
+            densrand = denshats.delta_t.full$densrand, 
+            includeAvail = TRUE, 
+            densavail = denshats.delta_t.full$densavail) 
+mtext(outer=F, side=2, line=3, "Density")
+mtext(outer=F, side=3, line=1, "delta_t", cex=1)
+uhcdensplot(densdat = denshats.u925.full$densdat,
+            densrand = denshats.u925.full$densrand,
+            includeAvail = TRUE, 
+            densavail = denshats.u925.full$densavail) 
+mtext(outer=F, side=3, line=1, "u_wind", cex=1)
+uhcdensplot(densdat = denshats.v925.full$densdat, 
+            densrand = denshats.v925.full$densrand,
+            includeAvail = TRUE, 
+            densavail = denshats.v925.full$densavail) 
+mtext(outer=F, side=3, line=1, "v_wind", cex=1)
+
+#mtext(outer=T, side=3, line=3,  textplot1, cex=1)
+
