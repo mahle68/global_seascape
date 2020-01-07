@@ -2,6 +2,7 @@
 #follows the data preparation in all_data_prep.R
 #Jan 3. 2020. Elham Nourani. Radolfzell, Germany.
 
+library(dplyr)
 library(lme4)
 library(survival)
 library(TwoStepCLogit)
@@ -12,7 +13,7 @@ library(mclogit)
 library(jtools) #summ ftn
 #library(ggstance)
 library(MuMIn) #adjusted r squared
-
+library(uhcplots)
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
 setwd("/home/mahle68/ownCloud/Work/Projects/delta_t")
@@ -43,10 +44,10 @@ ann_z<-ann%>%
   as.data.frame()
 
 
-formula1 <- used ~ scale(delta_t) + scale(u925) + scale(v925) + strata(obs_id)
-formula1_sc <- used ~ delta_t + u925 + v925 + strata(obs_id)
+#formula1 <- used ~ scale(delta_t) + scale(u925) + scale(v925) + strata(obs_id)
+formula1_sc <- used ~ delta_t_z + u925_z + v925_z + strata(obs_id)
 
-m_twz1 <- clogit(formula1, data = ann[ann$zone == "tradewind",])
+m_twz1 <- clogit(formula1_sc, data = ann_z[ann_z$zone == "tradewind",])
 summary(m_twz1)
 
 #m_twz2 <- update(m_twz1,- scale(v925))
@@ -313,32 +314,52 @@ for (i in 1:length(k_fold_random){
 })
 
 
-########################
+####################################################################################################
 #uhc plots
 #library(dev.tools)
 install_github("aaarchmiller/uhcplots")
 
+partition_twz <- ann_z %>% 
+  filter(zone == "tradewind") %>% 
+  distinct(obs_id) %>% 
+  sample_frac(0.2) %>% 
+  pull(obs_id)
+
+testing_twz <- ann_z %>%
+  filter(zone == "tradewind" & obs_id %in% partition_twz)
+
+training_twz <- ann_z %>% 
+  filter(zone == "tradewind" & !(obs_id %in% partition_twz))
+
 #formula1_sc <- used ~ delta_t + u925 + v925 + strata(obs_id)
-formula1_sc_uhc <- ~ delta_t + u925 + v925 -1
+textplot1 <- (expression(y %~% delta_t + u925 + v925 + strata(obs_id)))
+form1a <- (used ~ delta_t_z + u925_z + v925_z  + strata(obs_id))
+form2a <- ~ delta_t_z + u925_z + v925_z -1
 
+#train full model
+ssf_train_full <- clogit(form1a, data = ann_z[ann_z$zone == "tradewind",])
+summary(ssf_train_full)
 
-design.mat.test.full <- model.matrix(formula1_sc_uhc, data=testing)
-z <- model.matrix(~delta_t + u925 + v925 -1, 
-                  data = testing)
-xchoice.full <- uhcsimstrat(nsims = 1000,
+#uhc plots
+design.mat.test.full <- model.matrix(form2a, data=testing_twz)
+
+z <- model.matrix(~ delta_t_z + u925_z + v925_z -1, 
+                  data = testing_twz)
+
+xchoice.full <- uhcsimstrat(nsims = 2000,
                             xmat = design.mat.test.full, 
-                            stratum = testing$obs_id, 
-                            fit_ssf = m_eval,
+                            stratum = testing_twz$obs_id, 
+                            fit_ssf = ssf_train_full,
                             z = z)    
 denshats.delta_t.full <- uhcdenscalc(rand_sims = xchoice.full[,,1], 
-                                   dat = z[testing$used==1,1], 
-                                   avail = z[testing$used==0,1]) 
+                                   dat = z[testing_twz$used==1,1], 
+                                   avail = z[testing_twz$used==0,1]) 
 denshats.u925.full <- uhcdenscalc(rand_sims=xchoice.full[,,2], 
-                                   dat=z[testing$used==1,2], 
-                                   avail=z[testing$used==0,2])  
+                                   dat=z[testing_twz$used==1,2], 
+                                   avail=z[testing_twz$used==0,2])  
 denshats.v925.full <- uhcdenscalc(rand_sims=xchoice.full[,,3], 
-                                   dat=z[testing$used==1,3], 
-                                   avail=z[testing$used==0,3]) 
+                                   dat=z[testing_twz$used==1,3], 
+                                   avail=z[testing_twz$used==0,3]) 
 
 
 X11()
@@ -361,6 +382,5 @@ uhcdensplot(densdat = denshats.v925.full$densdat,
             includeAvail = TRUE, 
             densavail = denshats.v925.full$densavail) 
 mtext(outer=F, side=3, line=1, "v_wind", cex=1)
-
-#mtext(outer=T, side=3, line=3,  textplot1, cex=1)
+mtext(outer=T, side=3, line=3,  textplot1, cex=1)
 
