@@ -11,7 +11,7 @@ library(parallel)
 
 ##### STEP1: connect to python #####
 
-path_to_python <- "C:/Users/mahle/AppData/Local/Programs/Python/Python37"
+path_to_python <- "/home/enourani/"
 use_python(path_to_python)
 
 #import python CDS-API
@@ -123,7 +123,7 @@ stopCluster(mycl)
 #non_parallel
 for (yr in as.character(c(1979:2018))) {
   
-  dates <- paste(yr,"-03-01/to/",yr,"-10-31",sep = "") 
+  dates <- paste(yr,"-02-01/to/",yr,"-10-31",sep = "") 
   target <- paste(yr,"_wind.nc",sep = "")
   
   yr_query <- r_to_py(list(
@@ -133,8 +133,9 @@ for (yr in as.character(c(1979:2018))) {
     date = dates,
     expver = "1",
     grid = "0.75/0.75",
-    levtype = "sfc",
-    param = "34.128/167.128",
+    levList = "925",
+    levtype = "pl",
+    param = "131.128/132.128/135.128",
     step = "0",
     stream = "oper",
     time = "00:00:00/06:00:00/12:00:00/18:00:00", 
@@ -145,10 +146,55 @@ for (yr in as.character(c(1979:2018))) {
   server$retrieve(yr_query)
 }
 
+#######################################
+#download ecmwf data using ecmwfr
+library(ecmwfr)
+#https://cran.r-project.org/web/packages/ecmwfr/vignettes/webapi_vignette.html
+
+wf_set_key(user = "mahle68@gmail.com",
+           key = "ff8a52b16561c01bf792ca70e4a806b0",
+           service = "webapi")
+
+
+wf_get_key(user = "mahle68@gmail.com",
+           service= "webapi")
+
+years<-c(1979:2019) 
+for (yr in 1:length(years)){
+  this_year<-years[yr]
+  dates<-paste(this_year,"-02-1/to/",this_year,"-10-31",sep = "") 
+  target<-paste(this_year,"_wind.nc",sep="")
+  wf_request(user="mahle68@gmail.com",
+             request = list(
+               area="60/-180/0/180", #N/W/S/E
+               class='ei',
+               dataset= "interim",
+               date= dates,
+               expver= "1",
+               grid= "0.75/0.75",
+               levelist= "925",
+               levtype="pl", #pressure level
+               param= "131.128/132.128/135.128",
+               resol="av",
+               step= "0",
+               stream="oper",
+               time="06:00:00/12:00:00/18:00:00", 
+               type="an",
+               format= "netcdf",
+               target=target),
+             transfer = T,
+             path="ERA_INTERIM_data_0_60/")
+}
+
+
+
+
 ##### Quick plotting #####
 windows()
 map("world",fill = TRUE,col = "beige")
-points(sample$lon,sample$lat,cex = 0.3,pch = 16,col = "blue")
+points(sample$lon,sample$lat,cex = 0.3,pch = 16,col = "blue", )
+points(ann_z[ann_z$month == 2,c("location.long","location.lat")], pch = 16, cex = 0.4)
+plot(st_geometry(land_eur_15km))
 #####
 
 
