@@ -3,6 +3,7 @@
 # first version: points were categorized as used vs. available. second version: points are considered as available.
 # also: add a 15 km buffer within the ocean layer before selecting random points.
 # by: Elham Nourani. Dec, 4, 2019. Radolfzell, Germany..
+#update: using permutation tests. Jan. 12. 2020
 
 library(sf)
 library(tidyverse)
@@ -27,6 +28,16 @@ setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
 
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
+
+cv <- function(x){
+  cv <- sd(x, na.rm = T) / mean(x, na.rm = T)
+  return(cv)
+}
+
+rel_sd <- function(x){
+  rel_sd <- sd(x,na.rm = T) / abs(mean(x, na.rm = T))
+  return(rel_sd)
+}
 
 source("R_files/alt_pts_temporal.R")
 
@@ -246,3 +257,38 @@ ggplot(new_data, aes(x = variable, y = scale(score), fill = zone)) +
 # MAPPING #####
 mapview(list(twz,tmz))
 mapview(twz$X,twz$Y)
+
+# STEP 4: permutation test: is, within each zone, the seasonal variation in each variable higher than expected by chance? ##### 
+load("R_files/thr_dataset_14_alt_env_spr_aut.RData") #named dataset_env
+
+#Q: is variation in spread of values in spring and autumn higher than expected by chance?
+#calculate observed cv... cv scales the measure of spread by the mean... so , sd proportional to the mean
+obs_d_rsd <- dataset_env %>% 
+  group_by(zone, season) %>% 
+  summarise(rsd_delta_t = rel_sd(delta_t),
+            rsd_u_925 = rel_sd(u_925),
+            rsd_v_925 = rel_sd(v_925)) %>% 
+  group_by(zone) %>% 
+  summarise(delta_t_d_rsd_obs = abs(diff(rsd_delta_t)),
+            u_d_rsd_obs = abs(diff(rsd_u_925)),
+            v_d_rsd_obs = abs(diff(rsd_v_925)))
+
+#produce random datasets, randomizing wihtin zone. shuffle season because that's the pattern that I want to remove
+permutations <- 1000
+
+#create alternative datasets  
+#new_data_tmpz_ls <- lapply(1:permutations, function(x){ #for each permutation
+#  new_obs_id_ls <-lapply(split(ann_z[ann_z$zone == "temperate",], ann_z[ann_z$zone == "temperate","obs_id"]), function(y){ #for each obs_id
+#    rnd_obs <- sample(1:15,1) #draw a random number to be the new index for used row
+#    y[rnd_obs,"used"] <- 1
+#    y[-rnd_obs,"used"] <- 0
+#    y
+#  })
+#  new_obs_id <- do.call(rbind, new_obs_id_ls)
+#  new_obs_id
+#}) 
+
+
+
+
+
