@@ -277,16 +277,52 @@ obs_d_rsd <- dataset_env %>%
 permutations <- 1000
 
 #create alternative datasets  
-#new_data_tmpz_ls <- lapply(1:permutations, function(x){ #for each permutation
-#  new_obs_id_ls <-lapply(split(ann_z[ann_z$zone == "temperate",], ann_z[ann_z$zone == "temperate","obs_id"]), function(y){ #for each obs_id
-#    rnd_obs <- sample(1:15,1) #draw a random number to be the new index for used row
-#    y[rnd_obs,"used"] <- 1
-#    y[-rnd_obs,"used"] <- 0
-#    y
-#  })
-#  new_obs_id <- do.call(rbind, new_obs_id_ls)
-#  new_obs_id
-#}) 
+rnd_data_ls <- lapply(1:permutations, function(x){ #for each permutation
+  new_data <- lapply(split(dataset_env, dataset_env$zone), function(y){ #for each zone
+    y_rnd <- y %>% 
+      mutate_at(c(11,14,15),
+                sample, replace = F)
+    y_rnd
+  }) %>% 
+    reduce(rbind)
+  new_data
+})
+
+#calculate the random statistics #
+rnd_d_rsd_ls <- lapply(rnd_data_ls, function(x){ 
+  rnd_d_rsd <- x %>% 
+    group_by(zone, season) %>% 
+    summarise(rsd_delta_t = rel_sd(delta_t),
+              rsd_u_925 = rel_sd(u_925),
+              rsd_v_925 = rel_sd(v_925)) %>% 
+    group_by(zone) %>% 
+    summarise(delta_t_d_rsd_obs = abs(diff(rsd_delta_t)),
+              u_d_rsd_obs = abs(diff(rsd_u_925)),
+              v_d_rsd_obs = abs(diff(rsd_v_925)))
+})
+
+
+
+  dataset_env %>% 
+  group_by(zone, season) %>% 
+  summarise(rsd_delta_t = rel_sd(delta_t),
+            rsd_u_925 = rel_sd(u_925),
+            rsd_v_925 = rel_sd(v_925)) %>% 
+  group_by(zone) %>% 
+  summarise(delta_t_d_rsd_obs = abs(diff(rsd_delta_t)),
+            u_d_rsd_obs = abs(diff(rsd_u_925)),
+            v_d_rsd_obs = abs(diff(rsd_v_925)))
+
+rnd_st_tmpz_ls <- lapply(new_data_tmpz_ls, function(x){
+  model <-  clogit(formula, data = x[x$zone == "temperate",])
+  stat_tmpz_u <- abs(coef(model)[1])-abs(coef(model)[2])
+  stat_tmpz_v <- abs(coef(model)[1])-abs(coef(model)[3])
+  data.frame(u = stat_tmpz_u, v= stat_tmpz_v, row.names = "")
+})
+
+rnd_stat_tmpz <- do.call(rbind, rnd_st_tmpz_ls)
+
+
 
 
 
