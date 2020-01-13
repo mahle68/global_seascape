@@ -271,10 +271,13 @@ obs_d_rsd <- dataset_env %>%
   group_by(zone) %>% 
   summarise(delta_t_d_rsd_obs = abs(diff(rsd_delta_t)),
             u_d_rsd_obs = abs(diff(rsd_u_925)),
-            v_d_rsd_obs = abs(diff(rsd_v_925)))
+            v_d_rsd_obs = abs(diff(rsd_v_925))) %>% 
+  as.data.frame()
 
 #produce random datasets, randomizing wihtin zone. shuffle season because that's the pattern that I want to remove
 permutations <- 1000
+
+
 
 #create alternative datasets  
 rnd_data_ls <- lapply(1:permutations, function(x){ #for each permutation
@@ -288,8 +291,8 @@ rnd_data_ls <- lapply(1:permutations, function(x){ #for each permutation
   new_data
 })
 
-#calculate the random statistics #
-rnd_d_rsd_ls <- lapply(rnd_data_ls, function(x){ 
+#calculate the random statistic
+rnd_d_rsd <- lapply(rnd_data_ls, function(x){ 
   rnd_d_rsd <- x %>% 
     group_by(zone, season) %>% 
     summarise(rsd_delta_t = rel_sd(delta_t),
@@ -299,28 +302,44 @@ rnd_d_rsd_ls <- lapply(rnd_data_ls, function(x){
     summarise(delta_t_d_rsd_obs = abs(diff(rsd_delta_t)),
               u_d_rsd_obs = abs(diff(rsd_u_925)),
               v_d_rsd_obs = abs(diff(rsd_v_925)))
-})
+}) %>% 
+  reduce(rbind) %>% 
+  as.data.frame()
 
 
+#plot the random and observed values
+par(mfrow = c(3,2))
+for(i in c("tradewind","temperate")){
+  zone <- i
+  for(j in c("delta_t", "u", "v"))
+  plot(1:permutations, rnd_d_rsd[rnd_d_rsd$zone == i, grep(j,colnames(rnd_d_rsd))], type = "l", main = paste(i, "delta rsd in", j, sep = " "))
+  abline(h = obs_d_rsd[obs_d_rsd$zone == i, grep(j,colnames(obs_d_rsd))], col = "red")
+}
 
-  dataset_env %>% 
-  group_by(zone, season) %>% 
-  summarise(rsd_delta_t = rel_sd(delta_t),
-            rsd_u_925 = rel_sd(u_925),
-            rsd_v_925 = rel_sd(v_925)) %>% 
-  group_by(zone) %>% 
-  summarise(delta_t_d_rsd_obs = abs(diff(rsd_delta_t)),
-            u_d_rsd_obs = abs(diff(rsd_u_925)),
-            v_d_rsd_obs = abs(diff(rsd_v_925)))
+par(mfrow = c(3,2))
+for(i in c("tradewind","temperate")){
+  for(j in c("delta_t", "u", "v"))
+    hist(rnd_d_rsd[rnd_d_rsd$zone == i, grep(j,colnames(rnd_d_rsd))], breaks = 50, col = "lightgrey", 
+         xlim = c(0, obs_d_rsd[obs_d_rsd$zone == i, grep(j,colnames(obs_d_rsd))] + 0.5),main = paste(i, "delta rsd in", j, sep = " "))
+  abline(v = obs_d_rsd[obs_d_rsd$zone == i, grep(j,colnames(obs_d_rsd))], col = "red")
+}
 
-rnd_st_tmpz_ls <- lapply(new_data_tmpz_ls, function(x){
-  model <-  clogit(formula, data = x[x$zone == "temperate",])
-  stat_tmpz_u <- abs(coef(model)[1])-abs(coef(model)[2])
-  stat_tmpz_v <- abs(coef(model)[1])-abs(coef(model)[3])
-  data.frame(u = stat_tmpz_u, v= stat_tmpz_v, row.names = "")
-})
+par(mfrow = c(1,2))
+#plot the frequency distribution of u vlaues
+hist(rnd_stat_tmpz$u, breaks = 50, col = "lightgrey", xlim = c(-0.3,0.3), main = "delta_t - wind_u")
+abline(v = stat_obs_tmpz_u, col = "red") #random network is homogenous, that is why cv goes down the more randomization we do
 
-rnd_stat_tmpz <- do.call(rbind, rnd_st_tmpz_ls)
+#plot the frequency distribution of v vlaues
+hist(rnd_stat_tmpz$v, breaks = 50, col = "lightgrey", xlim = c(-0.3,0.3), main = "delta_t - wind_v")
+abline(v = stat_obs_tmpz_v, col = "red") #random network is homogenous, that is why cv goes down the more randomization we dopaste(i,"delta rsd",j, sep = " ")
+
+
+##### STEP 5: calculate p-values #####
+#calculate the p-value. one-tailed
+p_value_u <- sum(stat_obs_tmpz_u <= rnd_stat_tmpz$u) / permutations # 1: hypothesis is rejected. delta t does not have a higher effect than u wind
+p_value_v <- sum(stat_obs_tmpz_v <= rnd_stat_tmpz$v) / permutations # 2: hypothesis is accepted. delta t has a higher effect than v wind
+
+
 
 
 
