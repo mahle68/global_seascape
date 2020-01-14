@@ -13,6 +13,7 @@ library(maptools)
 library(lwgeom)
 library(lubridate)
 library(lutz) #local time zone assignment
+library(parallel)
 
 #raincloud plot
 library(cowplot)
@@ -28,6 +29,7 @@ setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
 
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
+mycl <- makeCluster(detectCores() - 2)
 
 cv <- function(x){
   cv <- sd(x, na.rm = T) / mean(x, na.rm = T)
@@ -262,33 +264,136 @@ mapview(twz$X,twz$Y)
 load("R_files/thr_dataset_14_alt_env_spr_aut.RData") #named dataset_env
 
 #Q: is variation in spread of values in spring and autumn higher than expected by chance?
-#calculate observed cv... cv scales the measure of spread by the mean... so , sd proportional to the mean
+
+#calculate observed delta_rsd within each zone. for each zone, calc rsd in each obs_id, average across seasons for each zone, subtract the averages
 obs_d_rsd <- dataset_env %>% 
-  group_by(zone, season) %>% 
+  group_by(zone, season, obs_id) %>% 
   summarise(rsd_delta_t = rel_sd(delta_t),
             rsd_u_925 = rel_sd(u_925),
             rsd_v_925 = rel_sd(v_925)) %>% 
+  group_by(zone, season) %>% 
+  summarise(avg_delta_t_rsd_obs = mean(rsd_delta_t),
+            avg_u_rsd_obs = mean(rsd_u_925),
+            avg_v_rsd_obs = mean(rsd_v_925)) %>% 
   group_by(zone) %>% 
-  summarise(delta_t_d_rsd_obs = abs(diff(rsd_delta_t)),
-            u_d_rsd_obs = abs(diff(rsd_u_925)),
-            v_d_rsd_obs = abs(diff(rsd_v_925))) %>% 
+  summarise(delta_t_d_rsd_obs = abs(diff(avg_delta_t_rsd_obs)),
+            u_d_rsd_obs = abs(diff(avg_u_rsd_obs)),
+            v_d_rsd_obs = abs(diff(avg_v_rsd_obs))) %>% 
   as.data.frame()
+
+save(obs_d_rsd, file = "R_files/seasonal_thr_obs_summary.RData")
 
 #produce random datasets, randomizing wihtin zone. shuffle season because that's the pattern that I want to remove
 permutations <- 1000
+permutations <- 2
 
+#create a new var: paste zone and obs_id together
 
+#create alternative datasets 
+dataset_env <- dataset_env %>% 
+  mutate(zone_obs_id = paste(zone, obs_id, sep = "_")) %>% 
+  arrange(zone_obs_id)
 
-#create alternative datasets  
-rnd_data_ls <- lapply(1:permutations, function(x){ #for each permutation
-  new_data <- lapply(split(dataset_env, dataset_env$zone), function(y){ #for each zone
+a <- Sys.time()
+#rnd_data_ls <- lapply(1:permutations, function (x){
+  obs_ids_ls <- lapply(split(dataset_env,dataset_env$zone_obs_id), function(y){
     y_rnd <- y %>% 
       mutate_at(c(11,14,15),
                 sample, replace = F)
     y_rnd
   }) %>% 
-    reduce(rbind)
-  new_data
+    reduce(rbind) # all obs_ids in one df 
+  #obs_ids_ls
+#})
+b <-Sys.time() - a #3.563924 mins
+
+
+#try Rsample package
+library(Rsampling)
+
+a <-Sys.time()
+new_data <- within_columns(dataset_env, cols = c(11,14,15),
+                           stratum = dataset_env$zone_obs_id,
+                           replace = F)
+b <-Sys.time() - a #22.30151 secs
+
+#try on a cluster
+#prep cluster
+clusterExport(mycl, c("permutations", "dataset_env")) 
+
+clusterEvalQ(mycl, {
+  library(dplyr)
+  library(purrr)
+})
+
+
+
+a <- Sys.time()
+#rnd_data_ls <- lapply(1:permutations, function (x){
+obs_ids_ls2 <- parLapply(cl = mycl, X = split(dataset_env,dataset_env$zone_obs_id), function(y){
+  y_rnd <- y %>% 
+    mutate_at(c(11,14,15),
+              sample, replace = F)
+  y_rnd
+}) %>% 
+  reduce(rbind) # all obs_ids in one df 
+#obs_ids_ls
+#})
+b <-Sys.time() - a #2.896873 mins
+
+stopCluster(mycl)
+
+
+
+
+#prep cluster
+clusterExport(mycl, c("permutations", "dataset_env")) 
+
+clusterEvalQ(mycl, {
+  library(dplyr)
+  library(purrr)
+})
+
+
+rnd_data_ls <- parLapply(cl = mycl, X = 1:permutations, fun = function(x){ #for each permutation
+  
+  lapply(split(dataset_env, dataset_env$zone), function(y){ #for each zone
+    lapply(split(y, y$obs_id), function(z){
+      z_rnd <- z %>% 
+        mutate_at(c(11,14,15),
+                  sample, replace = F)
+      z_rnd
+    }) %>% 
+      reduce(rbind) #all the obs_ids in one df
+  }) %>% 
+    reduce(rbind) #the two zones in one df
+})
+
+stopCluster(mycl)
+
+save(rnd_data_ls, file = "R_files/thr_rnd_datasets.RData")
+
+#rnd_data_ls <- lapply(1:permutations, function(x){ #for each permutation
+#  new_data <- lapply(split(dataset_env, dataset_env$zone), function(y){ #for each zone
+#    y_rnd <- y %>% 
+#      mutate_at(c(11,14,15),
+#                sample, replace = F)
+#    y_rnd
+#  }) %>% 
+#    reduce(rbind)
+#  new_data
+#})
+
+#create alternative datasets  
+new_data_tmpz_ls <- lapply(1:permutations, function(x){ #for each permutation
+  new_obs_id_ls <-lapply(split(ann_z[ann_z$zone == "temperate",], ann_z[ann_z$zone == "temperate","obs_id"]), function(y){ #for each obs_id
+    rnd_obs <- sample(1:15,1) #draw a random number to be the new index for used row
+    y[rnd_obs,"used"] <- 1
+    y[-rnd_obs,"used"] <- 0
+    y
+  })
+  new_obs_id <- do.call(rbind, new_obs_id_ls)
+  new_obs_id
 })
 
 #calculate the random statistic
