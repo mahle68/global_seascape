@@ -264,115 +264,10 @@ mapview(twz$X,twz$Y)
 # STEP 4: permutation test: is, within each zone, the seasonal variation in each variable higher than expected by chance? ##### 
 load("R_files/thr_dataset_14_alt_env_spr_aut.RData") #named dataset_env
 
-# Q: is variation in wind and delta-t between the two zones higher than expected by chance?
-
 #create a new var: paste zone and obs_id together
 dataset_env <- dataset_env %>% 
   mutate(zone_obs_id = paste(zone, obs_id, sep = "_")) %>% 
   arrange(zone, obs_id)
-
-
-##### spring
-#calculate observed avg_delta_rsd between the two zones
-obs_d_rsd_spr <- dataset_env[dataset_env$season == "spring",] %>% 
-  group_by(zone,obs_id) %>% 
-  summarise(rsd_delta_t = rel_sd(delta_t),
-            rsd_u_925 = rel_sd(u_925),
-            rsd_v_925 = rel_sd(v_925)) %>% 
-  summarise(avg_delta_t_rsd_obs = mean(rsd_delta_t),
-            avg_u_rsd_obs = mean(rsd_u_925),
-            avg_v_rsd_obs = mean(rsd_v_925)) %>% 
-  summarise(delta_t_d_rsd_obs = abs(diff(avg_delta_t_rsd_obs)),
-            u_d_rsd_obs = abs(diff(avg_u_rsd_obs)),
-            v_d_rsd_obs = abs(diff(avg_v_rsd_obs))) %>% 
-  as.data.frame()
-
-
-#create a sample of the data that only has one row per obs_id
-data_sample_spr <- dataset_env[dataset_env$season == "spring",] %>% 
-  group_by(zone_obs_id) %>% 
-  slice(1) %>% 
-  ungroup() %>% 
-  dplyr::select(c("zone", "zone_obs_id")) %>% 
-  as.data.frame()
-
-#create randomized datasets. where zone is shuffled but the obs_id structure is maintained
-permutations <- 1000
-
-#prep cluster
-mycl <- makeCluster(detectCores() - 2)
-clusterExport(mycl, c("permutations", "dataset_env", "data_sample_spr")) 
-
-clusterEvalQ(mycl, {
-  library(dplyr)
-  library(purrr)
-  library(Rsampling)
-})
-
-
-a <- Sys.time()
-rnd_data_ls_spr <- parLapply(cl = mycl, X = 1:permutations, fun = function(x){ 
-  new_sample_data <- within_columns(data_sample_spr, cols = 1, replace = F) #reshuffle the zone
-  new_data <- dataset_env[dataset_env$season == "spring",] %>% 
-    inner_join(new_sample_data, by = "zone_obs_id")
-  new_data
-})
-b <- Sys.time() - a #1.717775 mins
-
-stopCluster(mycl)
-
-#calculate rnd_delta_rsd
-
-mycl <- makeCluster(detectCores() - 7) #run on fewer cores to have enough memory allocated to each. if this makes any sense.
-clusterExport(mycl, c("rnd_data_ls_spr", "rel_sd")) 
-
-clusterEvalQ(mycl, {
-  library(dplyr)
-  library(purrr)
-})
-
-a <- Sys.time()
-rnd_d_rsd_spr <- parLapply(l = mycl, X = rnd_data_ls_spr, fun = function(x){ #for each randomized dataframe
-  rnd_d_rsd_one <- x %>% 
-    group_by(zone.y, obs_id) %>% #zone.y is the randomized zone
-    summarise(rsd_delta_t = rel_sd(delta_t),
-              rsd_u_925 = rel_sd(u_925),
-              rsd_v_925 = rel_sd(v_925)) %>% #calculate rsd within each obs_id
-    summarise(avg_delta_t_rsd_obs = mean(rsd_delta_t), #average rsd across obs_id within each season
-              avg_u_rsd_obs = mean(rsd_u_925),
-              avg_v_rsd_obs = mean(rsd_v_925)) %>% 
-    summarise(delta_t_d_rsd_obs = abs(diff(avg_delta_t_rsd_obs)), #subtract autumn and spring rsd within each zone
-              u_d_rsd_obs = abs(diff(avg_u_rsd_obs)),
-              v_d_rsd_obs = abs(diff(avg_v_rsd_obs))) %>% 
-    as.data.frame()
-  
-  rnd_d_rsd_one
-}) %>% 
-  reduce(rbind) %>% 
-  as.data.frame()
-
-b <- Sys.time() - a #9.597779 secs secs
-stopCluster(mycl)
-
-
-dataset_env[dataset_env$season == "spring",] %>% 
-  group_by(zone,obs_id) %>% 
-  summarise(rsd_delta_t = rel_sd(delta_t),
-            rsd_u_925 = rel_sd(u_925),
-            rsd_v_925 = rel_sd(v_925)) %>% 
-  summarise(avg_delta_t_rsd_obs = mean(rsd_delta_t),
-            avg_u_rsd_obs = mean(rsd_u_925),
-            avg_v_rsd_obs = mean(rsd_v_925)) %>% 
-  summarise(delta_t_d_rsd_obs = abs(diff(avg_delta_t_rsd_obs)),
-            u_d_rsd_obs = abs(diff(avg_u_rsd_obs)),
-            v_d_rsd_obs = abs(diff(avg_v_rsd_obs))) %>% 
-  as.data.frame()
-
-
-
-
-
-
 
 #Q: is variation in spread of values in spring and autumn higher than expected by chance?
 #run both data randomization and statistic calculation wihtin one loop
@@ -395,11 +290,6 @@ obs_d_rsd <- dataset_env %>%
 
 #produce random datasets, randomizing wihtin zone. shuffle season because that's the pattern that I want to remove
 permutations <- 1000
-
-#create a new var: paste zone and obs_id together
-dataset_env <- dataset_env %>% 
-  mutate(zone_obs_id = paste(zone, obs_id, sep = "_")) %>% 
-  arrange(zone_obs_id)
 
 #create a sample of the data that only has one row per obs_id
 data_sample <- dataset_env %>% 
@@ -445,36 +335,10 @@ rnd_d_rsd <- parLapply(cl = mycl, X = 1:permutations, fun = function(x){
   reduce(rbind) %>% 
   as.data.frame()
 
-b <- Sys.time() - a #3.433704 mins
+b <- Sys.time() - a #1.7 mins
 
 stopCluster(mycl)
 
-#calculate the random statistic
-
-a <- Sys.time()
-rnd_d_rsd <- parLapply(l = mycl, X = rnd_data_ls, fun = function(x){ #for each randomized dataframe
-  rnd_d_rsd_one <- x %>% 
-    group_by(zone, season.y, obs_id) %>% #season.y is the shuffled season
-    summarise(rsd_delta_t = rel_sd(delta_t),
-              rsd_u_925 = rel_sd(u_925),
-              rsd_v_925 = rel_sd(v_925)) %>% #calculate rsd within each obs_id
-    group_by(zone, season.y) %>% 
-    summarise(avg_delta_t_rsd_obs = mean(rsd_delta_t), #average rsd across obs_id within each season
-              avg_u_rsd_obs = mean(rsd_u_925),
-              avg_v_rsd_obs = mean(rsd_v_925)) %>% 
-    group_by(zone) %>% 
-    summarise(delta_t_d_rsd_obs = abs(diff(avg_delta_t_rsd_obs)), #subtract autumn and spring rsd within each zone
-              u_d_rsd_obs = abs(diff(avg_u_rsd_obs)),
-              v_d_rsd_obs = abs(diff(avg_v_rsd_obs))) %>% 
-    as.data.frame()
-  
-  rnd_d_rsd_one
-}) %>% 
-  reduce(rbind) %>% 
-  as.data.frame()
-
-b <- Sys.time() - a #9.597779 secs secs
-stopCluster(mycl)
 
 #plot the random and observed values
 par(mfrow = c(3,2))
@@ -495,19 +359,190 @@ for(i in c("tradewind","temperate")){
 
 par(mfrow = c(1,2))
 
-#plot the frequency distribution of u vlaues
-hist(rnd_stat_tmpz$u, breaks = 50, col = "lightgrey", xlim = c(-0.3,0.3), main = "delta_t - wind_u")
-abline(v = stat_obs_tmpz_u, col = "red") #random network is homogenous, that is why cv goes down the more randomization we do
+##### STEP 5: calculate p-values #####
+p_values <- data.frame(NULL)
 
-#plot the frequency distribution of v vlaues
-hist(rnd_stat_tmpz$v, breaks = 50, col = "lightgrey", xlim = c(-0.3,0.3), main = "delta_t - wind_v")
-abline(v = stat_obs_tmpz_v, col = "red") #random network is homogenous, that is why cv goes down the more randomization we dopaste(i,"delta rsd",j, sep = " ")
+for(i in c("tradewind","temperate")){
+  for(j in c("delta_t", "u", "v")){
+    p <- sum(obs_d_rsd[obs_d_rsd$zone == i, grep(j,colnames(obs_d_rsd))] <= rnd_d_rsd[rnd_d_rsd$zone == i, grep(j,colnames(rnd_d_rsd))]) / permutations
+    p_values[i, j] <- p
+  }
+}
+
+
+# Q: is variation in wind and delta-t between the two zones higher than expected by chance?
+
+##### spring
+#calculate observed avg_delta_rsd between the two zones
+obs_d_rsd_spr <- dataset_env[dataset_env$season == "spring",] %>% 
+  group_by(zone,obs_id) %>% 
+  summarise(rsd_delta_t = rel_sd(delta_t),
+            rsd_u_925 = rel_sd(u_925),
+            rsd_v_925 = rel_sd(v_925)) %>% 
+  summarise(avg_delta_t_rsd_obs = mean(rsd_delta_t),
+            avg_u_rsd_obs = mean(rsd_u_925),
+            avg_v_rsd_obs = mean(rsd_v_925)) %>% 
+  summarise(delta_t_d_rsd_obs = abs(diff(avg_delta_t_rsd_obs)),
+            u_d_rsd_obs = abs(diff(avg_u_rsd_obs)),
+            v_d_rsd_obs = abs(diff(avg_v_rsd_obs))) %>% 
+  as.data.frame()
+
+
+#create a sample of the data that only has one row per obs_id
+data_sample_spr <- dataset_env[dataset_env$season == "spring",] %>% 
+  group_by(zone_obs_id) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  dplyr::select(c("zone", "zone_obs_id")) %>% 
+  as.data.frame()
+
+#create randomized datasets. where zone is shuffled but the obs_id structure is maintained
+permutations <- 1000
+
+#prep cluster
+mycl <- makeCluster(detectCores() - 2)
+clusterExport(mycl, c("permutations", "dataset_env", "data_sample_spr", "rel_sd")) 
+
+clusterEvalQ(mycl, {
+  library(dplyr)
+  library(purrr)
+  library(Rsampling)
+})
+
+
+a <- Sys.time()
+rnd_d_rsd_spr <- parLapply(cl = mycl, X = 1:permutations, fun = function(x){ 
+  new_sample_data <- within_columns(data_sample_spr, cols = 1, replace = F) #reshuffle the zone
+  new_data <- dataset_env[dataset_env$season == "spring",] %>% 
+    inner_join(new_sample_data, by = "zone_obs_id")
+  rnd_stat <- new_data %>% 
+    group_by(zone.y, obs_id) %>% #zone.y is the randomized zone
+    summarise(rsd_delta_t = rel_sd(delta_t),
+              rsd_u_925 = rel_sd(u_925),
+              rsd_v_925 = rel_sd(v_925)) %>% #calculate rsd within each obs_id
+    summarise(avg_delta_t_rsd_obs = mean(rsd_delta_t), #average rsd across obs_id within each season
+              avg_u_rsd_obs = mean(rsd_u_925),
+              avg_v_rsd_obs = mean(rsd_v_925)) %>% 
+    summarise(delta_t_d_rsd_obs = abs(diff(avg_delta_t_rsd_obs)), #subtract autumn and spring rsd within each zone
+              u_d_rsd_obs = abs(diff(avg_u_rsd_obs)),
+              v_d_rsd_obs = abs(diff(avg_v_rsd_obs))) %>% 
+    as.data.frame()
+  rnd_stat
+})%>% 
+  reduce(rbind) %>% 
+  as.data.frame()
+
+b <- Sys.time() - a #52.97405 secs
+
+stopCluster(mycl)
+
+
+#plot the random and observed values
+
+par(mfrow = c(1,3))
+  for(i in c("delta_t", "u", "v")) {
+    hist(rnd_d_rsd_spr[, grep(i,colnames(rnd_d_rsd_spr))], col = "lightgrey", 
+         #xlim = c(0, obs_d_rsd_spr[, grep(i,colnames(obs_d_rsd_spr))] + 0.5),
+         main = paste(i, "delta rsd in", j, sep = " "))
+  abline(v = obs_d_rsd_spr[, grep(j,colnames(obs_d_rsd_spr))], col = "red")
+}
+
+par(mfrow = c(1,2))
+
+##### STEP 5: calculate p-values #####
+p_values <- data.frame(NULL)
+
+
+  for(i in c("delta_t", "u", "v")){
+    p <- sum(obs_d_rsd_spr[, grep(i,colnames(obs_d_rsd_spr))] <= rnd_d_rsd_spr[, grep(i,colnames(rnd_d_rsd_spr))]) / permutations
+    p_values[i,1] <- p
+  }
+
+##### autumn
+#calculate observed avg_delta_rsd between the two zones
+obs_d_rsd_aut <- dataset_env[dataset_env$season == "autumn",] %>% 
+  group_by(zone,obs_id) %>% 
+  summarise(rsd_delta_t = rel_sd(delta_t),
+            rsd_u_925 = rel_sd(u_925),
+            rsd_v_925 = rel_sd(v_925)) %>% 
+  summarise(avg_delta_t_rsd_obs = mean(rsd_delta_t),
+            avg_u_rsd_obs = mean(rsd_u_925),
+            avg_v_rsd_obs = mean(rsd_v_925)) %>% 
+  summarise(delta_t_d_rsd_obs = abs(diff(avg_delta_t_rsd_obs)),
+            u_d_rsd_obs = abs(diff(avg_u_rsd_obs)),
+            v_d_rsd_obs = abs(diff(avg_v_rsd_obs))) %>% 
+  as.data.frame()
+
+
+#create a sample of the data that only has one row per obs_id
+data_sample_aut <- dataset_env[dataset_env$season == "autumn",] %>% 
+  group_by(zone_obs_id) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  dplyr::select(c("zone", "zone_obs_id")) %>% 
+  as.data.frame()
+
+#create randomized datasets. where zone is shuffled but the obs_id structure is maintained
+permutations <- 1000
+
+#prep cluster
+mycl <- makeCluster(detectCores() - 2)
+clusterExport(mycl, c("permutations", "dataset_env", "data_sample_aut", "rel_sd")) 
+
+clusterEvalQ(mycl, {
+  library(dplyr)
+  library(purrr)
+  library(Rsampling)
+})
+
+
+a <- Sys.time()
+rnd_d_rsd_aut <- parLapply(cl = mycl, X = 1:permutations, fun = function(x){ 
+  new_sample_data <- within_columns(data_sample_aut, cols = 1, replace = F) #reshuffle the zone
+  new_data <- dataset_env[dataset_env$season == "autumn",] %>% 
+    inner_join(new_sample_data, by = "zone_obs_id")
+  rnd_stat <- new_data %>% 
+    group_by(zone.y, obs_id) %>% #zone.y is the randomized zone
+    summarise(rsd_delta_t = rel_sd(delta_t),
+              rsd_u_925 = rel_sd(u_925),
+              rsd_v_925 = rel_sd(v_925)) %>% #calculate rsd within each obs_id
+    summarise(avg_delta_t_rsd_obs = mean(rsd_delta_t), #average rsd across obs_id within each season
+              avg_u_rsd_obs = mean(rsd_u_925),
+              avg_v_rsd_obs = mean(rsd_v_925)) %>% 
+    summarise(delta_t_d_rsd_obs = abs(diff(avg_delta_t_rsd_obs)), #subtract autumn and autumn rsd within each zone
+              u_d_rsd_obs = abs(diff(avg_u_rsd_obs)),
+              v_d_rsd_obs = abs(diff(avg_v_rsd_obs))) %>% 
+    as.data.frame()
+  rnd_stat
+})%>% 
+  reduce(rbind) %>% 
+  as.data.frame()
+
+b <- Sys.time() - a #50.70881 secs
+
+stopCluster(mycl)
+
+
+#plot the random and observed values
+
+par(mfrow = c(1,3))
+for(i in c("delta_t", "u", "v")) {
+  hist(rnd_d_rsd_aut[, grep(i,colnames(rnd_d_rsd_aut))], col = "lightgrey", 
+       #xlim = c(0, obs_d_rsd_aut[, grep(i,colnames(obs_d_rsd_aut))] + 0.5),
+       main = paste(i, "delta rsd in", j, sep = " "))
+  abline(v = obs_d_rsd_aut[, grep(j,colnames(obs_d_rsd_aut))], col = "red")
+}
+
 
 
 ##### STEP 5: calculate p-values #####
-#calculate the p-value. one-tailed
-p_value_u <- sum(stat_obs_tmpz_u <= rnd_stat_tmpz$u) / permutations # 1: hypothesis is rejected. delta t does not have a higher effect than u wind
-p_value_v <- sum(stat_obs_tmpz_v <= rnd_stat_tmpz$v) / permutations # 2: hypothesis is accepted. delta t has a higher effect than v wind
+p_values_aut <- data.frame(NULL)
+
+
+for(i in c("delta_t", "u", "v")){
+  p <- sum(obs_d_rsd_aut[, grep(i,colnames(obs_d_rsd_aut))] <= rnd_d_rsd_aut[, grep(i,colnames(rnd_d_rsd_aut))]) / permutations
+  p_values_aut[i,1] <- p
+}
 
 
 
