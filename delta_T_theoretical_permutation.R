@@ -15,11 +15,10 @@ library(lubridate)
 library(lutz) #local time zone assignment
 library(parallel)
 library(Rsampling)
+library(ggplot2)
 
 #raincloud plot
 library(cowplot)
-library(dplyr)
-library(readr)
 
 source("/home/enourani/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/R_rainclouds.R")
 source("/home/enourani/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/summarySE.R")
@@ -119,7 +118,7 @@ load("R_files/thr_dataset_14_alt_env_spr_aut.RData") #named dataset_env
 
 #variance of alternative values
 dataset_env_alt_var <- dataset_env %>%
-  group_by(zone,obs_id) %>%
+  group_by(zone, obs_id) %>%
   summarise(av_delta_t_var = var(delta_t),
             av_u_var = var(u_925),
             av_v_var = var(v_925),
@@ -144,7 +143,7 @@ wind_v_var <- dataset_env_alt_var %>%
 new_data_var <- rbind(delta_t_var,wind_u_var,wind_v_var)
 
 X11()
-ggplot(new_data_var, aes(x = variable, y = score, fill = zone)) +
+plot <- ggplot(new_data_var, aes(x = variable, y = score, fill = zone)) +
   geom_flat_violin(aes(fill = zone),position = position_nudge(x = .1, y = 0), adjust = 1.5, trim = FALSE, alpha = .5, colour = NA)+
   geom_point(aes(x = as.numeric(factor(variable))-.15, y = score, colour = zone),position = position_jitter(width = .05), size = 1, shape = 19, alpha = 0.1)+
   geom_boxplot(aes(x = variable, y = score, fill = zone),outlier.shape = NA, alpha = .5, width = .1, colour = "black")+
@@ -219,15 +218,20 @@ ggplot(new_data[new_data$season == "autumn",], aes(x = variable, y = score, fill
 
 #plot both seasons in one
 X11()
-ggplot(new_data, aes(x = variable, y = score, fill = zone)) +
+plot_values <- ggplot(new_data, aes(x = variable, y = score, fill = zone)) +
   geom_flat_violin(aes(fill = zone),position = position_nudge(x = .1, y = 0), adjust = 1.5, trim = FALSE, alpha = .5, colour = NA)+
   geom_point(aes(x = as.numeric(factor(variable))-.15, y = score, colour = zone),position = position_jitter(width = .05), size = 1, shape = 19, alpha = 0.1)+
   geom_boxplot(aes(x = variable, y = score, fill = zone),outlier.shape = NA, alpha = .5, width = .1, colour = "black")+
   scale_colour_brewer(palette = "Dark2")+
   scale_fill_brewer(palette = "Dark2")+
-  theme_classic()+
-  facet_grid(season~.) +
-  ggtitle("Atmospheric conditions")
+  theme_classic(base_size = 20) +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        element_text = family)+
+  facet_grid(season~.)
+
+ggsave("rain_cloud_plot.tiff",plot = plot_values, dpi = 500,
+       path = "/home/enourani/ownCloud/Work/safi_lab_meeting/presentation_jan17")
 
 #plot absolute values of the wind components. i dont care about directionality, just the strength
 X11()
@@ -552,3 +556,7 @@ for(i in c("delta_t", "u", "v")){
 
 
 
+#################
+#add fonts
+library(showtext)
+font_add("serif","/usr/share/fonts/opentype/cantarell/Cantarell-Light")
