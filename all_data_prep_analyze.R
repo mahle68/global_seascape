@@ -35,6 +35,11 @@ alt_pts_temporal <- function(date_time,n_days) {
 
 ##### STEP 1: read in the data and filter for adult birds and season and databse-specific filters #####
 
+#read in meta-data for peregrine falcon and american osprey. extract IDs for adult birds
+pf_ad <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/data/Osprey_Americas/Peregrines Ivan.csv", stringsAsFactors = F) %>% 
+  filter(Age == "ad")
+ao_meta <-read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/data/Osprey_Americas/ROB mig data190411.csv", stringsAsFactors = F)
+
 #also assign date_time, year, month, track, species, location.lat, location.long
 
 OHB_files <- list.files("data/Oriental_honey_buzzard",pattern = ".xls",full.names = T)
@@ -68,6 +73,7 @@ GFB <- lapply(GFB_files,read.csv,stringsAsFactors = F) %>%
 ###pf have unknown age! ask Ivan.... also make sure migration season is correctly defined
 PF <- read.csv("data/LifeTrack Peregrine falcon.csv", stringsAsFactors = F) %>% 
   dplyr::select(1,3:5,16,38,39) %>% #remove columns that are not needed
+  filter(individual.local.identifier %in% pf_ad$animal.id) %>% 
   mutate(date_time = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
   mutate(month = month(date_time),
          year = year(date_time),
