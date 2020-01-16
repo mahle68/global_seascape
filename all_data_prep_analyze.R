@@ -8,13 +8,14 @@ library(lubridate)
 library(move)
 library(mapview)
 library(rWind)
+library(sf)
 
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
 setwd("/home/mahle68/ownCloud/Work/Projects/delta_t")
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
-mycl <- makeCluster(detectCores() - 2)
+
 
 load("R_files/land_15km.RData") #called land_15 km
 
@@ -38,7 +39,8 @@ alt_pts_temporal <- function(date_time,n_days) {
 #read in meta-data for peregrine falcon and american osprey. extract IDs for adult birds
 pf_ad <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/data/Osprey_Americas/Peregrines Ivan.csv", stringsAsFactors = F) %>% 
   filter(Age == "ad")
-ao_meta <-read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/data/Osprey_Americas/ROB mig data190411.csv", stringsAsFactors = F)
+ao_ad <-read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/data/Osprey_Americas/ROB mig data190411.csv", stringsAsFactors = F) %>% 
+  filter(Age2 == "a")
 
 #also assign date_time, year, month, track, species, location.lat, location.long
 
@@ -70,7 +72,7 @@ GFB <- lapply(GFB_files,read.csv,stringsAsFactors = F) %>%
   filter(season %in% c("spring","autumn") &
            class %in% c("0","1","2","3")) #filter for location classes
 
-###pf have unknown age! ask Ivan.... also make sure migration season is correctly defined
+###make sure migration season is correctly defined
 PF <- read.csv("data/LifeTrack Peregrine falcon.csv", stringsAsFactors = F) %>% 
   dplyr::select(1,3:5,16,38,39) %>% #remove columns that are not needed
   filter(individual.local.identifier %in% pf_ad$animal.id) %>% 
@@ -83,7 +85,7 @@ PF <- read.csv("data/LifeTrack Peregrine falcon.csv", stringsAsFactors = F) %>%
   filter(season != "other")
 
 OE <- read.csv("data/Osprey in Mediterranean (Corsica, Italy, Balearics).csv", stringsAsFactors = F) %>% 
-  filter(grepl("ad",individual.local.identifier,, ignore.case = T) & !grepl("juv",individual.local.identifier,, ignore.case = T)) %>% #extract adult data
+  dplyr::filter(grepl("ad",individual.local.identifier,, ignore.case = T) & !grepl("juv",individual.local.identifier,, ignore.case = T)) %>% #extract adult data
   dplyr::select(1,3:5,16,35:37) %>% #remove columns that are not needed
   mutate(date_time = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
   mutate(month = month(date_time),
@@ -95,27 +97,29 @@ OE <- read.csv("data/Osprey in Mediterranean (Corsica, Italy, Balearics).csv", s
 
 OA <- read.csv("data/Osprey_Americas/Osprey Bierregaard North and South America.csv", stringsAsFactors = F) %>% 
   dplyr::select(1,3:5,48:52) %>% #remove columns that are not needed
+  filter(sensor.type %in% c("gps","argos-doppler-shift"),
+         individual.local.identifier %in% ao_ad$Bird) %>% 
   mutate(date_time = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
   mutate(month = month(date_time),
          year = year(date_time),
          track = paste(tag.local.identifier, year,sep = "_"),
          species = "O",
          season = ifelse(month %in% c(3,4),"spring",ifelse (month %in% c(9,10), "autumn", "other"))) %>% 
-  filter(season != "other") %>% 
-  filter(sensor.type == "gps",#keep only the gps tag data
-         individual.local.identifier %in% c("Holly","Hackett","Daphne","Shanawdithit","Gundersen","Wausau",
-                                            "Crabby","Charlie","Roger Tory")) #keep only adults (based on what i found on the website)
-
+  filter(season != "other")
 
 
 ##### STEP 2: merge all data, assign zone (only northern hemisphere) #####
 
 dataset <- list(OHB,GFB, PF, OE, OA) %>% 
   reduce(full_join, by = c("location.long", "location.lat", "date_time", "track", "month", "year" , "season", "species")) %>% 
-    mutate(zone = ifelse(between(location.lat, 0, 30), "tradewind",
+  mutate(zone = ifelse(between(location.lat, 0, 30), "tradewind",
                        ifelse(between(location.lat, 30,60), "temperate",
                               "other"))) %>% 
-  filter(zone != "other")
+  filter(zone != "other") %>% 
+  dplyr::select(c("location.long", "location.lat", "date_time", "track", "month", "year" , "season", "species")) %>% 
+  as.data.frame()
+
+save(dataset, file = "R_files/all_spp_unfiltered.RData")
 
 ##### STEP 3: filter out points over land #####
 
@@ -252,3 +256,26 @@ ann <- ann %>%
 
 save(ann, file = "R_files/all_spp_temp_sp_filtered_15km_alt_ann_14days.RData")
 
+
+##### MAP all data #####
+load("R_files/all_spp_unfiltered.RData") #called dataset
+
+dataset <- dataset %>% 
+  mutate(color = ifelse(species == "OHB", "cornflowerblue",
+                        ifelse(species == "GFB","darksalmon",
+                               ifelse(species == "PF", "firebrick1",
+                                      "darkseagreen3"))))
+
+X11(width = 15, height = 8)
+tiff("/home/enourani/ownCloud/Work/safi_lab_meeting/presentation_jan17/all_tracks.tiff", width = 15, height = 8, units = "in", res = 500)
+maps::map("world",fill = TRUE, col = "grey30", border = F)
+points(dataset$location.long,dataset$location.lat, col= alpha(dataset$color,0.3), pch = 16, cex = 0.5)
+legend(x = -170, y = -40, legend = c("Grey-faced buzzard","Osprey","Oriental honey buzzard","Peregrine falcon"),
+       col = c("darksalmon","darkseagreen3","cornflowerblue","firebrick1"), pch = 16, bty = "n", cex = 0.9)
+abline(h = 0, lty = 2,lwd = 0.2, col = "grey50")
+abline(h = 30, lty = 2, lwd = 0.2, col = "grey50")
+abline(h = 60, lty = 2, lwd = 0.2, col = "grey50")
+text(x = -175, y = 32, "30° N", col = "grey50", cex = 0.7)
+text(x = -175, y = 62, "60° N", col = "grey50", cex = 0.7)
+
+dev.off()
