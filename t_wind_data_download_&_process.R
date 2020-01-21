@@ -8,17 +8,24 @@ library(sf)
 library(lubridate)
 library(parallel)
 
+setwd("/home/enourani/ownCloud/Work/Projects/delta_t/")
 
 ##### STEP1: connect to python #####
 
-path_to_python <- "/home/enourani/"
-use_python(path_to_python)
+#emcwf <- import("ecmwfapi")
+#path_to_python <- "/usr/bin/python3.7"
+#use_python(path_to_python)
+
 
 #import python CDS-API
-py_install("ecmwf-api-client") 
+#py_install("ecmwf-api-client") 
+#py_install
+
 
 #import the python library ecmwfapi
-ecmwf <- import_from_path("ecmwfapi",path = "C:/Users/mahle/Anaconda3/envs/r-reticulate/Lib/site-packages")
+path <- "/home/enourani/.local/lib/python2.7/site-packages/ecmwfapi"
+ecmwf <- import_from_path("ecmwfapi", path = path)
+#ecmwf <- import_from_path("ecmwfapi",path = "C:/Users/mahle/Anaconda3/envs/r-reticulate/Lib/site-packages")
 
 server = ecmwf$ECMWFDataServer() #start the connection... make sure cds key file is in Documents
 
@@ -27,11 +34,11 @@ server = ecmwf$ECMWFDataServer() #start the connection... make sure cds key file
 #non_parallel
 for (yr in as.character(c(1979:2018))) {
   
-  dates <- paste(yr,"-01-01/to/",yr,"-12-31",sep = "") 
+  dates <- paste(yr,"-02-01/to/",yr,"-10-31",sep = "") 
   target <- paste(yr,"_sst_t2m.nc",sep = "")
   
   yr_query <- r_to_py(list(
-    area = "60/-180/-60/180", #N/W/S/E
+    area = "60/-180/0/180", #N/W/S/E
     class = 'ei',
     dataset = "interim",
     date = dates,
@@ -44,7 +51,7 @@ for (yr in as.character(c(1979:2018))) {
     time = "00:00:00/06:00:00/12:00:00/18:00:00", 
     type = "an",
     format = "netcdf",
-    target = paste("D:/ERA_Interim_temp_all/",target,sep = "")
+    target = paste("ERA_INTERIM_data_0_60/",target,sep = "")
   ))
   server$retrieve(yr_query)
 }
@@ -127,21 +134,22 @@ for (yr in as.character(c(1979:2018))) {
   target <- paste(yr,"_wind.nc",sep = "")
   
   yr_query <- r_to_py(list(
-    area = "60/-180/-60/180", #N/W/S/E
+    area = "60/-180/0/180", #N/W/S/E
     class = 'ei',
     dataset = "interim",
     date = dates,
     expver = "1",
     grid = "0.75/0.75",
-    levList = "925",
+    levelist = "925",
     levtype = "pl",
     param = "131.128/132.128/135.128",
     step = "0",
     stream = "oper",
     time = "00:00:00/06:00:00/12:00:00/18:00:00", 
     type = "an",
+    resol = "av",
     format = "netcdf",
-    target = paste("D:/ERA_Interim_temp_all/",target,sep = "")
+    target = paste("ERA_INTERIM_data_0_60/",target,sep = "")
   ))
   server$retrieve(yr_query)
 }
@@ -158,6 +166,8 @@ wf_set_key(user = "mahle68@gmail.com",
 
 wf_get_key(user = "mahle68@gmail.com",
            service= "webapi")
+
+wf_set_key(service = "webapi")
 
 years<-c(1979:2019) 
 for (yr in 1:length(years)){
@@ -198,3 +208,4 @@ plot(st_geometry(land_eur_15km))
 #####
 
 
+setwd("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_data_0_60")
