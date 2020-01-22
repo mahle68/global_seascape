@@ -20,6 +20,7 @@ server = cdsapi$Client() #start the connection... make sure cds key file is in D
 
 ##### STEP2: download wind data #####
 
+#MPI_ESM_MR
 for (period in c("200601-200912", "201001-201912", "204001-204912", "205001-205912", "209001-210012")) {
   for (rcp in c("rcp_4_5","rcp_8_5")){
     
@@ -41,13 +42,35 @@ for (period in c("200601-200912", "201001-201912", "204001-204912", "205001-2059
   }
 }
 
+#HADGEM2_CC
+for (period in c("200512-203011", "203012-205511", "205512-208011", "208012-209912", "210001-210012")) {
+  for (rcp in c("rcp_4_5","rcp_8_5")){
+    
+    target <- paste("/home/enourani/Documents/climate_data_store_downloads/hadgem2_cc/", paste(period, rcp,"wind.nc", sep = "_"),sep = "")
+    
+    query <- r_to_py (list(
+      experiment = rcp,
+      variable = c("u_component_of_wind", "v_component_of_wind"),
+      model = "hadgem2_cc",
+      ensemble_member = "r1i1p1",
+      period = period,
+      format = "netcdf",
+      dataset = "projections-cmip5-monthly-pressure-levels"
+    ))
+    
+    server$retrieve("projections-cmip5-monthly-pressure-levels",
+                    query,
+                    target = target)
+  }
+}
 ##### STEP3: download temperature data #####
 
+#MPI_ESM_MR
 for (rcp in c("rcp_4_5","rcp_8_5")){
   period <- "200601-210012"
   target <- paste("/home/enourani/Documents/climate_data_store_downloads/mpi_esm_mr/", paste(period, rcp,"temp.nc", sep = "_"),sep = "")
   
-  request <- list(
+  query <- list(
     experiment = rcp,
     variable = c("2m_temperature", "sea_surface_temperature"),
     model = "mpi_esm_mr",
@@ -62,13 +85,54 @@ for (rcp in c("rcp_4_5","rcp_8_5")){
                   target = target)
 }
 
+#HADGEM2_CC
+for (period in c("200512-209911", "209912-210012")) {
+  for (rcp in c("rcp_4_5","rcp_8_5")){
+    
+    target <- paste("/home/enourani/Documents/climate_data_store_downloads/hadgem2_cc/", paste(period, rcp,"ssf.nc", sep = "_"),sep = "")
+    
+    query <- r_to_py (list(
+      experiment = rcp,
+      variable = "sea_surface_temperature",
+      model = "hadgem2_cc",
+      ensemble_member = "r1i1p1",
+      period = period,
+      format = "netcdf",
+      dataset = "projections-cmip5-monthly-single-levels"
+    ))
+    
+    server$retrieve("projections-cmip5-monthly-single-levels",
+                    query,
+                    target = target)
+  }
+}
+
+for (period in c("200512-203011", "203012-205511", "205512-208011", "208012-209912", "210001-210012")) {
+  for (rcp in c("rcp_4_5","rcp_8_5")){
+    
+    target <- paste("/home/enourani/Documents/climate_data_store_downloads/hadgem2_cc/", paste(period, rcp,"t2m.nc", sep = "_"),sep = "")
+    
+    query <- r_to_py (list(
+      experiment = rcp,
+      variable = "2m_temperature",
+      model = "hadgem2_cc",
+      ensemble_member = "r1i1p1",
+      period = period,
+      format = "netcdf",
+      dataset = "projections-cmip5-monthly-single-levels"
+    ))
+    
+    server$retrieve("projections-cmip5-monthly-single-levels",
+                    query,
+                    target = target)
+  }
+}
 
 ##### STEP4: process wind data #####
 
-setwd("D:/ERA_Interim_temp_all/")
 
 vname <- c("sst","t2m")
-file_list <- list.files(pattern = ".nc",full.names = TRUE)
+file_list <- list.files("/home/enourani/Documents/climate_data_store_downloads/mpi_esm_mr/",pattern = ".nc",full.names = TRUE)
 
 #start the cluster
 mycl <- makeCluster(detectCores() - 1)
