@@ -7,6 +7,7 @@ library(ncdf4)
 library(sf)
 library(lubridate)
 library(parallel)
+library(raster)
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t/")
 
@@ -63,6 +64,29 @@ for (period in c("200512-203011", "203012-205511", "205512-208011", "208012-2099
                     target = target)
   }
 }
+
+#ACCESS1.0
+for (period in c("200601-205512", "205601-210012")) {
+  for (rcp in c("rcp_4_5","rcp_8_5")){
+    
+    target <- paste("/home/enourani/Documents/climate_data_store_downloads/access_1_0/", paste(period, rcp,"wind.nc", sep = "_"),sep = "")
+    
+    query <- r_to_py (list(
+      experiment = rcp,
+      variable = c("u_component_of_wind", "v_component_of_wind"),
+      model = "access1_0",
+      ensemble_member = "r1i1p1",
+      period = period,
+      format = "netcdf",
+      dataset = "projections-cmip5-monthly-pressure-levels"
+    ))
+    
+    server$retrieve("projections-cmip5-monthly-pressure-levels",
+                    query,
+                    target = target)
+  }
+}
+
 ##### STEP3: download temperature data #####
 
 #MPI_ESM_MR
@@ -128,69 +152,85 @@ for (period in c("200512-203011", "203012-205511", "205512-208011", "208012-2099
   }
 }
 
-##### STEP4: process wind data #####
+#ACCESS1.0
+period <- "200601-210012"
+for (rcp in c("rcp_4_5","rcp_8_5")){
+  
+  target <- paste("/home/enourani/Documents/climate_data_store_downloads/access_1_0/", paste(period, rcp,"temp.zip", sep = "_"),sep = "")
+  
+  query <- r_to_py (list(
+    experiment = rcp,
+    variable = c("2m_temperature", "sea_surface_temperature"),
+    model = "access1_0",
+    ensemble_member = "r1i1p1",
+    period = period,
+    format = "zip",
+    dataset = "projections-cmip5-monthly-single-levels"
+  ))
+  
+  server$retrieve("projections-cmip5-monthly-single-levels",
+                  query,
+                  target = target)
+}
+
+##### STEP4: process temperature data #####
+
+#ACCESS1.0_ temperature
+for (var in c("tas","tos")){
+  
+  file_list <- list.files("/home/enourani/Documents/climate_data_store_downloads/access_1_0/",pattern = var,full.names = TRUE)
+  
+
+  lapply(file_list,function(x){
+    
+    rcp <- strsplit(x,"_")[[1]][9]
+    model <- strsplit(x,"_")[[1]][8]
+    
+    nc <- nc_open(x)
+    
+    #extract lon and lat
+    lat <- ncvar_get(nc,'lat')
+    nlat <- dim(lat) 
+    lon <- ncvar_get(nc,'lon') #- 180 #longitude is from 0-360, subtract 180 to change the range to -180-180
+    nlon <- dim(lon) 
+    
+    #extract the time
+    t <- ncvar_get(nc, "time")
+    nt <- dim(t)
+    
+    #convert the "days since" into date 
+    timestamp <- as_date(t,origin = "0001-01-01") #monthly from 2006 to 2100
+    
+    #put everything in a large df
+    row_names <- expand.grid(lon,lat,timestamp)
+    
+    var_df <- data.frame(cbind(
+      row_names,
+      matrix(as.vector(ncvar_get(nc,var)), nrow = nlon * nlat * nt, ncol = 1) #array to vector to matrix
+      #matrix(as.vector(ncvar_get(nc,vname[2])), nrow = nlon * nlat * nt, ncol = 1)
+    ))
+    
+    colnames(var_df) <- c("lon","lat","date",var)   #set column names
+    
+    #only keep data for latitude 0-60 and months 
+    var_df_filter <- var_df %>%
+      mutate(month = month(var_df$date),
+             year = year(var_df$date)) %>% 
+      filter(month %in% c(2:5,8:11) & between(lat,0,60))
+    
+    save(var_df_filter,file = paste0("/home/enourani/Documents/climate_data_store_downloads/all_processed/",
+                              paste(year(timestamp)[1],year(timestamp)[length(timestamp)], var, rcp, model, sep = "_"),".RData"))
+    gc()
+    gc()
+  })
+  
+}
 
 
-vname <- c("sst","t2m")
-file_list <- list.files("/home/enourani/Documents/climate_data_store_downloads/mpi_esm_mr/",pattern = ".nc",full.names = TRUE)
-
-#start the cluster
-mycl <- makeCluster(detectCores() - 1)
-
-clusterExport(mycl, list("vname","file_list")) #define the variable that will be used within the function
-
-clusterEvalQ(mycl, {
-
-  library(ncdf4)
-  library(lubridate)
-  library(dplyr)
-})
-
-
-data_list <- parLapply(cl = mycl,file_list,function(x){
-  
-  nc <- nc_open(x)
-  
-  #extract lon and lat
-  lat <- ncvar_get(nc,'latitude')
-  nlat <- dim(lat) 
-  lon <- ncvar_get(nc,'longitude')
-  nlon <- dim(lon) 
-  
-  #extract the time
-  t <- ncvar_get(nc, "time")
-  nt <- dim(t)
-  
-  #convert the hours into date + hour
-  timestamp <- as_datetime(c(t*60*60),origin = "1900-01-01")
-  
-  #put everything in a large df
-  row_names <- expand.grid(lon,lat,timestamp)
-  
-  var_df <- data.frame(cbind(
-    row_names,
-    matrix(as.vector(ncvar_get(nc,vname[1])), nrow = nlon * nlat * nt, ncol = 1), #array to vector to matrix
-    matrix(as.vector(ncvar_get(nc,vname[2])), nrow = nlon * nlat * nt, ncol = 1)))
-  
-  colnames(var_df) <- c("lon","lat","date_time",vname)   #set column names
-  
-  #remove points over land (NAs)
-  
-  land_df <- var_df %>%
-    na.omit() %>%
-    mutate(delta_t = sst - t2m,
-           yday = yday(date_time),
-           hour = hour(date_time)) %>%
-    data.frame()
-  
-  sample <- land_df %>% 
-    sample_n(50000)
-  
-  save(sample,file = paste0("C:/Users/mahle/ownCloud/Work/Projects/delta_t/ERA_INTERIM_data_global_sampled/",
-                          paste(year(timestamp)[1],min(sample$yday),max(sample$yday),sep = "_"),".RData"))
-  gc()
-  gc()
-})
-
-stopCluster(mycl)
-
+## visualize just to make sure
+smpl <- var_df_filter[var_df_filter$year == 2015,]
+coordinates(smpl) <- ~ lon + lat
+gridded(smpl) <- TRUE
+smpl_r <- raster(smpl,layer = 2)
+maps::map("world")
+plot(smpl_r, add= T)
