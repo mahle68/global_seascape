@@ -38,12 +38,28 @@ alt_pts_temporal <- function(date_time,n_days) {
 load("R_files/all_spp_unfiltered_updated.RData") #dataset; data prepared in all_data_prep_analyze
 
 ##### STEP 2: convert tracks to spatial lines #####
-#convert each track to a spatiallinedataframe
+
+#convert each track to lines
 coordinates(dataset)<-~location.long+location.lat
 proj4string(dataset)<-wgs
 
+dataset_sf <- st_as_sf(dataset)
+
+lines <- dataset_sf %>% 
+  group_by(track) %>%
+  arrange(date_time) %>% 
+  summarize(species = head(species,1),do_union = F) %>% 
+  st_cast("LINESTRING")
+  
+  
+
+
+
 track_ls<-split(dataset,dataset$track)
 track_ls<-track_ls[lapply(track_ls,nrow)>0] #remove empty tracks
+
+track_ls %>% 
+  
 
 mycl <- makeCluster(detectCores() - 2)
 clusterExport(mycl, c("track_ls","wgs")) #define the variable that will be used within the function
@@ -61,13 +77,15 @@ lines_ls_sf<-parLapply(cl = mycl,X = track_ls,fun = function(x){
 
 stopCluster(mycl)
 
+#make sure all lines have at least 2 points
+lines_ls_sf,
+
 #plot to see
 mapview(lines_ls_sf)
 #maps::map("world")
 #lapply(Lines_ls,lines,col = "red")
 
 ##### STEP 3: filter for sea-crossing segments #####
-load("R_files/land_15km.RData") #world land layer with 15 km buffer
 
 sum(st_is_valid(land_15km))
 
