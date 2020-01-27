@@ -45,68 +45,53 @@ proj4string(dataset)<-wgs
 
 dataset_sf <- st_as_sf(dataset)
 
+one_point_only <- dataset_sf %>% #find out which tracks have only one point
+  group_by(track) %>% 
+  summarise(n = length(track)) %>% 
+  filter(n <= 1) %>% 
+  dplyr::select(track) %>% 
+  drop_geometry()
+
 lines <- dataset_sf %>% 
+  filter(!(track %in% one_point_only$track)) %>% 
   group_by(track) %>%
   arrange(date_time) %>% 
   summarize(species = head(species,1),do_union = F) %>% 
   st_cast("LINESTRING")
-  
-  
-
-
-
-track_ls<-split(dataset,dataset$track)
-track_ls<-track_ls[lapply(track_ls,nrow)>0] #remove empty tracks
-
-track_ls %>% 
-  
-
-mycl <- makeCluster(detectCores() - 2)
-clusterExport(mycl, c("track_ls","wgs")) #define the variable that will be used within the function
-
-clusterEvalQ(mycl, {
- library(sp)
- library(raster)
- library(sf)
-})
-
-lines_ls_sf<-parLapply(cl = mycl,X = track_ls,fun = function(x){
-  line<-SpatialLines(list(Lines(Line(matrix(x@coords,ncol=2)), ID=x$track[1])),proj4string = wgs)
-  st_as_sf(line)
-})
-
-stopCluster(mycl)
-
-#make sure all lines have at least 2 points
-lines_ls_sf,
 
 #plot to see
-mapview(lines_ls_sf)
-#maps::map("world")
-#lapply(Lines_ls,lines,col = "red")
+mapview(lines)
+
 
 ##### STEP 3: filter for sea-crossing segments #####
 
-sum(st_is_valid(land_15km))
-
-land_15km_sp <- as(land_15km,"Spatial")
-
-land_15km_prec <- st_set_precision(land_15km,1e5)
-
-sea_lines_ls <- lapply(lines_ls_sf, function(x){
-  if (st_is_valid(x) == TRUE){
-  st_difference(x, land_15km_prec)
-  }
-}) 
-
-sea_Lines_ls<-lapply(Lines_ls,intersect,y=med_pol1)
-
-dataset_sea <- dataset %>% 
-  drop_na(c("location.long", "location.lat")) %>% 
-  st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
+sea_lines <- lines %>% #this takes forever, do it on the cluster using multidplyr 
   st_difference(land_15km)
 
-save(dataset_sea, file = "R_files/all_spp_spatial_filtered_updated.RData")
+save(sea_lines, file = "R_files/sea_lines_15_km.RData")
+
+##### STEP 4: assign season and zone to each segment #####
+# 
+# sum(st_is_valid(land_15km))
+# 
+# land_15km_sp <- as(land_15km,"Spatial")
+# 
+# land_15km_prec <- st_set_precision(land_15km,1e5)
+# 
+# sea_lines_ls <- lapply(lines_ls_sf, function(x){
+#   if (st_is_valid(x) == TRUE){
+#   st_difference(x, land_15km_prec)
+#   }
+# }) 
+# 
+# sea_Lines_ls<-lapply(Lines_ls,intersect,y=med_pol1)
+# 
+# dataset_sea <- dataset %>% 
+#   drop_na(c("location.long", "location.lat")) %>% 
+#   st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
+#   st_difference(land_15km)
+# 
+# save(dataset_sea, file = "R_files/all_spp_spatial_filtered_updated.RData")
 
 #land_0_60<- st_read("/home/enourani/ownCloud/Work/GIS_files/ne_10m_land/ne_10m_land.shp") %>% 
 #  st_crop(y = c(xmin = -180, xmax = 180, ymin = 0, ymax = 60)) %>% 
@@ -115,7 +100,6 @@ save(dataset_sea, file = "R_files/all_spp_spatial_filtered_updated.RData")
 #save(land_0_60, file = "R_files/land_0_60.RData")
 
 
-##### filter for min 15 km sea-crossing
 ##### STEP 4: temporal filter for autocorrelation #####
 
 load("R_files/all_spp_spatial_filtered_updated.RData") #named dataset_sea
