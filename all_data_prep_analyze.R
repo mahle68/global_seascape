@@ -57,7 +57,7 @@ OHB <- lapply(OHB_files,read_excel,1,col_types = c("numeric","date","numeric","n
   filter(season == "autumn" & #no sea-crossing in spring
            class %in% c("0","1","2","3")) #filter for location classes
 
-
+###
 GFB_files <- list.files("data/Grey_faced_buzzard/",pattern = ".csv",full.names = T)
 GFB <- lapply(GFB_files,read.csv,stringsAsFactors = F) %>%
   reduce(full_join) %>% #is locdate is in UTC
@@ -96,9 +96,9 @@ OE <- read.csv("data/Osprey in Mediterranean (Corsica, Italy, Balearics).csv", s
   filter(season != "other")
 
 OA <- read.csv("data/Osprey_Americas/Osprey Bierregaard North and South America.csv", stringsAsFactors = F) %>% 
-  dplyr::select(1,3:5,48:52) %>% #remove columns that are not needed
-  filter(sensor.type %in% c("gps","argos-doppler-shift"),
-         individual.local.identifier %in% ao_ad$Bird) %>% 
+  dplyr::select(1,3:5,13,48:52) %>% #remove columns that are not needed
+  filter(sensor.type == "gps" | sensor.type == "argos-doppler-shift" & argos.lc %in% c("0","1","2","3"),
+         individual.local.identifier %in% ao_ad$Bird) %>%
   mutate(date_time = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
   mutate(month = month(date_time),
          year = year(date_time),
@@ -119,7 +119,7 @@ dataset <- list(OHB,GFB, PF, OE, OA) %>%
   dplyr::select(c("location.long", "location.lat", "date_time", "track", "month", "year" , "season", "species")) %>% 
   as.data.frame()
 
-save(dataset, file = "R_files/all_spp_unfiltered.RData")
+save(dataset, file = "R_files/all_spp_unfiltered_updated.RData")
 
 ##### STEP 3: filter out points over land #####
 
@@ -128,9 +128,13 @@ dataset_sea <- dataset %>%
   st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
   st_difference(land_15km)
 
-save(dataset_sea, file = "R_files/all_spp_spatial_filtered.RData")
+save(dataset_sea, file = "R_files/all_spp_spatial_filtered_updated.RData")
 
 ##### STEP 4: temporal filter for autocorrelation #####
+
+load("R_files/all_spp_spatial_filtered_updated.RData") #named dataset_sea
+dataset_sea <- dataset_sea %>% 
+  dplyr::select(2,3,4,14,15,16,33,38,39,40)
 
 #check for duplicated time-stamps
 rows_to_delete <- sapply(getDuplicatedTimestamps(x = as.factor(dataset_sea$track),timestamps = dataset_sea$date_time,sensorType = "gps"),"[",2) #get the second row of each pair of duplicate rows
@@ -138,6 +142,7 @@ dataset_sea <- dataset_sea[-rows_to_delete,]
 
 #thin the data to have one-hour difference?
 #create a move object
+dataset_sea <- dataset_sea[order(dataset_sea$track, dataset_sea$date_time),]
 mv <- move(x = st_coordinates(dataset_sea)[,"X"],y = st_coordinates(dataset_sea)[,"Y"],time = dataset_sea$date_time,
            data = as.data.frame(dataset_sea,row.names = c(1:nrow(dataset_sea))),animal = dataset_sea$track,proj = wgs)
 
@@ -191,6 +196,7 @@ alts <- sf %>%
          lat = st_coordinates(.)[,"Y"]) %>% 
   st_drop_geometry()
 
+mycl <- makeCluster(detectCores() - 2)
 
 clusterExport(mycl, c("alts", "alt_pts_temporal")) #define the variable that will be used within the function
 
