@@ -14,12 +14,14 @@ library(parallel)
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
 setwd("/home/mahle68/ownCloud/Work/Projects/delta_t")
+
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
 
-load("R_files/land_15km.RData") #called land_15 km
-load("R_files/land_0_60.RData") #called land_0_60... no buffer
+#load("R_files/land_15km.RData") #called land_15 km
+#load("R_files/land_0_60.RData") #called land_0_60... no buffer
+#land_0_60_prec <- st_set_precision(land_0_60,0.001)
 
 alt_pts_temporal <- function(date_time,n_days) {
   #same year, same hour, only day changes
@@ -39,6 +41,13 @@ alt_pts_temporal <- function(date_time,n_days) {
 ##### STEP 1: open data #####
 load("R_files/all_spp_unfiltered_updated.RData") #dataset; data prepared in all_data_prep_analyze
 
+land_1km <- st_read("/home/enourani/ownCloud/Work/GIS_files/ne_10m_land/ne_10m_land.shp") %>% 
+  st_crop(y = c(xmin = -180, xmax = 180, ymin = 0, ymax = 60)) %>% 
+  st_transform(meters_proj) %>% 
+  st_buffer(dist = units::set_units(1000, 'm')) %>% 
+  st_transform(wgs) %>% 
+  st_union()
+
 ##### STEP 2: convert tracks to spatial lines #####
 
 #convert each track to lines
@@ -47,53 +56,80 @@ proj4string(dataset)<-wgs
 
 dataset_sf <- st_as_sf(dataset)
 
-one_point_only <- dataset_sf %>% #find out which tracks have only one point
+# one_point_only <- dataset_sf %>% #find out which tracks have only one point
+#   group_by(track) %>% 
+#   summarise(n = length(track)) %>% 
+#   filter(n <= 1) 
+# 
+# lines <- dataset_sf %>% 
+#   filter(!(track %in% one_point_only$track)) %>% 
+#   group_by(track) %>%
+#   arrange(date_time) %>% 
+#   summarize(species = head(species,1),do_union = F) %>% 
+#   st_cast("LINESTRING")
+
+
+#only keep tracks that have at least three points
+less_than_three_point <- dataset_sf %>% #find out which tracks have only one or two points. the two point tracks are only in East Asia
   group_by(track) %>% 
   summarise(n = length(track)) %>% 
-  filter(n <= 1) %>% 
-  dplyr::select(track) %>% 
-  drop_geometry()
+  filter(n < 3) 
 
-lines <- dataset_sf %>% 
-  filter(!(track %in% one_point_only$track)) %>% 
+lines_3_pts <- dataset_sf %>% 
+  filter(!(track %in% less_than_three_point$track)) %>% 
   group_by(track) %>%
   arrange(date_time) %>% 
   summarize(species = head(species,1),do_union = F) %>% 
   st_cast("LINESTRING")
 
-#plot to see
+#plot
 mapview(lines)
 
 
 ##### STEP 3: filter for sea-crossing segments #####
 
-sea_lines <- lines %>% #this takes forever, do it on the cluster using multidplyr ... error: no applicable method for 'st_difference' applied to an object of class "multidplyr_party_df"
-  st_difference(land_15km)
-save(sea_lines, file = "R_files/sea_lines_15_km.RData")
-
-#using multidplyr produces error. just use parallel
-mycl <- makeCluster(detectCores() - 2)
-
-clusterExport(mycl, c("lines", "land_0_60")) #define the variable that will be used within the function
-
-clusterEvalQ(mycl, {
-  library(dplyr)
-  library(sf)
-})
-
-sea_lines_no_buffer_ls <- parLapply(cl = mycl, X = split(lines,lines$track), fun = st_difference, land_0_60)
-
-stopCluster(mycl)
-
-save(sea_lines_no_buffer_ls, file = "R_files/sea_lines_no_bufffer_ls.RData")
+#with the 15 km buffers
+# sea_lines <- lines %>% #this takes forever, do it on the cluster using multidplyr ... error: no applicable method for 'st_difference' applied to an object of class "multidplyr_party_df"
+#   st_difference(land_15km)
+# 
+# save(sea_lines, file = "R_files/sea_lines_15_km.RData")
 
 #convert multilinestrings to linestrings
-
 sea_seg <- sea_lines %>% 
   st_cast("MULTILINESTRING") %>% 
   st_cast("LINESTRING")
   
 save(sea_seg, file = "R_files/sea_segments_15_km.RData")
+
+#without the 15 km buffer
+sea_lines_no_buffer <- lines %>% 
+  st_difference(land_1km)
+
+save(sea_lines_no_buffer, file = "R_files/sea_lines_1km.RData")
+
+sea_seg_no_buffer <- sea_lines_no_buffer %>% 
+  st_cast("MULTILINESTRING") %>% 
+  st_cast("LINESTRING")
+
+save(sea_seg_no_buffer, file = "R_files/sea_segments_1km.RData")
+
+# #using multidplyr produces error. just use parallel
+# mycl <- makeCluster(detectCores() - 2)
+# 
+# clusterExport(mycl, c("lines", "land_0_60")) #define the variable that will be used within the function
+# 
+# clusterEvalQ(mycl, {
+#   library(dplyr)
+#   library(sf)
+# })
+# 
+# sea_lines_no_buffer_ls <- parLapply(cl = mycl, X = split(lines,lines$track), fun = st_difference, land_0_60)
+# 
+# stopCluster(mycl)
+# 
+# save(sea_lines_no_buffer_ls, file = "R_files/sea_lines_no_bufffer_ls.RData")
+# 
+
   
 ##### STEP 4: filter sea-crossing segments based on length and distance from coast #####
 
