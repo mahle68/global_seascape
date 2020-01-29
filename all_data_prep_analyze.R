@@ -1,6 +1,7 @@
 #script for preparing all input data simultaneously. previously done separately for each species/region
 #Elham Nourani,
 #Dec. 31. 2019. Radolfzell, Germany.
+#update Jan 29, 2020: remove location class 0 from all ptt data
 
 library(tidyverse)
 library(readxl) #read_excel()
@@ -55,7 +56,7 @@ OHB <- lapply(OHB_files,read_excel,1,col_types = c("numeric","date","numeric","n
   rename(location.long = lon,
          location.lat = lat) %>% 
   filter(season == "autumn" & #no sea-crossing in spring
-           class %in% c("0","1","2","3")) #filter for location classes
+           class %in% c("1","2","3")) #filter for location classes
 
 ###
 GFB_files <- list.files("data/Grey_faced_buzzard/",pattern = ".csv",full.names = T)
@@ -70,7 +71,7 @@ GFB <- lapply(GFB_files,read.csv,stringsAsFactors = F) %>%
   rename(location.long = lon,
          location.lat = lat) %>% 
   filter(season %in% c("spring","autumn") &
-           class %in% c("0","1","2","3")) #filter for location classes
+           class %in% c("1","2","3")) #filter for location classes
 
 ###make sure migration season is correctly defined
 PF <- read.csv("data/LifeTrack Peregrine falcon.csv", stringsAsFactors = F) %>% 
@@ -97,7 +98,7 @@ OE <- read.csv("data/Osprey in Mediterranean (Corsica, Italy, Balearics).csv", s
 
 OA <- read.csv("data/Osprey_Americas/Osprey Bierregaard North and South America.csv", stringsAsFactors = F) %>% 
   dplyr::select(1,3:5,13,48:52) %>% #remove columns that are not needed
-  filter(sensor.type == "gps" | sensor.type == "argos-doppler-shift" & argos.lc %in% c("0","1","2","3"),
+  filter(sensor.type == "gps" | sensor.type == "argos-doppler-shift" & argos.lc %in% c("1","2","3"),
          individual.local.identifier %in% ao_ad$Bird) %>%
   mutate(date_time = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
   mutate(month = month(date_time),
@@ -119,7 +120,7 @@ dataset <- list(OHB,GFB, PF, OE, OA) %>%
   dplyr::select(c("location.long", "location.lat", "date_time", "track", "month", "year" , "season", "species")) %>% 
   as.data.frame()
 
-save(dataset, file = "R_files/all_spp_unfiltered_updated.RData")
+save(dataset, file = "R_files/all_spp_unfiltered_updated_lc_0_removed.RData")
 
 ##### STEP 3: filter out points over land #####
 
