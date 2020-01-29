@@ -41,6 +41,16 @@ alt_pts_temporal <- function(date_time,n_days) {
 ##### STEP 1: open data #####
 load("R_files/all_spp_unfiltered_updated.RData") #dataset; data prepared in all_data_prep_analyze
 
+##### STEP 2: create an ocean layer #####
+load("R_files/land_0_60.RData") #called land_0_60... no buffer
+
+pol <- st_polygon(list(rbind(c(-180,0),c(180,0),c(180,60),c(-180,60),c(-180,0))))  #create a polygon
+  st_set_crs(pol) <- 4326
+
+  pol <- st_polygon(list(rbind(c(-180,0),c(180,0),c(180,60),c(-180,60),c(-180,0)))) %>%  #create a polygon
+    st_set_crs(wgs)
+
+
 land_1km <- st_read("/home/enourani/ownCloud/Work/GIS_files/ne_10m_land/ne_10m_land.shp") %>% 
   st_crop(y = c(xmin = -180, xmax = 180, ymin = 0, ymax = 60)) %>% 
   st_transform(meters_proj) %>% 
@@ -48,7 +58,17 @@ land_1km <- st_read("/home/enourani/ownCloud/Work/GIS_files/ne_10m_land/ne_10m_l
   st_transform(wgs) %>% 
   st_union()
 
-##### STEP 2: convert tracks to spatial lines #####
+##### STEP 3: remove tracks with no points over the sea #####
+#open points over the sea
+load("R_files/all_spp_spatial_filtered_updated.RData") # dataset_sea; created in all_data_prep_analyze... includes tracks that are now removed because of lc, etc.
+
+dataset_tracks_sea <- dataset[dataset$track %in% dataset_sea$track,]
+
+coordinates(dataset_tracks_sea)<-~location.long+location.lat
+proj4string(dataset_tracks_sea)<-wgs
+dataset_sf <- st_as_sf(dataset_tracks_sea) #convert to sf object
+
+##### STEP 3: convert tracks to spatial lines #####
 
 #convert each track to lines
 coordinates(dataset)<-~location.long+location.lat
