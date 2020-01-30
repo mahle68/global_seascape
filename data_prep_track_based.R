@@ -19,8 +19,8 @@ wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
 
-#load("R_files/land_15km.RData") #called land_15 km
-#load("R_files/land_0_60.RData") #called land_0_60... no buffer
+load("R_files/land_15km.RData") #called land_15 km
+load("R_files/land_0_60.RData") #called land_0_60... no buffer
 #land_0_60_prec <- st_set_precision(land_0_60,0.001)
 
 alt_pts_temporal <- function(date_time,n_days) {
@@ -39,28 +39,41 @@ alt_pts_temporal <- function(date_time,n_days) {
 }
 
 ##### STEP 1: open data #####
-load("R_files/all_spp_unfiltered_updated.RData") #dataset; data prepared in all_data_prep_analyze
+load("R_files/all_spp_unfiltered_updated_lc_0_removed.RData") #dataset; data prepared in all_data_prep_analyze
+
+land_1km <- st_read("/home/enourani/ownCloud/Work/GIS_files/ne_10m_land/ne_10m_land.shp") %>%
+  st_crop(y = c(xmin = -180, xmax = 180, ymin = 0, ymax = 60)) %>%
+  st_transform(meters_proj) %>%
+  st_buffer(dist = units::set_units(1000, 'm')) %>%
+  st_transform(wgs) %>%
+  st_union()
 
 ##### STEP 2: create an ocean layer #####
-load("R_files/land_0_60.RData") #called land_0_60... no buffer
-
-pol <- st_polygon(list(rbind(c(-180,0),c(180,0),c(180,60),c(-180,60),c(-180,0))))  #create a polygon
-  st_set_crs(pol) <- 4326
-
-  pol <- st_polygon(list(rbind(c(-180,0),c(180,0),c(180,60),c(-180,60),c(-180,0)))) %>%  #create a polygon
-    st_set_crs(wgs)
-
-
-land_1km <- st_read("/home/enourani/ownCloud/Work/GIS_files/ne_10m_land/ne_10m_land.shp") %>% 
-  st_crop(y = c(xmin = -180, xmax = 180, ymin = 0, ymax = 60)) %>% 
-  st_transform(meters_proj) %>% 
-  st_buffer(dist = units::set_units(1000, 'm')) %>% 
-  st_transform(wgs) %>% 
-  st_union()
+# load("R_files/land_0_60.RData") #called land_0_60... no buffer
+# 
+# pol <- st_polygon(list(rbind(c(-180,0),c(180,0),c(180,60),c(-180,60),c(-180,0))))  #create a polygon
+#   st_set_crs(pol) <- 4326
+# 
+#   pol <- st_polygon(list(rbind(c(-180,0),c(180,0),c(180,60),c(-180,60),c(-180,0)))) %>%  #create a polygon
+#     st_set_crs(wgs)
+# 
+# 
+# land_1km <- st_read("/home/enourani/ownCloud/Work/GIS_files/ne_10m_land/ne_10m_land.shp") %>% 
+#   st_crop(y = c(xmin = -180, xmax = 180, ymin = 0, ymax = 60)) %>% 
+#   st_transform(meters_proj) %>% 
+#   st_buffer(dist = units::set_units(1000, 'm')) %>% 
+#   st_transform(wgs) %>% 
+#   st_union()
 
 ##### STEP 3: remove tracks with no points over the sea #####
 #open points over the sea
 load("R_files/all_spp_spatial_filtered_updated.RData") # dataset_sea; created in all_data_prep_analyze... includes tracks that are now removed because of lc, etc.
+
+#consider replacing the above with this
+dataset_sea_1km <- dataset %>% 
+  drop_na(c("location.long", "location.lat")) %>% 
+  st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
+  st_difference(land_1km) #change the buffer from 15 km to 1 km. maybe a track has one point near shore, but the sea-crossing is long
 
 dataset_tracks_sea <- dataset[dataset$track %in% dataset_sea$track,]
 
@@ -68,26 +81,8 @@ coordinates(dataset_tracks_sea)<-~location.long+location.lat
 proj4string(dataset_tracks_sea)<-wgs
 dataset_sf <- st_as_sf(dataset_tracks_sea) #convert to sf object
 
-##### STEP 3: convert tracks to spatial lines #####
-
-#convert each track to lines
-coordinates(dataset)<-~location.long+location.lat
-proj4string(dataset)<-wgs
-
-dataset_sf <- st_as_sf(dataset)
-
-# one_point_only <- dataset_sf %>% #find out which tracks have only one point
-#   group_by(track) %>% 
-#   summarise(n = length(track)) %>% 
-#   filter(n <= 1) 
-# 
-# lines <- dataset_sf %>% 
-#   filter(!(track %in% one_point_only$track)) %>% 
-#   group_by(track) %>%
-#   arrange(date_time) %>% 
-#   summarize(species = head(species,1),do_union = F) %>% 
-#   st_cast("LINESTRING")
-
+##### STEP 4: convert tracks to spatial lines #####
+#convert tracks to lines
 
 #only keep tracks that have at least three points
 less_than_three_point <- dataset_sf %>% #find out which tracks have only one or two points. the two point tracks are only in East Asia
@@ -95,18 +90,44 @@ less_than_three_point <- dataset_sf %>% #find out which tracks have only one or 
   summarise(n = length(track)) %>% 
   filter(n < 3) 
 
-lines_3_pts <- dataset_sf %>% 
+lines <- dataset_sf %>% 
   filter(!(track %in% less_than_three_point$track)) %>% 
   group_by(track) %>%
   arrange(date_time) %>% 
   summarize(species = head(species,1),do_union = F) %>% 
   st_cast("LINESTRING")
 
-#plot
-mapview(lines)
+
+##### STEP 5: filter for sea-crossing segments #####
+#using multidplyr produces error. just use parallel
+mycl <- makeCluster(detectCores() - 2)
+
+clusterExport(mycl, c("lines", "land_1km")) #define the variable that will be used within the function
+
+clusterEvalQ(mycl, {
+  library(dplyr)
+  library(sf)
+  library(raster)
+})
+
+b <-Sys.time()
+sea_lines_no_buffer_ls <- parLapply(cl = mycl, X = split(lines,lines$track), fun = st_difference, land_1km) #this didn't finish after 21 hours. somthing wrong with the code
+Sys.time()-b
+
+stopCluster(mycl)
+
+save(sea_lines_no_buffer_ls, file = "R_files/sea_lines_no_bufffer_ls.RData")
+
+#convert multilinestrings to linestrings
+sea_seg <- sea_lines %>% 
+  st_cast("MULTILINESTRING") %>% 
+  st_cast("LINESTRING")
+
+##### STEP 6: filter sea-crossing segments: length, dist to coast #####
 
 
-##### STEP 3: filter for sea-crossing segments #####
+
+
 
 #with the 15 km buffers
 # sea_lines <- lines %>% #this takes forever, do it on the cluster using multidplyr ... error: no applicable method for 'st_difference' applied to an object of class "multidplyr_party_df"
@@ -114,10 +135,7 @@ mapview(lines)
 # 
 # save(sea_lines, file = "R_files/sea_lines_15_km.RData")
 
-#convert multilinestrings to linestrings
-sea_seg <- sea_lines %>% 
-  st_cast("MULTILINESTRING") %>% 
-  st_cast("LINESTRING")
+
   
 save(sea_seg, file = "R_files/sea_segments_15_km.RData")
 
