@@ -78,6 +78,20 @@ segs_filtered <- segs_30_km %>%
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #using multidplyr produces error. just use parallel
 mycl <- makeCluster(detectCores() - 2)
 
