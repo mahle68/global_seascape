@@ -70,10 +70,12 @@ land_1km <- st_read("/home/enourani/ownCloud/Work/GIS_files/ne_10m_land/ne_10m_l
 load("R_files/all_spp_spatial_filtered_updated.RData") # dataset_sea; created in all_data_prep_analyze... includes tracks that are now removed because of lc, etc.
 
 #consider replacing the above with this
-dataset_sea_1km <- dataset %>% 
-  drop_na(c("location.long", "location.lat")) %>% 
-  st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
-  st_difference(land_1km) #change the buffer from 15 km to 1 km. maybe a track has one point near shore, but the sea-crossing is long
+# dataset_sea_1km <- dataset %>% 
+#   drop_na(c("location.long", "location.lat")) %>% 
+#   st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
+#   st_difference(land_1km) #change the buffer from 15 km to 1 km. maybe a track has one point near shore, but the sea-crossing is long
+# 
+# save(dataset_sea_1km, file = "R_files/")
 
 dataset_tracks_sea <- dataset[dataset$track %in% dataset_sea$track,]
 
@@ -97,8 +99,31 @@ lines <- dataset_sf %>%
   summarize(species = head(species,1),do_union = F) %>% 
   st_cast("LINESTRING")
 
+save(lines, file = "R_files/lines.RData")
 
 ##### STEP 5: filter for sea-crossing segments #####
+
+#only 1 km buffer
+sea_lines_no_buffer <- lines %>% 
+  st_difference(land_1km)
+
+save(sea_lines_no_buffer, file = "R_files/sea_lines_1km.RData")
+
+sea_seg_no_buffer <- sea_lines_no_buffer %>% 
+  st_cast("MULTILINESTRING") %>% 
+  st_cast("LINESTRING")
+
+save(sea_seg_no_buffer, file = "R_files/sea_segs_1km.RData")
+
+#number of points per segment
+less_than_two<- sea_seg_no_buffer %>% #find out which tracks have only one or two points. the two point tracks are only in East Asia
+  group_by(track) %>% 
+  summarise(n = length(track)) %>% 
+  filter(n < 3) 
+
+
+
+
 #using multidplyr produces error. just use parallel
 mycl <- makeCluster(detectCores() - 2)
 

@@ -118,33 +118,6 @@ data_list <- parLapply(cl = mycl,file_list,function(x){
 stopCluster(mycl)
 
 
-##### STEP4: download wind data #####
-
-#non_parallel
-for (yr in as.character(c(1979:2018))) {
-  
-  dates <- paste(yr,"-03-01/to/",yr,"-10-31",sep = "") 
-  target <- paste(yr,"_wind.nc",sep = "")
-  
-  yr_query <- r_to_py(list(
-    area = "60/-180/-60/180", #N/W/S/E
-    class = 'ei',
-    dataset = "interim",
-    date = dates,
-    expver = "1",
-    grid = "0.75/0.75",
-    levtype = "sfc",
-    param = "34.128/167.128",
-    step = "0",
-    stream = "oper",
-    time = "00:00:00/06:00:00/12:00:00/18:00:00", 
-    type = "an",
-    format = "netcdf",
-    target = paste("D:/ERA_Interim_temp_all/",target,sep = "")
-  ))
-  server$retrieve(yr_query)
-}
-
 ##### Quick plotting #####
 windows()
 map("world",fill = TRUE,col = "beige")

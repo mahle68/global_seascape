@@ -143,15 +143,20 @@ wind_v_var <- dataset_env_alt_var %>%
 new_data_var <- rbind(delta_t_var,wind_u_var,wind_v_var)
 
 X11()
-plot <- ggplot(new_data_var, aes(x = variable, y = score, fill = zone)) +
+plot_variances <- ggplot(new_data_var, aes(x = variable, y = score, fill = zone)) +
+  ylim(0,150) +
   geom_flat_violin(aes(fill = zone),position = position_nudge(x = .1, y = 0), adjust = 1.5, trim = FALSE, alpha = .5, colour = NA)+
   geom_point(aes(x = as.numeric(factor(variable))-.15, y = score, colour = zone),position = position_jitter(width = .05), size = 1, shape = 19, alpha = 0.1)+
   geom_boxplot(aes(x = variable, y = score, fill = zone),outlier.shape = NA, alpha = .5, width = .1, colour = "black")+
   scale_colour_brewer(palette = "Dark2")+
   scale_fill_brewer(palette = "Dark2")+
-  theme_classic()+
-  facet_grid(season~.) +
-  ggtitle("variance of atmospheric conditions")
+  theme_classic(base_size = 20) +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank())+
+  facet_grid(season~.)
+
+ggsave("rain_cloud_plot_variances.tiff",plot = plot_variances, dpi = 500,
+       path = "/home/enourani/ownCloud/Work/safi_lab_meeting/presentation_jan17")
 
 ###print out the plots
 
@@ -226,8 +231,7 @@ plot_values <- ggplot(new_data, aes(x = variable, y = score, fill = zone)) +
   scale_fill_brewer(palette = "Dark2")+
   theme_classic(base_size = 20) +
   theme(axis.title.x = element_blank(),
-        axis.title.y = element_blank(),
-        element_text = family)+
+        axis.title.y = element_blank())+
   facet_grid(season~.)
 
 ggsave("rain_cloud_plot.tiff",plot = plot_values, dpi = 500,
@@ -265,7 +269,7 @@ ggplot(new_data, aes(x = variable, y = scale(score), fill = zone)) +
 mapview(list(twz,tmz))
 mapview(twz$X,twz$Y)
 
-# STEP 4: permutation test: is, within each zone, the seasonal variation in each variable higher than expected by chance? ##### 
+# STEP 4: permutation test with rel_sd: is, within each zone, the seasonal variation in each variable higher than expected by chance? ##### 
 load("R_files/thr_dataset_14_alt_env_spr_aut.RData") #named dataset_env
 
 #create a new var: paste zone and obs_id together
@@ -274,7 +278,7 @@ dataset_env <- dataset_env %>%
   arrange(zone, obs_id)
 
 #Q: is variation in spread of values in spring and autumn higher than expected by chance?
-#run both data randomization and statistic calculation wihtin one loop
+
 
 #calculate observed delta_rsd within each zone. for each zone, calc rsd in each obs_id, average across seasons for each zone, subtract the averages
 obs_d_rsd <- dataset_env %>% 
@@ -363,7 +367,7 @@ for(i in c("tradewind","temperate")){
 
 par(mfrow = c(1,2))
 
-##### STEP 5: calculate p-values #####
+##### STEP 5: calculate p-values 
 p_values <- data.frame(NULL)
 
 for(i in c("tradewind","temperate")){
@@ -453,7 +457,7 @@ par(mfrow = c(1,3))
 
 par(mfrow = c(1,2))
 
-##### STEP 5: calculate p-values #####
+##### STEP 5: calculate p-values 
 p_values <- data.frame(NULL)
 
 
@@ -539,7 +543,7 @@ for(i in c("delta_t", "u", "v")) {
 
 
 
-##### STEP 5: calculate p-values #####
+##### STEP 5: calculate p-values 
 p_values_aut <- data.frame(NULL)
 
 
@@ -560,3 +564,229 @@ for(i in c("delta_t", "u", "v")){
 #add fonts
 library(showtext)
 font_add("serif","/usr/share/fonts/opentype/cantarell/Cantarell-Light")
+
+
+
+# STEP 6: permutation test with variance #####
+load("R_files/thr_dataset_14_alt_env_spr_aut.RData") #named dataset_env
+
+#create a new var: paste zone and obs_id together
+dataset_env <- dataset_env %>% 
+  mutate(zone_obs_id = paste(zone, obs_id, sep = "_")) %>% 
+  arrange(zone, obs_id)
+
+#Q: is variation in spread of values in spring and autumn higher than expected by chance?
+
+# STEP 6.1 : calculate observed variance within each zone. for each zone, calc var in each obs_id, average across seasons for each zone, subtract the averages
+#calculate observed delta_var within each zone. 
+
+
+#vars <-dataset_env %>% 
+#  group_by(zone, season, obs_id) %>% 
+#  summarise(var_delta_t = var(delta_t),
+#            var_u_925 = var(u_925),
+#            var_v_925 = var(v_925)) %>% 
+#  as.data.frame()
+
+#vars_temperate_spring <- vars[vars$zone == "temperate" & vars$season == "spring",]
+# vars_temperate_autumn <- vars[vars$zone == "temperate" & vars$season == "autumn",]
+# vars_tradewind_spring <- vars[vars$zone == "tradewind" & vars$season == "spring",]
+# vars_tradewind_autumn <- vars[vars$zone == "tradewind" & vars$season == "autumn",]
+# 
+# delta_t_f <-var.test(vars_temperate_spring$var_delta_t,vars_temperate_autumn$var_delta_t)
+# u_f <-var.test(vars_temperate_spring$var_delta_t,vars_temperate_autumn$var_delta_t)
+# v_f <-var.test(vars_temperate_spring$var_delta_t,vars_temperate_autumn$var_delta_t)
+
+
+obs_d_var <- dataset_env %>% 
+  group_by(zone, season, obs_id) %>% 
+  summarise(var_delta_t = var(delta_t),
+            var_u_925 = var(u_925),
+            var_v_925 = var(v_925)) %>% 
+  group_by(zone, season) %>% 
+  summarise(avg_delta_t_var_obs = mean(var_delta_t),
+            avg_u_var_obs = mean(var_u_925),
+            avg_v_var_obs = mean(var_v_925)) %>% 
+  group_by(zone) %>% 
+  summarise(delta_t_d_var_obs = abs(diff(avg_delta_t_var_obs)),
+            u_d_var_obs = abs(diff(avg_u_var_obs)),
+            v_d_var_obs = abs(diff(avg_v_var_obs))
+    ) %>% 
+  as.data.frame()
+
+#produce random datasets, randomizing wihtin zone. shuffle season because that's the pattern that I want to remove
+permutations <- 1000
+
+#create a sample of the data that only has one row per obs_id
+data_sample <- dataset_env %>% 
+  group_by(zone_obs_id) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  dplyr::select(c("season", "zone_obs_id")) %>% 
+  as.data.frame()
+
+#create randomized datasets. where season is shuffled but the obs_id structure is maintained
+#prep cluster
+mycl <- makeCluster(detectCores() - 2)
+clusterExport(mycl, c("permutations", "dataset_env", "data_sample")) 
+
+clusterEvalQ(mycl, {
+  library(dplyr)
+  library(purrr)
+  library(Rsampling)
+})
+
+
+a <- Sys.time()
+rnd_d_var <- parLapply(cl = mycl, X = 1:permutations, fun = function(x){ 
+  new_sample_data <- within_columns(data_sample, cols = 1, replace = F) #reshuffle the season
+  new_data <- dataset_env %>% 
+    inner_join(new_sample_data, by = "zone_obs_id")
+  rnd_stat <- new_data %>% 
+    group_by(zone, season.y, obs_id) %>% #season.y is the shuffled season
+    summarise(var_delta_t = var(delta_t),
+              var_u_925 = var(u_925),
+              var_v_925 = var(v_925)) %>% #calculate var within each obs_id
+    group_by(zone, season.y) %>% 
+    summarise(avg_delta_t_var = mean(var_delta_t), #average var across obs_id within each season
+              avg_u_var = mean(var_u_925),
+              avg_v_var = mean(var_v_925)) %>% 
+    group_by(zone) %>% 
+    #summarise(delta_t_d_var = avg_delta_t_var - lead(avg_delta_t_var,1))
+    summarise(delta_t_d_var = abs(diff(avg_delta_t_var)), #subtract autumn and spring var within each zone
+              u_d_var_obs = abs(diff(avg_u_var)),
+              v_d_var_obs = abs(diff(avg_v_var))) %>% 
+    as.data.frame()
+  rnd_stat
+}) %>% 
+  reduce(rbind) %>% 
+  as.data.frame()
+
+b <- Sys.time() - a #18.98357 secs
+
+stopCluster(mycl)
+
+
+#plot the random and observed values
+par(mfrow = c(3,2))
+
+for(i in c("tradewind","temperate")){
+  for(j in c("delta_t_", "u_", "v_")){
+    plot(1:permutations, rnd_d_var[rnd_d_var$zone == i, grep(j,colnames(rnd_d_var))], type = "l", main = paste(i, "delta var in", j, sep = " "))
+    abline(h = obs_d_var[obs_d_var$zone == i, grep(j,colnames(obs_d_var))], col = "red")
+  }
+}
+
+
+par(mfrow = c(3,2))
+for(i in c("tradewind","temperate")){
+  for(j in c("delta_t_", "u_", "v_")) {
+    hist(rnd_d_var[rnd_d_var$zone == i, grep(j,colnames(rnd_d_var))], breaks = 50, col = "lightgrey", 
+         #xlim = c(0, obs_d_var[obs_d_var$zone == i, grep(j,colnames(obs_d_var))] + 0.5),
+         main = paste(i, "delta var in", j, sep = " "))
+    abline(v = obs_d_var[obs_d_var$zone == i, grep(j,colnames(obs_d_var))], col = "red")
+  }
+}
+
+
+
+# calculate p-values 
+p_values <- data.frame(NULL)
+
+for(i in c("tradewind","temperate")){
+  for(j in c("delta_t_", "u_", "v_")){
+    p <- sum(obs_d_var[obs_d_var$zone == i, grep(j,colnames(obs_d_var))] <= rnd_d_var[rnd_d_var$zone == i, grep(j,colnames(rnd_d_var))]) / permutations
+    p_values[i, j] <- p
+  }
+}
+
+######
+# Q2: is variation in wind and delta-t between the two zones higher than expected by chance?
+
+for (i in c("spring", "autumn")){
+
+  data <- dataset_env[dataset_env$season == i,]
+#calculate observed avg_delta_rsd between the two zones
+obs_d_var <- data %>% 
+  group_by(zone,obs_id) %>% 
+  summarise(var_delta_t = var(delta_t),
+            var_u_925 = var(u_925),
+            var_v_925 = var(v_925)) %>% 
+  summarise(avg_delta_t_var = mean(var_delta_t),
+            avg_u_var = mean(var_u_925),
+            avg_v_var = mean(var_v_925)) %>% 
+  summarise(delta_t_d_var = abs(diff(avg_delta_t_var)),
+            u_d_var = abs(diff(avg_u_var)),
+            v_d_var = abs(diff(avg_v_var))) %>% 
+  as.data.frame()
+
+
+#create a sample of the data that only has one row per obs_id
+data_sample <- data %>% 
+  group_by(zone_obs_id) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  dplyr::select(c("zone", "zone_obs_id")) %>% 
+  as.data.frame()
+
+#create randomized datasets. where zone is shuffled but the obs_id structure is maintained
+permutations <- 1000
+
+#prep cluster
+mycl <- makeCluster(detectCores() - 2)
+clusterExport(mycl, c("permutations", "data", "data_sample")) 
+
+clusterEvalQ(mycl, {
+  library(dplyr)
+  library(purrr)
+  library(Rsampling)
+})
+
+
+a <- Sys.time()
+rnd_d_var_spr <- parLapply(cl = mycl, X = 1:permutations, fun = function(x){ 
+  new_sample_data <- within_columns(data_sample, cols = 1, replace = F) #reshuffle the zone
+  new_data <- data %>% 
+    inner_join(new_sample_data, by = "zone_obs_id")
+  rnd_stat <- new_data %>% 
+    group_by(zone.y, obs_id) %>% #zone.y is the randomized zone
+    summarise(var_delta_t = var(delta_t),
+              var_u_925 = var(u_925),
+              var_v_925 = var(v_925)) %>% #calculate var within each obs_id
+    summarise(avg_delta_t_var = mean(var_delta_t), #average var across obs_id within each season
+              avg_u_var = mean(var_u_925),
+              avg_v_var = mean(var_v_925)) %>% 
+    summarise(delta_t_d_var = abs(diff(avg_delta_t_var)), #subtract autumn and spring var within each zone
+              u_d_var = abs(diff(avg_u_var)),
+              v_d_var = abs(diff(avg_v_var))) %>% 
+    as.data.frame()
+  rnd_stat
+})%>% 
+  reduce(rbind) %>% 
+  as.data.frame()
+
+b <- Sys.time() - a #0.07453489 secs
+
+stopCluster(mycl)
+
+
+#plot the random and observed values
+X11()
+par(mfrow = c(1,3))
+for(i in c("delta_t_", "u_", "v_")) {
+  hist(rnd_d_var[, grep(i,colnames(rnd_d_var))], col = "lightgrey", 
+       xlim = c(0, obs_d_var[, grep(i,colnames(obs_d_var))] + 0.5),
+       main = paste(i, "delta var in", j, sep = " "))
+  abline(v = obs_d_var[, grep(j,colnames(obs_d_var))], col = "red")
+}
+
+#calculate p-values 
+p_values <- data.frame(NULL)
+
+for(i in c("delta_t_", "u_", "v_")){
+  p <- sum(obs_d_var[, grep(i,colnames(obs_d_var))] <= rnd_d_var[, grep(i,colnames(rnd_d_var))]) / permutations
+  p_values[i,1] <- p
+}
+
+}
+
