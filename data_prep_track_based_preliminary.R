@@ -28,7 +28,18 @@ proj4string(pol) <- wgs
 ocean <- st_as_sf(pol) %>% 
   st_difference(land_0_60)
 save(ocean,file = "R_files/ocean_0_60.RData")
+load("R_files/ocean_0_60.RData")
 
+##### STEP1.2: create two zone polygons #####
+pts_twz <-rbind(c(-180,0),c(180,0),c(180,30),c(-180,30),c(-180,0))
+pol_twz <- coords2Polygons(pts_twz, ID = 1)
+proj4string(pol_twz) <- wgs
+twz_sf <- st_as_sf(pol_twz)
+
+pts_tmpz <-rbind(c(-180,30),c(180,30),c(180,60),c(-180,60),c(-180,30))
+pol_tmpz <- coords2Polygons(pts_tmpz, ID = 1)
+proj4string(pol_tmpz) <- wgs
+tmpz_sf <- st_as_sf(pol_tmpz)
 
 ##### STEP 2: open data and take a sample #####
 load("R_files/all_spp_unfiltered_updated_lc_0_removed.RData") #dataset; data prepared in all_data_prep_analyze
@@ -46,6 +57,7 @@ smpl_sf <- st_as_sf(smpl) #convert to sf object
 save(smpl_sf, file = "R_files/sample_tracks_pts.RData")
 
 ##### STEP 3: remove tracks with no points over the sea #####
+load("R_files/sample_tracks_pts.RData")
 
 smpl_sea <- smpl_sf %>%  #consider a one km buffer to remove tracks following the coast.
   st_intersection(ocean)
@@ -54,14 +66,18 @@ save(smpl_sea,file = "R_files/sample_tracks_pts_sea.RData")
 
 #extract the tracks from the general filter of tracks over water
 load ("R_files/sea_lines_1km.RData") # called sea_lines_no_buffer. created in data_prep_track_based
+load("R_files/sample_tracks_pts_sea.RData")
+
 
 lines <- sea_lines_no_buffer %>% 
   filter(track %in% smpl_sea$track)
 
+##### STEP 4: filter segments #####
+
 #remove segments shorter than 30 km
 segs_30_km <- lines %>% 
   st_cast("MULTILINESTRING") %>% 
-  st_cast("LINESTRING") %>% 
+  st_cast("LINESTRING") %>% #convert from track to segment
   #st_transform(meters_proj) %>% 
   mutate(length = as.numeric(st_length(.))) %>% 
   filter(length >= 30000)
@@ -74,6 +90,56 @@ segs_filtered <- segs_30_km %>%
   #ungroup() %>% 
   filter(!(length >= 30000 & n <=2))  #filter segments longer than 100 km and with only two points
   
+#assign zone to each segment
+segs_filtered$twz <- as.numeric(st_within(segs_filtered,twz_sf))
+segs_filtered$tmpz <- as.numeric(st_within(segs_filtered,tmpz_sf))
+
+segs_filtered <- segs_filtered %>% 
+  mutate(zone = ifelse(is.na(twz) == TRUE & is.na(tmpz) ==T, "both",
+                       ifelse(is.na(twz) == TRUE & tmpz == 1, "tmpz",
+                              "twz"))) %>% 
+  dplyr::select(-c("twz","tmpz"))
+
+save(segs_filtered, file = "R_files/sample_filtered_segs.RData")
+
+##### STEP 5: interpolate segments #####
+#interpolate points along sea-crossing sections of trajectories
+interp_pts_ls<-lapply(sea_Lines_ls,function(x){
+  n<-as.integer(SpatialLinesLengths(x)/0.5) #determine the number of points to be interpolated. every 500 m... this is a lot...e.g. for a crossing of 1km, 2000 points
+  interp_pts<-spsample(x, n = n, type = "regular")
+  
+  interp_pts
+})
+##### STEP 6: annotate with date-time #####
+
+##### STEP 7: create alternative points #####
+
+
+
+
+#assign season and timestamps to the points (using the dataset data)
+#first convert everything to points.
+load("R_files/sample_filtered_segs.RData") #segs_filtered
+
+
+dataset_sf <- st_as_sf(dataset, coords = c(1,2))
+
+segs_pts <- segs_filtered %>%  
+  mutate(seg_id = seq(1:nrow(.))) %>% #assign segment id.
+  st_cast("POINT") %>% 
+  as_Spatial() %>% 
+  as.data.frame()
+
+segs_df <- segs_pts
+#colnames(segs_df)[c(7,8)] <- c("location.long","location.lat") 
+segs_df <- segs_df %>% 
+  rename(location.long = coords.x1,
+         location.lat = coords.x2)  %>% 
+  mutate_at(c("location.long","location.lat"),round, 3) %>% 
+  rowwise() %>% 
+  mutate(date_time = dataset[which(dataset$location.lat == location.lat & dataset$location.long == location.long),"date_time"])
+
+segs_df$date_time <- dataset[which(dataset$location.lat == segs_df$location.lat & dataset$location.long == segs_df$location.long),"date_time"]
 
 
 
@@ -82,16 +148,20 @@ segs_filtered <- segs_30_km %>%
 
 
 
+segs_df[,c("")]  
+#group_by(geometry) %>% 
+  mutate(date_time = dataset[which(dataset_sf$geometry == geometry),"date_time"][1],
+         season = dataset[which(dataset$geometry == geometry),"season"][1])
+
+
+segs_filtered <-segs_filtered %>%  #this is not correct. is assumes that all points along the same track have one data_time attribute
+  group_by(track) %>% 
+  mutate(date_time = dataset[which(dataset$track == track),"date_time"][1],
+         season = dataset[which(dataset$track == track),"season"][1])
 
 
 
-
-
-
-
-
-
-
+#####################################################################################################################################
 #using multidplyr produces error. just use parallel
 mycl <- makeCluster(detectCores() - 2)
 
