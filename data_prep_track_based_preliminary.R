@@ -103,14 +103,123 @@ segs_filtered <- segs_filtered %>%
 save(segs_filtered, file = "R_files/sample_filtered_segs.RData")
 
 ##### STEP 5: interpolate segments #####
-#interpolate points along sea-crossing sections of trajectories
-interp_pts_ls<-lapply(sea_Lines_ls,function(x){
-  n<-as.integer(SpatialLinesLengths(x)/0.5) #determine the number of points to be interpolated. every 500 m... this is a lot...e.g. for a crossing of 1km, 2000 points
-  interp_pts<-spsample(x, n = n, type = "regular")
-  
-  interp_pts
-})
+segs_interp <- segs_filtered %>% 
+  st_segmentize(units::set_units(30, km)) #add points to the line. 30 km apart (to match the env data resolution)
+
 ##### STEP 6: annotate with date-time #####
+#use dataset
+
+#either do it by track. group the segs_interp by track, extract the track from dataset, extract observed points from dataset and assign date_time. for interpolated points, extract the nearest neighbors and interpolate
+#segs_interp %>% 
+#  group_by(track)
+
+#conver segments to points
+segs_pts <- segs_interp %>% 
+  st_cast("POINT") #%>% 
+  st_set_precision(0.001)
+
+lapply(split(segs_pts,segs_pts$track), function(x){
+  track <- x$track[1]
+  x_df <- as(x,"Spatial") %>% 
+    as.data.frame() %>% 
+    rename(location.long = coords.x1,
+           location.lat = coords.x2)
+  
+  data_df <- dataset[dataset$track == track,]
+  
+  for (i in 1:nrow(x_df)){
+    interp <- x_df[i,]
+    intersect <- data_df[round(data_df$location.long,1) == round(interp$location.long,1) & round(data_df$location.lat,1) == round(interp$location.lat,1),]
+    if (nrow(intersect ==1)){ #if the point overlaps with an observed point over the track, assign the date_time and season
+      interp <- interp %>% 
+        mutate(season = intersect$season,
+               date_time = intersect$date_time)
+    } else { #if the point does not overlap with an observed point over the track, find the nearest neighbor and assign the date_time and season
+      
+    }
+  }
+  
+  x_df %>% 
+    rowwise() %>% 
+    filter(location.long %in% data_df$location.long & location.lat %in% data_df$location.lat)
+  
+  intersections <- dataset[dataset$location.long %in% ]
+  
+  data_sf <- dataset_sf[dataset_sf$track == track,] #%>% 
+    st_transform(meters_proj) %>% 
+    st_buffer(units::set_units(0.5, km)) %>% 
+    st_transform(wgs)
+  
+    #for each point
+    nearest_neighbor_indx <- pointDistance(st_coordinates(x),st_coordinates(data_sf), lonlat=TRUE) %>%
+      order()%>%
+      head(1)
+    nearest_neighbor_indx <- pointDistance(as(x,"Spatial"),as(data_sf,"Spatial"), lonlat=TRUE) %>%
+      order()%>%
+      head(1)
+    
+  same_pts <- st_intersection(data_sf,x)
+  #same_pts2 <- st_overlaps(data_sf,x)
+  intersections<-intersect(as(data_sf,"Spatial"),as(x,"Spatial")) 
+})
+  
+mapview(data_sf,color="green") + mapview(x,color="red")  
+  
+
+
+
+#add time data
+coordinates(data_f)<-~long+lat
+sea_region<-extent(-7,52,29,46) #only the northern shore
+data_sea_region<-crop(data_f,sea_region) #extract points within the sea area, to save time
+
+
+interp_pts_dt_ls<-rep(list(NA),length(interp_pts_ls)) #create empty list
+names(interp_pts_dt_ls)<-names(interp_pts_ls) #assign names
+
+for(i in 1:length(interp_pts_ls)){ #for each set of interpolated points, find overlapping observed points and extract the datetime
+  pts<-interp_pts_ls[[i]]
+  name<-names(interp_pts_ls)[[i]]
+  observed_pts<-data_sea_region[data_sea_region$track == name,] #extract observation points from the track
+  intersections<-intersect(observed_pts,pts) 
+  
+  if(length(intersections) == 0){ #if there are no intersections between the interpolated and observed points, find the nearest neighbor and extract the time
+    pts_dt_ls<-apply(pts@coords,1,function(t){
+      coord<-data.frame(x=t[1],y=t[2])
+      t<-SpatialPoints(coord, proj4string=wgs)
+      proj4string(t)<-wgs
+      nearest_neighbor_indx <- pointDistance(t,observed_pts, lonlat=TRUE) %>%
+        order()%>%
+        head(1) #extract indices for the two points closest to the start point
+      
+      t$dt<-observed_pts@data[nearest_neighbor_indx,"dt"] #extract datetime of the nearest observed point and assign it to the interpolated point
+      t$track<-name
+      t
+    })
+  } else{
+    #for each interpolated point, find the nearest observed point and assing the datetime 
+    #assign the time of the closest point to the interpolated point
+    pts_dt_ls<-apply(pts@coords,1,function(t){
+      coord<-data.frame(x=t[1],y=t[2])
+      t<-SpatialPoints(coord, proj4string=wgs)
+      proj4string(t)<-wgs
+      nearest_neighbor_indx <- pointDistance(t,intersections, lonlat=TRUE) %>%
+        order()%>%
+        head(1) #extract indices for the two points closest to the start point
+      
+      t$dt<-intersections@data[nearest_neighbor_indx,"dt"] #extract datetime of the nearest observed point and assign it to the interpolated point
+      t$track<-name
+      t
+    })
+  }
+  pts_dt<-do.call(rbind, pts_dt_ls)
+  interp_pts_dt_ls[[i]]<-pts_dt
+  
+}
+
+
+
+
 
 ##### STEP 7: create alternative points #####
 
@@ -122,7 +231,8 @@ interp_pts_ls<-lapply(sea_Lines_ls,function(x){
 load("R_files/sample_filtered_segs.RData") #segs_filtered
 
 
-dataset_sf <- st_as_sf(dataset, coords = c(1,2))
+dataset_sf <- st_as_sf(dataset, coords = c(1,2)) %>% 
+  st_set_crs(wgs)
 
 segs_pts <- segs_filtered %>%  
   mutate(seg_id = seq(1:nrow(.))) %>% #assign segment id.
