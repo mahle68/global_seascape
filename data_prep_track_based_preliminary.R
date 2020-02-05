@@ -135,7 +135,9 @@ lapply(split(segs_pts,segs_pts$track), function(x){
         mutate(season = intersect$season,
                date_time = intersect$date_time)
     } else { #if the point does not overlap with an observed point over the track, find the nearest neighbor and assign the date_time and season
-      
+      nearest <- data_df[which(abs(data_df$location.lat-interp$location.lat)==min(abs(data_df$location.lat-interp$location.lat)) &
+                                 abs(data_df$location.long-interp$location.long)==min(abs(data_df$location.long-interp$location.long))),]
+      #nearest <- data_df[which(abs(data_df$location.long-interp$location.long)==min(abs(data_df$location.long-interp$location.long))),]
     }
   }
   
