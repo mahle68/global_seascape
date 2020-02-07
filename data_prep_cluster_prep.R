@@ -17,7 +17,7 @@ library(sf)
 library(raster)
 library(parallel)
 #library(parallel)
-#library(lutz)
+#library(lutz)getwd()
 #library(move)
 #library(mapview)
 #library(rWind)
@@ -34,31 +34,14 @@ load("all_spp_unfiltered_updated_lc_0_removed_new_track_id.RData") #dataset
 load("land_0_60.RData") #land_0_60
 load("ocean_0_60.RData") #ocean
 
-##### STEP 1: find tracks with at least some points over the sea #####
-dataset_sp <- dataset
-coordinates(dataset_sp) <- ~location.long + location.lat
-proj4string(dataset_sp) <- wgs
-
-
-intersect(rr,ocean_sp)
-#dataset_sf <- dataset_sp %>% 
-#  st_as_sf()
-
-#pts_sea <- erase(dataset_sp,as(ocean,"Spatial"))
-
-
-
-# pts_sea <- dataset_sf %>%  
-#   st_difference(ocean)
-# 
-# save(pts_sea,file = "all_tracks_pts_sea.RData")
-
 ##### STEP 1: convert tracks to spatial lines and remove portions over land #####
 ocean_sp <- as(ocean,"Spatial")
 land_sp <- as(land_0_60,"Spatial")
+coordinates(dataset) <- ~location.long + location.lat
+proj4string(dataset) <- "wgs"
 
-track_ls<-split(dataset,dataset$track)
-track_ls<-track_ls[lapply(track_ls,nrow)>0]
+track_ls <- split(dataset,dataset$track)
+track_ls <- track_ls[lapply(track_ls,nrow)>1] #remove tracks with one point
 
 
 mycl <- makeCluster(9) #total number of tracks is 369, so 41 will be sent to each core
@@ -66,13 +49,10 @@ mycl <- makeCluster(9) #total number of tracks is 369, so 41 will be sent to eac
 clusterExport(mycl, c("track_ls", "land_sp","ocean_sp","wgs")) #define the variable that will be used within the function
 
 clusterEvalQ(mycl, {
-  library(tidyverse)
-  library(lubridate)
-  library(sf)
   library(raster)
 })
 
-Lines_ls<-lapply(track_ls,function(x){
+Lines_ls<-parLapply(mycl,track_ls,function(x){
   #find out if the track has any points over water
   over_sea <- intersect(x,ocean_sp) #track_ls needs to be spatial for this to work
   #if the track has any point over water, convert to spatial line and subset for sea
@@ -89,64 +69,30 @@ Lines_ls<-lapply(track_ls,function(x){
 
 stopCluster(mycl)
 
-save(Lines_ls,file = "Lines_ls_no_land.RData")
+save(Lines_ls,file = "Lines_ls_no_land.RData") #each track has a 
 
+##### STEP 5: break up tracks into sea-crossing segments and filter #####
 
+#remove elements with 0 elements (tracks with no sea-crossing)
+Lines_ls_no_na <- Lines_ls[lapply(Lines_ls,is.na) == FALSE] 
 
+#only keep the track column
+Lines_ls_no_na <- lapply(Lines_ls_no_na,"[",,"track")
 
-# #####STEP 1: remove tracks with no points over water #####
- #convert dataset to sf
- coordinates(dataset) <- ~ location.long + location.lat
- proj4string(dataset) <- wgs
- dataset_sf <- st_as_sf(dataset)
- 
- dataset_sea <- dataset_sf %>% 
-  st_intersects(ocean)
+#convert to one object
+lines <- do.call(rbind,Lines_ls_no_na)
 
-#keep only tracks with some points over the sea
-tracks_sea <- dataset[dataset$track %in% dataset_sea$track,]
-
-coordinates(tracks_sea)<-~location.long+location.lat
-proj4string(tracks_sea)<-wgs
-tracks_sea_sf <- st_as_sf(tracks_sea) #convert to sf object
-
-
-
-
-#convert tracks to lines
-#only keep tracks that have at least three points
-less_than_three_point <- tracks_sea %>% #find out which tracks have only one or two points. the two point tracks are only in East Asia
-  group_by(track) %>%
-  summarise(n = length(track)) %>%
-  filter(n < 3)
-
-lines <- tracks_sea %>%
-  filter(!(track %in% less_than_three_point$track)) %>%
-  group_by(track) %>%
-  arrange(date_time) %>%
-  summarize(species = head(species,1),do_union = F) %>%
+#convert to segments
+segs_sf <- st_as_sf(lines) %>% 
   st_cast("LINESTRING")
 
-
-##### STEP 5: filter for sea-crossing segments #####
-
-#only 1 km buffer
-sea_lines_no_buffer <- lines %>% 
-  st_difference(land_1km)
-
-save(sea_lines_no_buffer, file = "R_files/sea_lines_1km.RData")
-
-sea_seg_no_buffer <- sea_lines_no_buffer %>% 
-  st_cast("MULTILINESTRING") %>% 
-  st_cast("LINESTRING")
-
-save(sea_seg_no_buffer, file = "R_files/sea_segs_1km.RData")
-
-#number of points per segment
-less_than_two<- sea_seg_no_buffer %>% #find out which tracks have only one or two points. the two point tracks are only in East Asia
+#remove segment with less than 3 points
+less_than_two<- segs_sf %>% #find out which tracks have only one or two points. the two point tracks are only in East Asia
   group_by(track) %>% 
   summarise(n = length(track)) %>% 
   filter(n < 3) 
+
+
 
 
 
