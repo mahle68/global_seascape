@@ -112,6 +112,50 @@ save(segs_filtered, file = "R_files/sample_filtered_segs.RData")
 
 ##### STEP 3: annotate with date-time #####
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #convert segments to points
 segs_pts <- segs_filtered %>% 
   mutate(seg_id = seq(1:nrow(.))) %>% 
