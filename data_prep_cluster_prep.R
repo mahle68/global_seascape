@@ -82,81 +82,11 @@ Lines_ls_no_na <- lapply(Lines_ls_no_na,"[",,"track")
 #convert to one object
 lines <- do.call(rbind,Lines_ls_no_na)
 
-#convert to segments
-segs_sf <- st_as_sf(lines) %>% 
-  st_cast("LINESTRING")
+#filter segments
+segs_filtered<- st_as_sf(lines) %>% #convert to sf object
+  st_cast("LINESTRING") %>% #convert to linestring (separate the segments)
+  mutate(length = as.numeric(st_length(.)),
+         n = npts(.,by_feature = T)) %>% 
+  filter(length >= 30000 & n <= 2) #remove sea-crossing shorter than 30 km and segment with less than 2 points 
+#there are still problematic tracks in the above... :/
 
-#remove segment with less than 3 points
-less_than_two<- segs_sf %>% #find out which tracks have only one or two points. the two point tracks are only in East Asia
-  group_by(track) %>% 
-  summarise(n = length(track)) %>% 
-  filter(n < 3) 
-
-
-
-
-
-###test to see why the squiggliness
-#tr <- lines[lines$track == "337_2015",]
-tr <- dataset[dataset$track %in% c("337_2015_autumn","337_2015_spring"),]
-tr <- dataset[dataset$track %in% "337_2015_spring",]
-tr <- dataset[dataset$track %in% "337_2015_autumn",]
-
-coordinates(tr) <-~ location.long+location.lat
-proj4string(tr) <- wgs
-
-tr_sf <- tr %>%  
-  st_as_sf(tr) %>%  
-  arrange(date_time) %>%
-  summarize(species = head(species,1),do_union = F) %>%
-  st_cast("LINESTRING")
-
-tr_sp <- as(tr_sf, "Spatial")
-
-
-# b <- Sys.time()
-# tr_land <- tr_sf %>% 
-#   st_difference(land_1km)
-# Sys.time() - b
-# 
-# b <- Sys.time()
-# tr_land2 <- tr_sf %>% 
-#   st_intersection(ocean)
-# Sys.time() - b
-# 
-# b <- Sys.time()
-# tr_land2 <- tr_sf %>% 
-#   st_intersects(ocean)
-# Sys.time() - b
-
-#tr_sp <- as(tr, "Spatial")
-land_sp <- as(land_1km,"Spatial")
-
-b <- Sys.time()
-r <- erase(tr_sp,ocean_sp)
-Sys.time() - b
-
-ocean_sp <- as(ocean,"Spatial")
-
-b <- Sys.time()
-r <- raster::intersect(as(tr_sp,"SpatialLines"),as(ocean_sp,"SpatialPolygons"))
-Sys.time() - b
-
-
-b <- Sys.time()
-r <- gIntersection(as(tr_sp,"SpatialLines"),as(ocean_sp,"SpatialPolygons"))
-Sys.time() - b
-
-
-
-###try creating the lines using the sp package
-
-tr_l <- as(tr,"SpatialLines")
-
-#go over the list of tracks, for each track, filter out land
-
-rr <- dataset_sp[dataset_sp$track == "84430_2009_autumn",]
-rr2 <- dataset_sp[dataset_sp$track == "90757_2009_autumn",]
-
-int <- intersect(rr,ocean_sp)
-int2 <- intersect(rr2,ocean_sp)

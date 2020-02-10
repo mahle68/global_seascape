@@ -50,8 +50,8 @@ OHB <- lapply(OHB_files,read_excel,1,col_types = c("numeric","date","numeric","n
   reduce(full_join) %>%
   rename(date_time = 'date(gmt)',lon = longitud,lat = latitude) %>%
   mutate(yday = yday(date_time)) %>%
-  mutate(season = ifelse(between(yday,253,294),"autumn",ifelse(month == 5,"spring","other")), #11 Sep-20 Oct; spring between 1-5 May
-         track = paste(ptt,year,sep = "_"),
+  mutate(season = ifelse(between(yday,253,294),"autumn",ifelse(month == 5,"spring","other"))) %>%  #11 Sep-20 Oct; spring between 1-5 May
+  mutate(track = paste(ptt,year,season,sep = "_"),
          species = "OHB") %>% 
   rename(location.long = lon,
          location.lat = lat) %>% 
@@ -65,8 +65,8 @@ GFB <- lapply(GFB_files,read.csv,stringsAsFactors = F) %>%
   mutate(locdate,date_time = as.POSIXct(strptime(locdate,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
   mutate(month = month(date_time),
          year = year(date_time),
-         season = ifelse(month %in% c(3,4),"spring",ifelse(month %in% c(10),"autumn","other")),
-         track = paste(platform,year,sep = "_"),
+         season = ifelse(month %in% c(3,4),"spring",ifelse(month %in% c(10),"autumn","other"))) %>% 
+  mutate(track = paste(platform,year,season,sep = "_"),
          species = "GFB") %>% 
   rename(location.long = lon,
          location.lat = lat) %>% 
@@ -80,9 +80,9 @@ PF <- read.csv("data/LifeTrack Peregrine falcon.csv", stringsAsFactors = F) %>%
   mutate(date_time = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
   mutate(month = month(date_time),
          year = year(date_time),
-         track = paste(tag.local.identifier, year,sep = "_"),
          species = "PF",
          season = ifelse (month %in% c(9,10), "autumn", "other")) %>% 
+  mutate(track = paste(tag.local.identifier, year, season,sep = "_")) %>% 
   filter(season != "other")
 
 OE <- read.csv("data/Osprey in Mediterranean (Corsica, Italy, Balearics).csv", stringsAsFactors = F) %>% 
@@ -91,9 +91,9 @@ OE <- read.csv("data/Osprey in Mediterranean (Corsica, Italy, Balearics).csv", s
   mutate(date_time = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
   mutate(month = month(date_time),
          year = year(date_time),
-         track = paste(tag.local.identifier, year,sep = "_"),
          species = "O",
          season = ifelse(month %in% c(2:4),"spring",ifelse (month %in% c(8:10), "autumn","other"))) %>% 
+  mutate(track = paste(tag.local.identifier, year,season, sep = "_")) %>% 
   filter(season != "other")
 
 OA <- read.csv("data/Osprey_Americas/Osprey Bierregaard North and South America.csv", stringsAsFactors = F) %>% 
@@ -103,9 +103,9 @@ OA <- read.csv("data/Osprey_Americas/Osprey Bierregaard North and South America.
   mutate(date_time = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
   mutate(month = month(date_time),
          year = year(date_time),
-         track = paste(tag.local.identifier, year,sep = "_"),
          species = "O",
          season = ifelse(month %in% c(3,4),"spring",ifelse (month %in% c(9,10), "autumn", "other"))) %>% 
+  mutate(track = paste(tag.local.identifier, year,season,sep = "_")) %>% 
   filter(season != "other")
 
 
@@ -120,16 +120,16 @@ dataset <- list(OHB,GFB, PF, OE, OA) %>%
   dplyr::select(c("location.long", "location.lat", "date_time", "track", "month", "year" , "season", "species")) %>% 
   as.data.frame()
 
-save(dataset, file = "R_files/all_spp_unfiltered_updated_lc_0_removed.RData")
+save(dataset, file = "R_files/all_spp_unfiltered_updated_lc_0_removed_new_track_id.RData")
 
-##### STEP 3: filter out points over land #####
+##### STEP 3: filter out points over land ##### from here on is not updated with the new version of dataset (new track id) Feb.6
 
 dataset_sea <- dataset %>% 
   drop_na(c("location.long", "location.lat")) %>% 
   st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
-  st_difference(land_15km)
+  st_difference(land_0_60)
 
-save(dataset_sea, file = "R_files/all_spp_spatial_filtered_updated.RData")
+save(dataset_sea, file = "R_files/all_spp_spatial_filtered_updated_no_buffer.RData")
 
 ##### STEP 4: temporal filter for autocorrelation #####
 

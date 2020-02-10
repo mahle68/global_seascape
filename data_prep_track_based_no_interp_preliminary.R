@@ -21,22 +21,6 @@ setwd("/home/mahle68/ownCloud/Work/Projects/delta_t")
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
-alt_pts_temporal_hr <- function(date_time,n_alts, n_days, n_hours) { #n_alts is the number of alternative points. n_days is the number of alternative days
-  #same year, hour changes
-  alt_pts_before <- vector()
-  alt_pts_after <- vector()
-  #n_other_days <- n_alts - 23
-  
-  for (i in 1:as.integer((n_days/2)*n_hours)) {
-    alt_pts_before[i] <- as.character(date_time - hours(i)) 
-    
-    alt_pts_after[i] <- as.character(date_time + days(i)) 
-  }
-  
-  rbind( data.frame(dt = alt_pts_before, period =  "before", stringsAsFactors = F),
-         data.frame(dt = alt_pts_after, period =  "after", stringsAsFactors = F))
-}
-
 
 ##### STEP 1: create an ocean layer #####
 load("R_files/land_0_60.RData") #called land_0_60... no buffer
@@ -54,11 +38,13 @@ pts_twz <-rbind(c(-180,0),c(180,0),c(180,30),c(-180,30),c(-180,0))
 pol_twz <- coords2Polygons(pts_twz, ID = 1)
 proj4string(pol_twz) <- wgs
 twz_sf <- st_as_sf(pol_twz)
+save(twz_sf,file = "R_files/twz_sf.RData")
 
 pts_tmpz <-rbind(c(-180,30),c(180,30),c(180,60),c(-180,60),c(-180,30))
 pol_tmpz <- coords2Polygons(pts_tmpz, ID = 1)
 proj4string(pol_tmpz) <- wgs
 tmpz_sf <- st_as_sf(pol_tmpz)
+save(tmpz_sf,file = "R_files/tmpz_sf.RData")
 
 ##### STEP 2: open data and take a sample #####
 load("R_files/all_spp_unfiltered_updated_lc_0_removed.RData") #dataset; data prepared in all_data_prep_analyze
@@ -199,14 +185,12 @@ colnames(pts_alt_mb)[c(7,8)] <- c("location-long","location-lat")
 
 write.csv(pts_alt_mb,"R_files/sample_pts_mb.csv") 
 
-
-##########################################
 #downloaded from movebank
-ann <- read.csv("movebank_annotation/all_spp_temp_sp_filtered_15km_alt_14days.csv-6653387681147029371.csv", stringsAsFactors = F) %>%
-  drop_na() %>%# NA values are for the 2019 tracks. with a transition to ERA5, I should be able to use this data as well
+ann <- read.csv("movebank_annotation/sample_pts_mb.csv-3131529835871517968/sample_pts_mb.csv-3131529835871517968.csv", stringsAsFactors = F) %>%
+  #drop_na() %>%# NA values are for the 2019 tracks. with a transition to ERA5, I should be able to use this data as well
   mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
-  rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature,
-         t2m = ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.,
+  rename(sst = ECMWF.Interim.Full.Daily.SFC.FC.Sea.Surface.Temperature,
+         t2m = ECMWF.Interim.Full.Daily.SFC.FC.Temperature..2.m.above.Ground.,
          u925 = ECMWF.Interim.Full.Daily.PL.U.Wind,
          v925 = ECMWF.Interim.Full.Daily.PL.V.Wind) %>%
   mutate(wspd = uv2ds(u925,v925)[,2],
@@ -218,35 +202,14 @@ ann <- read.csv("movebank_annotation/all_spp_temp_sp_filtered_15km_alt_14days.cs
 NA_obs_ids <- ann %>% 
   group_by(obs_id) %>% 
   summarise(count = n()) %>% 
-  filter(count < 15) %>% 
-  .$obs_id
+  filter(count < 673) %>% 
+  .$obs_id #none! interesting..... no 2019 data was included in the sample ;)
 
 ann <- ann %>% 
   filter(!(obs_id %in% NA_obs_ids))
 
 
-save(ann, file = "R_files/all_spp_temp_sp_filtered_15km_alt_ann_14days.RData")
+save(ann, file = "R_files/sample_alt_ann.RData")
 
 
-##### MAP all data #####
-load("R_files/all_spp_unfiltered.RData") #called dataset
 
-dataset <- dataset %>% 
-  mutate(color = ifelse(species == "OHB", "cornflowerblue",
-                        ifelse(species == "GFB","darksalmon",
-                               ifelse(species == "PF", "firebrick1",
-                                      "darkseagreen3"))))
-
-X11(width = 15, height = 8)
-tiff("/home/enourani/ownCloud/Work/safi_lab_meeting/presentation_jan17/all_tracks.tiff", width = 15, height = 8, units = "in", res = 500)
-maps::map("world",fill = TRUE, col = "grey30", border = F)
-points(dataset$location.long,dataset$location.lat, col= alpha(dataset$color,0.3), pch = 16, cex = 0.5)
-legend(x = -170, y = -40, legend = c("Grey-faced buzzard","Osprey","Oriental honey buzzard","Peregrine falcon"),
-       col = c("darksalmon","darkseagreen3","cornflowerblue","firebrick1"), pch = 16, bty = "n", cex = 0.9)
-abline(h = 0, lty = 2,lwd = 0.2, col = "grey50")
-abline(h = 30, lty = 2, lwd = 0.2, col = "grey50")
-abline(h = 60, lty = 2, lwd = 0.2, col = "grey50")
-text(x = -175, y = 32, "30° N", col = "grey50", cex = 0.7)
-text(x = -175, y = 62, "60° N", col = "grey50", cex = 0.7)
-
-dev.off()
