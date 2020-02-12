@@ -17,11 +17,10 @@ library(sf)
 library(raster)
 library(parallel)
 library(mapview)
-#library(parallel)
-#library(lutz)getwd()
-#library(move)
-#library(mapview)
+library(lutz)
 #library(rWind)
+
+#options(digits = 10) #this only affects what is printed. not what is in the data. use round
 
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
@@ -96,6 +95,8 @@ segs_filtered<- st_as_sf(lines) %>% #convert to sf object
          n = npts(.,by_feature = T)) %>% 
   filter(n > 2 & length >= 30000) #remove sea-crossing shorter than 30 km and segment with less than 2 points 
 
+segs_filtered$track <- as.character(segs_filtered$track)
+
 save(segs_filtered,file = "Segs_no_land_filtered.RData") 
 
 #assign zone to each segment
@@ -108,58 +109,200 @@ segs_filtered <- segs_filtered %>%
                               "twz"))) %>% 
   dplyr::select(-c("twz","tmpz"))
 
-save(segs_filtered, file = "R_files/sample_filtered_segs.RData")
+save(segs_filtered, file = "filtered_segs.RData")
 
 ##### STEP 3: annotate with date-time #####
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+load("filtered_segs.RData") #segs_filtered. make sure track is character and not factor. so that there are no empty tracks
 
 #convert segments to points
 segs_pts <- segs_filtered %>% 
   mutate(seg_id = seq(1:nrow(.))) %>% 
-  st_cast("POINT") 
+  st_cast("POINT")
+
+#create a buffer around the dataset points to make polygons. then overlay
+dataset_buff <- dataset %>% 
+  st_as_sf(coords = c("location.long","location.lat"), crs = wgs) %>% 
+  st_transform(meters_proj) %>% 
+  st_buffer(dist = units::set_units(10, 'm')) %>% 
+  st_transform(wgs) 
+
+save(dataset_buff,file = "dataset_10m_buffer.RData")
+load("dataset_10m_buffer.RData")
+
+#for each segs_pts point, find the index of the dataset_buff polygon that it intersects, then extract that row from dataset and add to segs_pts
+mycl <- makeCluster(9) 
+
+clusterExport(mycl, c("segs_pts", "dataset_buff")) #define the variable that will be used within the function
+
+clusterEvalQ(mycl, {
+  library(sf)
+  library(raster)
+  library(tidyverse)
+})
+
+b <- Sys.time()
+
+segs_ann <- parLapply(mycl,split(segs_pts,segs_pts$track), function(x){ #separate by track first to break up the job into smaller chunks
+  data <- dataset_buff[dataset_buff$track == x$track[1],]
+  #track_ann <- apply(x,1,function(y){ #for each point on the track
+  #x2 <- list()
+  track_ann <- lapply(split(x,rownames(x)), function(y){ #for each point on the track
+  #for (i in 1:nrow(x)){
+   #   y <- x[i,]
+    inter <- st_intersection(y,data)
+    
+    if(nrow(inter) == 0){ #if there are no intersections, find the nearest neighbor
+      nearest <- data[st_nearest_feature(y,data),]
+      # x$date_time[i] <- as.character(nearest$date_time)
+      # x$season[i] <- nearest$season
+      # x$species[i] <- nearest$species
+      
+      y <- y %>% 
+        full_join(st_drop_geometry(nearest))
+      y
+    } else { #if there is an intersection, just return the intersection result
+      # x$date_time[i] <- as.character(inter$date_time)
+      # x$season[i] <- inter$season
+      # x$species[i] <- inter$species
+      inter %>% 
+        dplyr::select(-track.1)
+    }
+    #}
+  }) %>% 
+    reduce(rbind)
+  
+  track_ann
+  
+}) %>% 
+  reduce(rbind)
+Sys.time() - b
+
+stopCluster(mycl)
+
+save(segs_ann, file = "segs_dt.RData")
+
+##### STEP 4: create alternative tracks in time #####
+
+load("segs_dt.RData") #segs_ann
+
+hours_to_add <- c(0,cumsum(rep(1,672/2)),cumsum(rep(-1,(672/2))))
+
+pts_alt <- segs_ann %>% 
+  mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% #,
+         #tz = tz_lookup_coords(st_coordinates(.)[,2],st_coordinates(.)[,1])) #no need for local time, because i decided not to limit it to daytime.
+  as.data.frame() %>% 
+  mutate(obs_id = row_number()) %>% 
+  slice(rep(row_number(),673)) %>%  #paste each row 695 times for alternative points: 28days *24 hours + 23 hours in observed day
+  mutate(used = ifelse(row_number() == 1,1,
+                       ifelse((row_number() - 1) %% 673 == 0, 1, 0))) %>% 
+  group_by(obs_id) %>% 
+  arrange(obs_id) %>% 
+  mutate(hours_to_add = hours_to_add) %>% 
+  mutate(alt_date_time = date_time + hours(hours_to_add)) %>%  #use hours to add as an id for alternative segments
+  ungroup()
+
+save(pts_alt, file = "alt_pts_alt_time.RData")
+
+
+##### STEP 5: annotate all points #####
+
+load("R_files/sample_alt_pts_alt_time.RData") #called pts_alt
+
+#prep for track annotation on movebank
+pts_alt_mb <- pts_alt %>%
+  mutate(timestamp = paste(as.character(alt_date_time),"000",sep = "."))
+
+#rename columns
+colnames(pts_alt_mb)[c(7,8)] <- c("location-long","location-lat")
+
+write.csv(pts_alt_mb,"R_files/sample_pts_mb.csv") 
+
+#downloaded from movebank
+ann <- read.csv("movebank_annotation/sample_pts_mb.csv-3131529835871517968/sample_pts_mb.csv-3131529835871517968.csv", stringsAsFactors = F) %>%
+  #drop_na() %>%# NA values are for the 2019 tracks. with a transition to ERA5, I should be able to use this data as well
+  mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
+  rename(sst = ECMWF.Interim.Full.Daily.SFC.FC.Sea.Surface.Temperature,
+         t2m = ECMWF.Interim.Full.Daily.SFC.FC.Temperature..2.m.above.Ground.,
+         u925 = ECMWF.Interim.Full.Daily.PL.U.Wind,
+         v925 = ECMWF.Interim.Full.Daily.PL.V.Wind) %>%
+  mutate(wspd = uv2ds(u925,v925)[,2],
+         wdir = uv2ds(u925,v925)[,1],
+         year = year(timestamp)) %>% 
+  mutate(delta_t = sst - t2m)
+
+#identify observed id's with less than 15 observations (the rest were removed because they produced NAs in the annotation step)
+NA_obs_ids <- ann %>% 
+  group_by(obs_id) %>% 
+  summarise(count = n()) %>% 
+  filter(count < 673) %>% 
+  .$obs_id #none! interesting..... no 2019 data was included in the sample ;)
+
+ann <- ann %>% 
+  filter(!(obs_id %in% NA_obs_ids))
+
+
+save(ann, file = "R_files/sample_alt_ann.RData")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+v <-segs_pts[1:nrow(segs_pts),] %>% 
+  st_intersection(dataset_buff)
+  mutate(bb = split(.,1:nrow(segs_pts))) #this has more points than the original segs_pts
+
+
+
+
+#try merging the two objects as dataframes. failed
+segs_df <- segs_pts %>% 
+  as("Spatial") %>% 
+  as.data.frame() %>% 
+  mutate_at(c("x","y"),round,2) %>% #round lat and long to three decimal places to match that of dataset
+  rename(location.long = x,
+         location.lat = y)
+
+#try with two decimal places
+dataset_rounded <- dataset %>% 
+  mutate_at(c("location.long","location.lat"),round,2)
+
+#merge segs_df with dataset, to get date_time and season
+merge_df <- segs_df %>%
+  left_join(dataset_rounded)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
 
 # lapply(split(segs_pts,segs_pts$track), function(x){ #for each set of points, find overlapping observed points and extract the datetime
 #   pts<-interp_pts_ls[[i]]
@@ -303,66 +446,4 @@ segs_pts_dt <- lapply(split(segs_pts,segs_pts$track), function(x){
   reduce(rbind)
 
 save(segs_pts_dt, file = "R_files/sample_segs_pts_dt.RData")
-
-##### STEP 7: create alternative tracks in time #####
-
-hours_to_add <- c(0,cumsum(rep(1,672/2)),cumsum(rep(-1,(672/2))))
-
-pts_alt <- segs_pts_dt %>% 
-  mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC"),
-         tz = tz_lookup_coords(location.lat,location.long)) %>% 
-  as.data.frame() %>% 
-  mutate(obs_id = row_number()) %>% 
-  slice(rep(row_number(),673)) %>%  #paste each row 695 times for alternative points: 28days *24 hours + 23 hours in observed day
-  mutate(used = ifelse(row_number() == 1,1,
-                       ifelse((row_number() - 1) %% 673 == 0, 1, 0))) %>% 
-  group_by(obs_id) %>% 
-  arrange(obs_id) %>% 
-  mutate(hours_to_add = hours_to_add) %>% 
-  mutate(alt_date_time = date_time + hours(hours_to_add)) %>%  #use hours to add as an id for alternative segments
-  ungroup()
-
-save(pts_alt, file = "R_files/sample_alt_pts_alt_time.RData")
-
-
-##### STEP 8: annotate all points #####
-
-load("R_files/sample_alt_pts_alt_time.RData") #called pts_alt
-
-#prep for track annotation on movebank
-pts_alt_mb <- pts_alt %>%
-  mutate(timestamp = paste(as.character(alt_date_time),"000",sep = "."))
-
-#rename columns
-colnames(pts_alt_mb)[c(7,8)] <- c("location-long","location-lat")
-
-write.csv(pts_alt_mb,"R_files/sample_pts_mb.csv") 
-
-#downloaded from movebank
-ann <- read.csv("movebank_annotation/sample_pts_mb.csv-3131529835871517968/sample_pts_mb.csv-3131529835871517968.csv", stringsAsFactors = F) %>%
-  #drop_na() %>%# NA values are for the 2019 tracks. with a transition to ERA5, I should be able to use this data as well
-  mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
-  rename(sst = ECMWF.Interim.Full.Daily.SFC.FC.Sea.Surface.Temperature,
-         t2m = ECMWF.Interim.Full.Daily.SFC.FC.Temperature..2.m.above.Ground.,
-         u925 = ECMWF.Interim.Full.Daily.PL.U.Wind,
-         v925 = ECMWF.Interim.Full.Daily.PL.V.Wind) %>%
-  mutate(wspd = uv2ds(u925,v925)[,2],
-         wdir = uv2ds(u925,v925)[,1],
-         year = year(timestamp)) %>% 
-  mutate(delta_t = sst - t2m)
-
-#identify observed id's with less than 15 observations (the rest were removed because they produced NAs in the annotation step)
-NA_obs_ids <- ann %>% 
-  group_by(obs_id) %>% 
-  summarise(count = n()) %>% 
-  filter(count < 673) %>% 
-  .$obs_id #none! interesting..... no 2019 data was included in the sample ;)
-
-ann <- ann %>% 
-  filter(!(obs_id %in% NA_obs_ids))
-
-
-save(ann, file = "R_files/sample_alt_ann.RData")
-
-
 
