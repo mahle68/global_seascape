@@ -185,38 +185,70 @@ save(segs_ann, file = "segs_dt.RData")
 ##### STEP 4: create alternative tracks in time #####
 
 load("segs_dt.RData") #segs_ann
-
-hours_to_add <- c(0,cumsum(rep(1,672/2)),cumsum(rep(-1,(672/2))))
-
-pts_alt <- segs_ann %>% 
-  mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% #,
-         #tz = tz_lookup_coords(st_coordinates(.)[,2],st_coordinates(.)[,1])) #no need for local time, because i decided not to limit it to daytime.
+segs_df <- segs_ann %>% 
+  as("Spatial") %>% 
   as.data.frame() %>% 
+  mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) 
+
+#add daily alternatives for two weeks before and two weeks after the point
+days_to_add <- c(0,cumsum(rep(1,14)),cumsum(rep(-1,14)))
+
+pts_alt <- segs_df %>% 
   mutate(obs_id = row_number()) %>% 
-  slice(rep(row_number(),673)) %>%  #paste each row 695 times for alternative points: 28days *24 hours + 23 hours in observed day
+  slice(rep(row_number(),29)) %>%  #paste each row 29 time for 29 days
   mutate(used = ifelse(row_number() == 1,1,
-                       ifelse((row_number() - 1) %% 673 == 0, 1, 0))) %>% 
-  group_by(obs_id) %>% 
+                       ifelse((row_number() - 1) %% 29 == 0, 1, 0))) %>% 
   arrange(obs_id) %>% 
-  mutate(hours_to_add = hours_to_add) %>% 
-  mutate(alt_date_time = date_time + hours(hours_to_add)) %>%  #use hours to add as an id for alternative segments
+  group_by(obs_id) %>% 
+  #arrange(obs_id) %>% 
+  mutate(days_to_add = days_to_add) %>% 
+  mutate(alt_date_time = date_time + days(days_to_add)) %>%  #use days to add as an id for alternative segments
   ungroup()
 
-save(pts_alt, file = "alt_pts_alt_time.RData")
+  save(pts_alt, file = "alt_pts_alt_time.RData")
+
+
+#adding hourly alternatives takes too long. try daily.
+# hours_to_add <- c(0,cumsum(rep(1,672/2)),cumsum(rep(-1,(672/2))))
+# 
+# pts_alt <- segs_ann %>% 
+#   mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% #,
+#          #tz = tz_lookup_coords(st_coordinates(.)[,2],st_coordinates(.)[,1])) #no need for local time, because i decided not to limit it to daytime.
+#   as.data.frame() %>% 
+#   mutate(obs_id = row_number()) %>% 
+#   slice(rep(row_number(),673)) %>%  #paste each row 695 times for alternative points: 28days *24 hours + 23 hours in observed day
+#   mutate(used = ifelse(row_number() == 1,1,
+#                        ifelse((row_number() - 1) %% 673 == 0, 1, 0))) %>% 
+#   group_by(obs_id) %>% 
+#   arrange(obs_id) %>% 
+#   mutate(hours_to_add = hours_to_add) %>% 
+#   mutate(alt_date_time = date_time + hours(hours_to_add)) %>%  #use hours to add as an id for alternative segments
+#   ungroup()
+# 
+# save(pts_alt, file = "alt_pts_alt_time.RData")
 
 
 ##### STEP 5: annotate all points #####
 
-load("R_files/sample_alt_pts_alt_time.RData") #called pts_alt
+load("alt_pts_alt_time.RData") #called pts_alt
 
 #prep for track annotation on movebank
 pts_alt_mb <- pts_alt %>%
-  mutate(timestamp = paste(as.character(alt_date_time),"000",sep = "."))
+  mutate(timestamp = paste(as.character(alt_date_time),"000",sep = ".")) %>% 
+  as.data.frame()
 
 #rename columns
-colnames(pts_alt_mb)[c(7,8)] <- c("location-long","location-lat")
+colnames(pts_alt_mb)[c(11,12)] <- c("location-long","location-lat")
 
-write.csv(pts_alt_mb,"R_files/sample_pts_mb.csv") 
+write.csv(pts_alt_mb,"alt_pts_mb.csv") 
+
+# this is over 9 million rows. break up into 10 files to upload to movebank
+pts_alt_mb$chuncks <-c(rep(1,1e6),rep(2,1e6),rep(3,1e6),rep(4,1e6),rep(5,1e6),rep(6,1e6),rep(7,1e6),
+                       rep(8,1e6),rep(9,1e6),rep(10,nrow(pts_alt_mb)-9e6))
+
+lapply(split(pts_alt_mb,pts_alt_mb$chuncks),function(x){
+  write.csv(x,paste("alt_pts_mb_chunk_",x$chuncks[1],".csv",sep = ""))
+})
 
 #downloaded from movebank
 ann <- read.csv("movebank_annotation/sample_pts_mb.csv-3131529835871517968/sample_pts_mb.csv-3131529835871517968.csv", stringsAsFactors = F) %>%
@@ -243,207 +275,4 @@ ann <- ann %>%
 
 
 save(ann, file = "R_files/sample_alt_ann.RData")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-v <-segs_pts[1:nrow(segs_pts),] %>% 
-  st_intersection(dataset_buff)
-  mutate(bb = split(.,1:nrow(segs_pts))) #this has more points than the original segs_pts
-
-
-
-
-#try merging the two objects as dataframes. failed
-segs_df <- segs_pts %>% 
-  as("Spatial") %>% 
-  as.data.frame() %>% 
-  mutate_at(c("x","y"),round,2) %>% #round lat and long to three decimal places to match that of dataset
-  rename(location.long = x,
-         location.lat = y)
-
-#try with two decimal places
-dataset_rounded <- dataset %>% 
-  mutate_at(c("location.long","location.lat"),round,2)
-
-#merge segs_df with dataset, to get date_time and season
-merge_df <- segs_df %>%
-  left_join(dataset_rounded)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
- 
-
-# lapply(split(segs_pts,segs_pts$track), function(x){ #for each set of points, find overlapping observed points and extract the datetime
-#   pts<-interp_pts_ls[[i]]
-#   name<-names(interp_pts_ls)[[i]]
-#   observed_pts<-data_sea_region[data_sea_region$track == name,] #extract observation points from the track
-#   intersections<-intersect(observed_pts,pts) #extract only points over the sea
-#   
-  if(length(intersections) == 0){ #if there are no intersections between the interpolated and observed points, find the nearest neighbor and extract the time
-    pts_dt_ls<-apply(pts@coords,1,function(t){
-      coord<-data.frame(x=t[1],y=t[2])
-      t<-SpatialPoints(coord, proj4string=wgs)
-      proj4string(t)<-wgs
-      nearest_neighbor_indx <- pointDistance(t,observed_pts, lonlat=TRUE) %>%
-        order()%>%
-        head(1) #extract indices for the two points closest to the start point
-      
-      t$dt<-observed_pts@data[nearest_neighbor_indx,"dt"] #extract datetime of the nearest observed point and assign it to the interpolated point
-      t$track<-name
-      t
-    })
-  } else{
-    #for each interpolated point, find the nearest observed point and assing the datetime 
-    #assign the time of the closest point to the interpolated point
-    pts_dt_ls<-apply(pts@coords,1,function(t){
-      coord<-data.frame(x=t[1],y=t[2])
-      t<-SpatialPoints(coord, proj4string=wgs)
-      proj4string(t)<-wgs
-      nearest_neighbor_indx <- pointDistance(t,intersections, lonlat=TRUE) %>%
-        order()%>%
-        head(1) #extract indices for the two points closest to the start point
-      
-      t$dt<-intersections@data[nearest_neighbor_indx,"dt"] #extract datetime of the nearest observed point and assign it to the interpolated point
-      t$track<-name
-      t
-    })
-  }
-  pts_dt<-do.call(rbind, pts_dt_ls)
-  interp_pts_dt_ls[[i]]<-pts_dt
-  
-}
-
-
-
-#####################################
-segs_pts_dt <- lapply(split(segs_pts,segs_pts$track), function(x){
-  track <- as.character(x$track[1])
-  x_sp <- as(x,"Spatial") 
-  #x_sp$date_time <- NA
-  #x_sp$season <- NA
-  
-  data_sp <- dataset[dataset$track == track,] #make sure dataset is spatial
-  
-  for (i in 1:nrow(x_sp)){
-    pt <- x_sp[i,]
-    #intersect <- data_df[round(data_df$location.long,2) == round(pt$location.long,2) & round(data_df$location.lat,2) == round(pt$location.lat,2),]
-    #intersection <- raster::intersect(pt,data_sp)
-    
-    if(length(intersect) == 0){ #if there are no intersections between the interpolated and observed points, find the nearest neighbor and extract the time
-      #pts_dt_ls<-apply(pt@coords,1,function(t){
-      #  coord<-data.frame(x=t[1],y=t[2])
-      #  t<-SpatialPoints(coord, proj4string=wgs)
-      #  proj4string(t)<-wgs
-        nearest_neighbor_indx <- pointDistance(pt,data_sp, lonlat=TRUE) %>%
-          order()%>%
-          head(1) #extract indices for the two points closest to the start point
-        
-        pt$date_time<-data_sp@data[nearest_neighbor_indx,"date_time"] #extract datetime of the nearest observed point and assign it to the interpolated point
-        pt$track<-as.character(pt$track)
-        pt$season <- data_sp@data[nearest_neighbor_indx,"season"] 
-        pt
-      } 
-    #else{
-      # #for each interpolated point, find the nearest observed point and assing the datetime 
-      # #assign the time of the closest point to the interpolated point
-      # pts_dt_ls<-apply(pt@coords,1,function(t){
-      #   coord<-data.frame(x=t[1],y=t[2])
-      #   t<-SpatialPoints(coord, proj4string=wgs)
-      #   proj4string(t)<-wgs
-      #   nearest_neighbor_indx <- pointDistance(t,intersections, lonlat=TRUE) %>%
-      #     order()%>%
-      #     head(1) #extract indices for the two points closest to the start point
-      #   
-      #   t$dt<-intersections@data[nearest_neighbor_indx,"dt"] #extract datetime of the nearest observed point and assign it to the interpolated point
-      #   t$track<-name
-      #   t
-      # })
-    
-    if (nrow(intersect) == 1){ #if the point overlaps with an observed point over the track, assign the date_time and season
-      x_df[i,"season"] <- intersect$season
-      x_df[i,"date_time"] <- as.character(intersect$date_time+ min(1))
-    }
-    
-    
-    if(length(intersect) == 0){ #if there are no intersections between the interpolated and observed points, find the nearest neighbor and extract the time
-      pts_dt_ls<-apply(pt@coords,1,function(t){
-        coord<-data.frame(x=t[1],y=t[2])
-        t<-SpatialPoints(coord, proj4string=wgs)
-        proj4string(t)<-wgs
-        nearest_neighbor_indx <- pointDistance(t,observed_pts, lonlat=TRUE) %>%
-          order()%>%
-          head(1) #extract indices for the two points closest to the start point
-        
-        t$dt<-observed_pts@data[nearest_neighbor_indx,"dt"] #extract datetime of the nearest observed point and assign it to the interpolated point
-        t$track<-name
-        t
-      })
-    } else{
-      #for each interpolated point, find the nearest observed point and assing the datetime 
-      #assign the time of the closest point to the interpolated point
-      pts_dt_ls<-apply(pts@coords,1,function(t){
-        coord<-data.frame(x=t[1],y=t[2])
-        t<-SpatialPoints(coord, proj4string=wgs)
-        proj4string(t)<-wgs
-        nearest_neighbor_indx <- pointDistance(t,intersections, lonlat=TRUE) %>%
-          order()%>%
-          head(1) #extract indices for the two points closest to the start point
-        
-        t$dt<-intersections@data[nearest_neighbor_indx,"dt"] #extract datetime of the nearest observed point and assign it to the interpolated point
-        t$track<-name
-        t
-      })
-    }
-    
-    
- 
-    } else { #if the point does not overlap with an observed point over the track, find the nearest neighbor and assign the date_time and season
-      nearest <- data_df %>% 
-        rowwise() %>% 
-        mutate(lon_diff = abs(location.long-pt$location.long),
-               lat_diff = abs(location.lat-pt$location.lat)) %>% 
-        mutate(closeness = lon_diff + lat_diff) %>% 
-        arrange(closeness) %>% 
-        slice(1) #extract the first row
-      
-      x_df[i,"season"] <- nearest$season
-      x_df[i,"date_time"] <- as.character(nearest$date_time + min(1)) #to make sure even 00:00 is retained.
-    }
-  }
-  x_df
-}) %>% 
-  reduce(rbind)
-
-save(segs_pts_dt, file = "R_files/sample_segs_pts_dt.RData")
 
