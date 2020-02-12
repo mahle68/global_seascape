@@ -18,7 +18,7 @@ library(raster)
 library(parallel)
 library(mapview)
 library(lutz)
-#library(rWind)
+library(RNCEP)
 
 #options(digits = 10) #this only affects what is printed. not what is in the data. use round
 
@@ -26,6 +26,50 @@ wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/") #remove this before submitting to cluster
+
+source("wind_support_Kami.R")
+NCEP.loxodrome.mod <- function (lat1, lat2, lon1, lon2) {
+  deg2rad <- pi/180
+  acot <- function(x) {
+    return(atan(1/x))
+  }
+  lat1 <- deg2rad * lat1
+  lat2 <- deg2rad * lat2
+  lon1 <- deg2rad * lon1
+  lon2 <- deg2rad * lon2
+  deltaLon <- lon2 - lon1
+  pi4 <- pi/4
+  Sig1 <- log(tan(pi4 + lat1/2))
+  Sig2 <- log(tan(pi4 + lat2/2))
+  deltaSig <- Sig2 - Sig1
+  if (deltaLon == 0 && deltaSig > 0) {
+    head <- 0
+  }
+  else if (deltaLon == 0 && deltaSig < 0) {
+    head <- 180
+  }
+  else if (deltaSig == 0 && deltaLon > 0) {
+    head <- 90
+  }
+  else if (deltaSig == 0 && deltaLon < 0) {
+    head <- 270
+  }
+  else if (deltaSig < 0 && deltaLon < 0) {
+    head <- acot(deltaSig/deltaLon) * 180/pi + 180
+  }
+  else if (deltaSig < 0 && deltaLon > 0) {
+    head <- acot(deltaSig/deltaLon) * 180/pi + 180
+  }
+  else if (deltaSig > 0 && deltaLon > 0) {
+    head <- acot(deltaSig/deltaLon) * 180/pi
+  }
+  else if (deltaSig > 0 && deltaLon < 0) {
+    head <- acot(deltaSig/deltaLon) * 180/pi + 360
+  }
+  else head <- NA
+  return(head)
+}
+
 
 #load files. make sure they are all stored in the working directory
 load("twz_sf.RData") #twz_sf
@@ -251,17 +295,51 @@ lapply(split(pts_alt_mb,pts_alt_mb$chuncks),function(x){
 })
 
 #downloaded from movebank
-ann <- read.csv("movebank_annotation/sample_pts_mb.csv-3131529835871517968/sample_pts_mb.csv-3131529835871517968.csv", stringsAsFactors = F) %>%
-  #drop_na() %>%# NA values are for the 2019 tracks. with a transition to ERA5, I should be able to use this data as well
+file_ls <- list.files("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/alt_segs/", full.names = T, pattern = ".csv$") # $ means end of string
+pts_ann <- lapply(file_ls,read.csv, stringsAsFactors = F) %>% 
+  reduce(rbind) %>% 
   mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
-  rename(sst = ECMWF.Interim.Full.Daily.SFC.FC.Sea.Surface.Temperature,
-         t2m = ECMWF.Interim.Full.Daily.SFC.FC.Temperature..2.m.above.Ground.,
-         u925 = ECMWF.Interim.Full.Daily.PL.U.Wind,
-         v925 = ECMWF.Interim.Full.Daily.PL.V.Wind) %>%
-  mutate(wspd = uv2ds(u925,v925)[,2],
-         wdir = uv2ds(u925,v925)[,1],
-         year = year(timestamp)) %>% 
+  rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature,
+         t2m = ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.,
+         u950 = ECMWF.Interim.Full.Daily.PL.U.Wind,
+         v950 = ECMWF.Interim.Full.Daily.PL.V.Wind,
+         u10m = ECMWF.Interim.Full.Daily.SFC.Wind..10.m.above.Ground.U.Component.,
+         v10m = ECMWF.Interim.Full.Daily.SFC.Wind..10.m.above.Ground.V.Component.) %>%
   mutate(delta_t = sst - t2m)
+
+#add wind support and crosswind
+#using lapply
+lapply(split(pts_ann,pts_ann$seg_id), function(x){
+  lapply(split(x, x$days_to_add), function(y){
+    y %>% 
+      rowwise() %>% 
+      mutate(heading = NCEP.loxodrome.mod(lat1=location.lat,lat2=lead(location.lat,1),lon1=location.long,lon2=lead(location.long,1)), #NA is when the animal is not moving
+                 wind_support_950 = wind_support(u=u950,v=v950,heading= heading),
+                 cross_wind_950 = cross_wind(u=u950,v=v950,heading= heading),
+                 wind_support_10m = wind_support(u=u10m,v=v10m,heading= heading),
+                 cross_wind_10m = cross_wind(u=u10m,v=v10m,heading= heading))
+  })
+})
+
+#using dplyr
+pts_ann_w <- pts_ann %>% 
+  drop_na() %>% 
+  group_by(seg_id,days_to_add) %>%  #days_to_add is an index for alternative segments.each seg_id has 29 versions (29 different hours_to_add levels)
+  arrange(seg_id,days_to_add,timestamp) %>% 
+  filter(n() >= 2) %>%
+  mutate(heading = NCEP.loxodrome.mod(lat1=location.lat,lat2=lead(location.lat,1),lon1=location.long,lon2=lead(location.long,1)), #NA is when the animal is not moving
+         wind_support_950 = wind_support(u=u950,v=v950,heading= heading),
+         cross_wind_950 = cross_wind(u=u950,v=v950,heading= heading),
+         wind_support_10m = wind_support(u=u10m,v=v10m,heading= heading),
+         cross_wind_10m = cross_wind(u=u10m,v=v10m,heading= heading))
+  
+#look at some NA headings. are they really the same point?
+
+sample <- head(pts_ann_w[which(is.na(pts_ann_w$heading)),])
+  
+
+
+
 
 #identify observed id's with less than 15 observations (the rest were removed because they produced NAs in the annotation step)
 NA_obs_ids <- ann %>% 
