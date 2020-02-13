@@ -240,8 +240,8 @@ days_to_add <- c(0,cumsum(rep(1,14)),cumsum(rep(-1,14)))
 pts_alt <- segs_df %>% 
   mutate(obs_id = row_number()) %>% 
   slice(rep(row_number(),29)) %>%  #paste each row 29 time for 29 days
-  mutate(used = ifelse(row_number() == 1,1,
-                       ifelse((row_number() - 1) %% 29 == 0, 1, 0))) %>% 
+  #mutate(used = ifelse(row_number() == 1,1,
+  #                     ifelse((row_number() - 1) %% 29 == 0, 1, 0))) %>% 
   arrange(obs_id) %>% 
   group_by(obs_id) %>% 
   #arrange(obs_id) %>% 
@@ -307,37 +307,90 @@ pts_ann <- lapply(file_ls,read.csv, stringsAsFactors = F) %>%
          v10m = ECMWF.Interim.Full.Daily.SFC.Wind..10.m.above.Ground.V.Component.) %>%
   mutate(delta_t = sst - t2m)
 
+
+save(pts_ann, file = "alt_pts_mb_ann.RData")
+
+#investigate NAs for sst
+X11();maps::map("world")
+points(pts_ann[is.na(pts_ann$sst),c("location.long","location.lat")],pch = 16,cex= 0.3,col = "red") #either 2019 (sad face) or data from points over land
+
+pts_ann_no_NA <- pts_ann %>% 
+  drop_na() #the sst NANs and also some all NA rows...
+
 #add wind support and crosswind
-#using lapply
-lapply(split(pts_ann,pts_ann$seg_id), function(x){
-  lapply(split(x, x$days_to_add), function(y){
-    y %>% 
-      rowwise() %>% 
-      mutate(heading = NCEP.loxodrome.mod(lat1=location.lat,lat2=lead(location.lat,1),lon1=location.long,lon2=lead(location.long,1)), #NA is when the animal is not moving
-                 wind_support_950 = wind_support(u=u950,v=v950,heading= heading),
-                 cross_wind_950 = cross_wind(u=u950,v=v950,heading= heading),
-                 wind_support_10m = wind_support(u=u10m,v=v10m,heading= heading),
-                 cross_wind_10m = cross_wind(u=u10m,v=v10m,heading= heading))
-  })
+
+segs_w <- lapply(split(pts_ann,pts_ann$seg_id), function(x){ #for each segment
+  x_w <- lapply(split(x, x$days_to_add), function(y){ #for each alternative version of the segment
+    #calculate heading from each point to the endpoint
+    if(nrow(y) < 2){
+      y_w <- mutate(heading = NA,
+                    wind_support_950 = NA,
+                    cross_wind_950 = NA,
+                    wind_support_10m = NA,
+                    cross_wind_10m = NA)
+      y_w
+    } else {
+      y_w <- y %>% 
+        mutate(heading = NCEP.loxodrome.mod(lat1=location.lat,lat2=tail(location.lat,1),lon1=location.long,lon2=tail(location.long,1)),
+               wind_support_950 = wind_support(u=u950,v=v950,heading= heading),
+               cross_wind_950 = cross_wind(u=u950,v=v950,heading= heading),
+               wind_support_10m = wind_support(u=u10m,v=v10m,heading= heading),
+               cross_wind_10m = cross_wind(u=u10m,v=v10m,heading= heading))
+      y_w
+    }
+    
+  }) %>% 
+    reduce(rbind)
+}) 
+
+save(segs_w, file = "alt_pts_ann_w.RData") # a list
+
+##### STEP 6: compare observed to best condition #####
+
+load("alt_pts_ann_w.RData") #segs_w
+#make sure all strata have 29 versions? or doesn't matter at this stage?
+
+#are wind 950 and wind10m correlated?
+#calculate variables
+segs_avg <- lapply(segs_w,function(x){
+  x_avg <- x %>% 
+    group_by(days_to_add) %>% 
+    summarise(avg_ws_950 = mean(wind_support_950, na.rm = T), 
+              avg_abs_cs_950 = mean(abs(cross_wind_950), na.rm = T),
+              avg_ws_10 = mean(wind_support_10m, na.rm = T),
+              avg_abs_cs_10 = mean(abs(cross_wind_10m), na.rm = T),
+              avg_delta_t = mean(delta_t, na.rm = T),
+              cu_ws_950 = sum(abs(cross_wind_950), na.rm = T),
+              cu_abs_cs_950 = sum(wind_support_950, na.rm = T),
+              cu_ws_10 = sum(wind_support_10m, na.rm = T),
+              cu_abs_cs_10 = sum(abs(cross_wind_10m), na.rm = T),
+              cu_delta_t = sum(delta_t, na.rm = T),
+              length = head(length,1),
+              zone = head(zone,1),
+              track = head(track,1),
+              seg_id = head(seg_id,1),
+              species = head(species,1),
+              obs_id = head(obs_id,1),
+              season = head(season,1)) %>% 
+    ungroup()
+  
+  x_avg
 })
 
-#using dplyr
-pts_ann_w <- pts_ann %>% 
-  drop_na() %>% 
-  group_by(seg_id,days_to_add) %>%  #days_to_add is an index for alternative segments.each seg_id has 29 versions (29 different hours_to_add levels)
-  arrange(seg_id,days_to_add,timestamp) %>% 
-  filter(n() >= 2) %>%
-  mutate(heading = NCEP.loxodrome.mod(lat1=location.lat,lat2=lead(location.lat,1),lon1=location.long,lon2=lead(location.long,1)), #NA is when the animal is not moving
-         wind_support_950 = wind_support(u=u950,v=v950,heading= heading),
-         cross_wind_950 = cross_wind(u=u950,v=v950,heading= heading),
-         wind_support_10m = wind_support(u=u10m,v=v10m,heading= heading),
-         cross_wind_10m = cross_wind(u=u10m,v=v10m,heading= heading))
-  
-#look at some NA headings. are they really the same point?
+#calc observed statistics
 
-sample <- head(pts_ann_w[which(is.na(pts_ann_w$heading)),])
+obs_st <- lapply(segs_avg,function(x){ #for each segment
+  obs_d_avg_delta_t <- x[x$days_to_add == 0, "avg_delta_t"] - colMeans(x[x$days_to_add != 0, "avg_delta_t"])
   
-
+  obs_d_avg_ws_950 <- x[x$days_to_add == 0, "avg_ws_950"] - colMeans(x[x$days_to_add != 0, "avg_ws_950"])
+  obs_d_avg_cw_950 <- x[x$days_to_add == 0, "avg_abs_cs_950"] - colMeans(x[x$days_to_add != 0, "avg_abs_cs_950"])
+  
+  obs_d_avg_ws_10 <- x[x$days_to_add == 0, "avg_ws_10"] - colMeans(x[x$days_to_add != 0, "avg_ws_10"])
+  obs_d_avg_cw_10 <- x[x$days_to_add == 0, "avg_abs_cs_10"] - colMeans(x[x$days_to_add != 0, "avg_abs_cs_10"])
+  
+  
+  
+})
 
 
 
