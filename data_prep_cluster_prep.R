@@ -356,14 +356,14 @@ segs_avg <- lapply(segs_w,function(x){
   x_avg <- x %>% 
     group_by(days_to_add) %>% 
     summarise(avg_ws_950 = mean(wind_support_950, na.rm = T), 
-              avg_abs_cs_950 = mean(abs(cross_wind_950), na.rm = T),
+              avg_abs_cw_950 = mean(abs(cross_wind_950), na.rm = T),
               avg_ws_10 = mean(wind_support_10m, na.rm = T),
-              avg_abs_cs_10 = mean(abs(cross_wind_10m), na.rm = T),
+              avg_abs_cw_10 = mean(abs(cross_wind_10m), na.rm = T),
               avg_delta_t = mean(delta_t, na.rm = T),
               cu_ws_950 = sum(abs(cross_wind_950), na.rm = T),
-              cu_abs_cs_950 = sum(wind_support_950, na.rm = T),
+              cu_abs_cw_950 = sum(wind_support_950, na.rm = T),
               cu_ws_10 = sum(wind_support_10m, na.rm = T),
-              cu_abs_cs_10 = sum(abs(cross_wind_10m), na.rm = T),
+              cu_abs_cw_10 = sum(abs(cross_wind_10m), na.rm = T),
               cu_delta_t = sum(delta_t, na.rm = T),
               length = head(length,1),
               zone = head(zone,1),
@@ -377,33 +377,57 @@ segs_avg <- lapply(segs_w,function(x){
   x_avg
 })
 
+save(segs_avg,file = "alt_pts_ann_w_avg.RData")
+
+
 #calc observed statistics
 
 obs_st <- lapply(segs_avg,function(x){ #for each segment
-  obs_d_avg_delta_t <- x[x$days_to_add == 0, "avg_delta_t"] - colMeans(x[x$days_to_add != 0, "avg_delta_t"])
+  obs_stats <- x[1,c(12:18)]
+  obs_stats$obs_d_avg_delta_t <- x[x$days_to_add == 0, "avg_delta_t"] - colMeans(x[x$days_to_add != 0, "avg_delta_t"])
   
-  obs_d_avg_ws_950 <- x[x$days_to_add == 0, "avg_ws_950"] - colMeans(x[x$days_to_add != 0, "avg_ws_950"])
-  obs_d_avg_cw_950 <- x[x$days_to_add == 0, "avg_abs_cs_950"] - colMeans(x[x$days_to_add != 0, "avg_abs_cs_950"])
+  obs_stats$obs_d_avg_ws_950 <- x[x$days_to_add == 0, "avg_ws_950"] - colMeans(x[x$days_to_add != 0, "avg_ws_950"])
+  obs_stats$obs_d_avg_cw_950 <- x[x$days_to_add == 0, "avg_abs_cw_950"] - colMeans(x[x$days_to_add != 0, "avg_abs_cw_950"])
   
-  obs_d_avg_ws_10 <- x[x$days_to_add == 0, "avg_ws_10"] - colMeans(x[x$days_to_add != 0, "avg_ws_10"])
-  obs_d_avg_cw_10 <- x[x$days_to_add == 0, "avg_abs_cs_10"] - colMeans(x[x$days_to_add != 0, "avg_abs_cs_10"])
+  obs_stats$obs_d_avg_ws_10 <- x[x$days_to_add == 0, "avg_ws_10"] - colMeans(x[x$days_to_add != 0, "avg_ws_10"])
+  obs_stats$obs_d_avg_cw_10 <- x[x$days_to_add == 0, "avg_abs_cw_10"] - colMeans(x[x$days_to_add != 0, "avg_abs_cw_10"])
   
-  
-  
+  obs_stats
+})
+
+#create alternative datasets, calc random statistics, calculate p-values #####
+permutations <- 1000
+
+#create alternative datasets... first do a general one. with no distinction for season or zone.  
+rnd_st <- lapply(1:permutations, function(p){ #for each permutation
+  new_data <-lapply(segs_avg, function(x){ #for each seg_id
+    rnd_obs <- sample(1:29,1) #draw a random number to be the new index for used row.... what if the actual used is assigned used?
+    
+    rnd_stats <- x[1,c(12:18)]
+    
+    rnd_stats$obs_d_avg_delta_t <- x[rnd_obs, "avg_delta_t"] - colMeans(x[-rnd_obs, "avg_delta_t"]) #now the row with rnd_obs index is considered used.
+    
+    rnd_stats$obs_d_avg_ws_950 <- x[rnd_obs, "avg_ws_950"] - colMeans(x[-rnd_obs, "avg_ws_950"])
+    rnd_stats$obs_d_avg_cw_950 <- x[rnd_obs, "avg_abs_cw_950"] - colMeans(x[-rnd_obs, "avg_abs_cw_950"])
+    
+    rnd_stats$obs_d_avg_ws_10 <- x[rnd_obs, "avg_ws_10"] - colMeans(x[-rnd_obs, "avg_ws_10"])
+    rnd_stats$obs_d_avg_cw_10 <- x[rnd_obs, "avg_abs_cw_10"] - colMeans(x[-rnd_obs, "avg_abs_cw_10"])
+    
+    rnd_stats
+  }) %>% 
+    reduce(rbind)
+  new_data
+}) 
+
+##### STEP 3: calculate the random statistics #####
+
+rnd_st_twz_ls <- lapply(new_data_twz_ls, function(x){
+  model <-  clogit(formula, data = x[x$zone == "tradewind",])
+  stat_twz_u <- abs(coef(model)[1])-abs(coef(model)[2])
+  stat_twz_v <- abs(coef(model)[1])-abs(coef(model)[3])
+  data.frame(u = stat_twz_u, v= stat_twz_v, row.names = "")
 })
 
 
 
-#identify observed id's with less than 15 observations (the rest were removed because they produced NAs in the annotation step)
-NA_obs_ids <- ann %>% 
-  group_by(obs_id) %>% 
-  summarise(count = n()) %>% 
-  filter(count < 673) %>% 
-  .$obs_id #none! interesting..... no 2019 data was included in the sample ;)
-
-ann <- ann %>% 
-  filter(!(obs_id %in% NA_obs_ids))
-
-
-save(ann, file = "R_files/sample_alt_ann.RData")
 
