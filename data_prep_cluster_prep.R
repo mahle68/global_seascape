@@ -20,7 +20,6 @@ library(mapview)
 library(lutz)
 library(RNCEP)
 
-#options(digits = 10) #this only affects what is printed. not what is in the data. use round
 
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
@@ -28,47 +27,7 @@ meters_proj <- CRS("+proj=moll +ellps=WGS84")
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/") #remove this before submitting to cluster
 
 source("wind_support_Kami.R")
-NCEP.loxodrome.mod <- function (lat1, lat2, lon1, lon2) {
-  deg2rad <- pi/180
-  acot <- function(x) {
-    return(atan(1/x))
-  }
-  lat1 <- deg2rad * lat1
-  lat2 <- deg2rad * lat2
-  lon1 <- deg2rad * lon1
-  lon2 <- deg2rad * lon2
-  deltaLon <- lon2 - lon1
-  pi4 <- pi/4
-  Sig1 <- log(tan(pi4 + lat1/2))
-  Sig2 <- log(tan(pi4 + lat2/2))
-  deltaSig <- Sig2 - Sig1
-  if (deltaLon == 0 && deltaSig > 0) {
-    head <- 0
-  }
-  else if (deltaLon == 0 && deltaSig < 0) {
-    head <- 180
-  }
-  else if (deltaSig == 0 && deltaLon > 0) {
-    head <- 90
-  }
-  else if (deltaSig == 0 && deltaLon < 0) {
-    head <- 270
-  }
-  else if (deltaSig < 0 && deltaLon < 0) {
-    head <- acot(deltaSig/deltaLon) * 180/pi + 180
-  }
-  else if (deltaSig < 0 && deltaLon > 0) {
-    head <- acot(deltaSig/deltaLon) * 180/pi + 180
-  }
-  else if (deltaSig > 0 && deltaLon > 0) {
-    head <- acot(deltaSig/deltaLon) * 180/pi
-  }
-  else if (deltaSig > 0 && deltaLon < 0) {
-    head <- acot(deltaSig/deltaLon) * 180/pi + 360
-  }
-  else head <- NA
-  return(head)
-}
+
 
 
 #load files. make sure they are all stored in the working directory
@@ -352,7 +311,7 @@ load("alt_pts_ann_w.RData") #segs_w
 
 #are wind 950 and wind10m correlated?
 #calculate variables
-segs_avg <- lapply(segs_w,function(x){
+segs_avg <- lapply(segs_w,function(x){ #for each seg_id
   x_avg <- x %>% 
     group_by(days_to_add) %>% 
     summarise(avg_ws_950 = mean(wind_support_950, na.rm = T), 
@@ -381,16 +340,17 @@ save(segs_avg,file = "alt_pts_ann_w_avg.RData")
 
 
 #calc observed statistics
+load("alt_pts_ann_w_avg.RData")
 
 obs_st <- lapply(segs_avg,function(x){ #for each segment
   obs_stats <- x[1,c(12:18)]
-  obs_stats$obs_d_avg_delta_t <- x[x$days_to_add == 0, "avg_delta_t"] - colMeans(x[x$days_to_add != 0, "avg_delta_t"])
+  obs_stats$obs_d_avg_delta_t <- x[x$days_to_add == 0, "avg_delta_t"] - mean(x[x$days_to_add != 0, "avg_delta_t"])
   
-  obs_stats$obs_d_avg_ws_950 <- x[x$days_to_add == 0, "avg_ws_950"] - colMeans(x[x$days_to_add != 0, "avg_ws_950"])
-  obs_stats$obs_d_avg_cw_950 <- x[x$days_to_add == 0, "avg_abs_cw_950"] - colMeans(x[x$days_to_add != 0, "avg_abs_cw_950"])
+  obs_stats$obs_d_avg_ws_950 <- x[x$days_to_add == 0, "avg_ws_950"] - mean(x[x$days_to_add != 0, "avg_ws_950"])
+  obs_stats$obs_d_avg_cw_950 <- x[x$days_to_add == 0, "avg_abs_cw_950"] - mean(x[x$days_to_add != 0, "avg_abs_cw_950"])
   
-  obs_stats$obs_d_avg_ws_10 <- x[x$days_to_add == 0, "avg_ws_10"] - colMeans(x[x$days_to_add != 0, "avg_ws_10"])
-  obs_stats$obs_d_avg_cw_10 <- x[x$days_to_add == 0, "avg_abs_cw_10"] - colMeans(x[x$days_to_add != 0, "avg_abs_cw_10"])
+  obs_stats$obs_d_avg_ws_10 <- x[x$days_to_add == 0, "avg_ws_10"] - mean(x[x$days_to_add != 0, "avg_ws_10"])
+  obs_stats$obs_d_avg_cw_10 <- x[x$days_to_add == 0, "avg_abs_cw_10"] - mean(x[x$days_to_add != 0, "avg_abs_cw_10"])
   
   obs_stats
 })
@@ -398,36 +358,168 @@ obs_st <- lapply(segs_avg,function(x){ #for each segment
 #create alternative datasets, calc random statistics, calculate p-values #####
 permutations <- 1000
 
+#convert tibbles to dfs
+segs_avg <- lapply(segs_avg,as.data.frame)
+
 #create alternative datasets... first do a general one. with no distinction for season or zone.  
-rnd_st <- lapply(1:permutations, function(p){ #for each permutation
-  new_data <-lapply(segs_avg, function(x){ #for each seg_id
-    rnd_obs <- sample(1:29,1) #draw a random number to be the new index for used row.... what if the actual used is assigned used?
+ #for each permutation
+rnd_st <-lapply(segs_avg, function(x){ #for each seg_id
+
+  new_data <- lapply(1:permutations, function(p){
     
     rnd_stats <- x[1,c(12:18)]
+    rnd_obs <- sample(c(1:14,16:29),1) #draw a random number to be the new index for used row.... dont let row 15 be chosen. it is the actual observed row
     
-    rnd_stats$obs_d_avg_delta_t <- x[rnd_obs, "avg_delta_t"] - colMeans(x[-rnd_obs, "avg_delta_t"]) #now the row with rnd_obs index is considered used.
+    #rnd_stats$obs_d_avg_delta_t <- x[rownames(x) == as.character(rnd_obs), "avg_delta_t"] - colMeans(x[rownames(x) != as.character(rnd_obs), "avg_delta_t"]) #now the row with rnd_obs index is considered used.
     
-    rnd_stats$obs_d_avg_ws_950 <- x[rnd_obs, "avg_ws_950"] - colMeans(x[-rnd_obs, "avg_ws_950"])
-    rnd_stats$obs_d_avg_cw_950 <- x[rnd_obs, "avg_abs_cw_950"] - colMeans(x[-rnd_obs, "avg_abs_cw_950"])
+    rnd_stats$obs_d_avg_delta_t <- x[rnd_obs, "avg_delta_t"] - mean(x[-rnd_obs, "avg_delta_t"], na.rm = T)
     
-    rnd_stats$obs_d_avg_ws_10 <- x[rnd_obs, "avg_ws_10"] - colMeans(x[-rnd_obs, "avg_ws_10"])
-    rnd_stats$obs_d_avg_cw_10 <- x[rnd_obs, "avg_abs_cw_10"] - colMeans(x[-rnd_obs, "avg_abs_cw_10"])
+    rnd_stats$obs_d_avg_ws_950 <- x[rnd_obs, "avg_ws_950"] - mean(x[-rnd_obs, "avg_ws_950"], na.rm = T)
+    rnd_stats$obs_d_avg_cw_950 <- x[rnd_obs, "avg_abs_cw_950"] - mean(x[-rnd_obs, "avg_abs_cw_950"], na.rm = T)
+    
+    rnd_stats$obs_d_avg_ws_10 <- x[rnd_obs, "avg_ws_10"] - mean(x[-rnd_obs, "avg_ws_10"], na.rm = T)
+    rnd_stats$obs_d_avg_cw_10 <- x[rnd_obs, "avg_abs_cw_10"] - mean(x[-rnd_obs, "avg_abs_cw_10"], na.rm = T)
     
     rnd_stats
   }) %>% 
     reduce(rbind)
+  
   new_data
 }) 
 
-##### STEP 3: calculate the random statistics #####
+#names(rnd_st) <- paste(lapply(rnd_st, "[",1,"season"), lapply(rnd_st, "[",1,"zone"), sep = "_")
 
-rnd_st_twz_ls <- lapply(new_data_twz_ls, function(x){
-  model <-  clogit(formula, data = x[x$zone == "tradewind",])
-  stat_twz_u <- abs(coef(model)[1])-abs(coef(model)[2])
-  stat_twz_v <- abs(coef(model)[1])-abs(coef(model)[3])
-  data.frame(u = stat_twz_u, v= stat_twz_v, row.names = "")
-})
+#names(rnd_st) <- as.character(lapply(rnd_st, "[",1,"seg_id"))
 
+## calculate p-values 
+
+p_vals <-lapply(obs_st, function(x){ #for each seg_id
+ #extract the corresponding random statistics
+  rnds <- rnd_st[names(rnd_st) == as.character(x$seg_id)] %>% 
+    reduce(rbind)
+   
+  P_values <- x[1,c(1:7)]
+  P_values$p_delta_t <- sum(as.numeric(x$obs_d_avg_delta_t) <= rnds$obs_d_avg_delta_t) / permutations 
+  P_values$p_ws_950 <- sum(as.numeric(x$obs_d_avg_ws_950) <= rnds$obs_d_avg_ws_950) / permutations 
+  P_values$p_cw_950 <- sum(as.numeric(x$obs_d_avg_cw_950) <= rnds$obs_d_avg_cw_950) / permutations 
+  P_values$p_ws_10 <- sum(as.numeric(x$obs_d_avg_ws_10) <= rnds$obs_d_avg_ws_10) / permutations 
+  P_values$p_cw_10 <- sum(as.numeric(x$obs_d_avg_cw_10) <= rnds$obs_d_avg_cw_10) / permutations 
+  
+  P_values
+}) %>% 
+  reduce(rbind)
+
+#plot all p_values to see
+#restructure the data
+dt <- p_vals %>% 
+  dplyr::select(-c(p_cw_10,p_ws_10,p_cw_950,p_ws_950)) %>% 
+  dplyr::rename(value = p_delta_t) %>% 
+  mutate(variable = "delta_t")
+ws10 <- p_vals %>% 
+  dplyr::select(-c(p_cw_10,p_delta_t,p_cw_950,p_ws_950)) %>% 
+  dplyr::rename(value = p_ws_10) %>% 
+  mutate(variable = "wind_support_10m")
+ws950 <- p_vals %>% 
+  dplyr::select(-c(p_cw_10,p_ws_10,p_cw_950,p_delta_t)) %>% 
+  dplyr::rename(value = p_ws_950) %>% 
+  mutate(variable = "wind_support_950")
+cw10 <- p_vals %>% 
+  dplyr::select(-c(p_delta_t,p_ws_10,p_cw_950,p_ws_950)) %>% 
+  dplyr::rename(value = p_cw_10) %>% 
+  mutate(variable = "cross_wind_10")
+cw950 <- p_vals %>% 
+  dplyr::select(-c(p_cw_10,p_ws_10,p_delta_t,p_ws_950)) %>% 
+  dplyr::rename(value = p_cw_950) %>% 
+  mutate(variable = "cross_wind_950")
+
+plotting_data <- rbind(dt,ws10,ws950,cw10,cw950)
+
+#plot
+par(mfrow = c(1,2))
+boxplot(value ~ variable, data = plotting_data[plotting_data$season == "spring",])
+
+
+#raincloud plots
+library(ggplot2)
+library(cowplot)
+
+source("/home/enourani/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/R_rainclouds.R")
+source("/home/enourani/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/summarySE.R")
+source("/home/enourani/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/simulateData.R")
+
+X11()
+ggplot(plotting_data[plotting_data$zone != "both",], aes(x = variable, y = value, fill = zone)) +
+  #ylim(0,150) +
+  geom_flat_violin(aes(fill = zone),position = position_nudge(x = .1, y = 0), adjust = 1.5, trim = FALSE, alpha = .5, colour = NA)+
+  geom_point(aes(x = as.numeric(factor(variable))-.15, y = value, colour = zone),position = position_jitter(width = .05), size = 1, shape = 19, alpha = 0.1)+
+  geom_boxplot(aes(x = variable, y = value, fill = zone),outlier.shape = NA, alpha = .5, width = .1, colour = "black")+
+  scale_colour_brewer(palette = "Dark2")+
+  scale_fill_brewer(palette = "Dark2")+
+  theme_classic(base_size = 20) +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank())+
+  facet_grid(season~.)
+
+
+
+#plot to check
+hist(rnds$obs_d_avg_delta_t, breaks = 50, col = "lightgrey")
+abline(v = x$obs_d_avg_delta_t, col = "red") #random network is homogenous, that is why cv goes down the more randomization we do
+
+
+####### clogit
+#test: autumn in tmpz
+names(segs_avg)<- paste(names(segs_avg),lapply(segs_avg, "[",1,"season"), lapply(segs_avg, "[",1,"zone"), sep = "_")
+
+
+dat <- segs_avg[grep("autumn_tmpz",names(segs_avg))] %>% 
+  reduce(rbind) %>% 
+  mutate(used = ifelse(days_to_add == 0, 1,0))
+  
+
+#calc correlations
+library(corrr)
+dat[,c(2:11)] %>%
+  correlate() %>% 
+  stretch() %>% 
+  filter(abs(r)>0.5) #wind at 10 and 950 are correlated. use just 950
+
+dat[,c(2:3,6)] %>% #only 950 level. only averages
+  correlate() %>% 
+  stretch() %>% 
+  filter(abs(r)>0.5) 
+
+#scale the variables, zone-specific
+dat_z<-dat%>%
+  group_by(zone,season) %>% #cosider season later 
+  mutate_at(c(2:3,6),
+            list(z=~scale(.)))%>%
+  as.data.frame()
+
+formula <- used ~ avg_delta_t_z + avg_ws_950_z + avg_abs_cw_950_z + strata(seg_id)
+#formula2 <- used ~ delta_t_z + u925_z + strata(obs_id)
+
+################################################################ 
+#all data clogit
+
+formula <- used ~ avg_delta_t_z + avg_ws_950_z + avg_abs_cw_950_z + strata(seg_id)
+
+for (season in c("spring","autumn")){
+  for(zone in c("twz","tmpz","both")){
+    
+    data <-  segs_avg[grep(paste(season,zone,sep = "_"),names(segs_avg))] %>% 
+      reduce(rbind) %>% 
+      mutate(used = ifelse(days_to_add == 0, 1,0))
+    
+    data_z<-data%>% 
+      mutate_at(c(2,3,6),
+                list(z=~scale(.)))%>%
+      as.data.frame()
+    
+    model1 <- clogit(formula, data = data_z)
+    summary(model1)
+  }
+}
 
 
 
