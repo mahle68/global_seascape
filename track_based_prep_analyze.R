@@ -1,13 +1,6 @@
-#script for masking the tracks using the land layer on the cluster
+#script for preparing sea-crossing segments for analysis and analyzing them..
 #follows up on data_prep_track_based.R and data_prep_track_based_no_interp_preliminary.R
 #Elham Nourani. Feb. 6. 2020. Radolfzell, Germany
-
-
-args <- (commandArgs(trailingOnly = TRUE)) # provides access to a copy of the command line supplied when this R session was invoked
-eval(parse(text = args)) #eval evalueates an R expression in a specified environment
-n <- as.numeric(as.character(Line)) # the object “Line” comes from the .slrm file. This is the index
-
-#install packages that I couldnt install using conda install
 
 
 #open libraries
@@ -304,7 +297,8 @@ segs_w <- lapply(split(pts_ann,pts_ann$seg_id), function(x){ #for each segment
 
 save(segs_w, file = "alt_pts_ann_w.RData") # a list
 
-##### STEP 6: compare observed to best condition #####
+
+##### STEP 6: calculate average conditions along segments #####
 
 load("alt_pts_ann_w.RData") #segs_w
 #make sure all strata have 29 versions? or doesn't matter at this stage?
@@ -339,6 +333,55 @@ segs_avg <- lapply(segs_w,function(x){ #for each seg_id
 save(segs_avg,file = "alt_pts_ann_w_avg.RData")
 
 
+###### STEP 7: plot distribution of used vs available #####
+#season- and zone-specific. time window: one month total, two weeks total, one week before, two weeks before
+
+load("alt_pts_ann_w_avg.RData") #segs_avg
+
+segs_df <- segs_avg %>% 
+  reduce(rbind) %>% 
+  as.data.frame()
+
+window <- list(one_month = c(-14:-1,1:14), #make sure 0 is not included
+               one_week = c(-7:-1,1:7),
+               two_w_before = c(-14:-1),
+               one_w_before = c(-7:-1))
+
+
+lapply(window, function(x){
+  
+  pdf(paste("/home/enourani/ownCloud/Work/Projects/delta_t/track_based_plots/",min(x),max(x),"plot.pdf",sep = "_"),
+      height = 12)
+  
+  par(mfrow = c(4,3),
+      mar = c(5.1,4.1,1.1,2.1),
+      oma = c(0, 0, 2, 0))
+  
+  for (s in c("spring","autumn")){
+    for (z in c("twz","tmpz")){
+      
+      data <- segs_df %>% 
+        filter(season == s & zone == z) %>% 
+        drop_na()
+      
+      available <- data %>% 
+        filter(days_to_add %in% x)
+      used <- data %>% 
+        filter(days_to_add == 0)
+
+      for(var in c("avg_delta_t","avg_ws_950","avg_abs_cw_950")){
+        plot(density(available[,var],adjust = 1),type = "n", xlab = var,ylab = "density", bty = "n", main = paste(s,z),ylim = c(0,0.3))
+        polygon(density(available[,var],adjust = 1),col = "grey75",border = "grey75")
+        lines(density(used[,var],adjust = 1),col = "red")
+      }
+    }
+  }
+  mtext(paste(min(x), "days through",max(x),"days"),outer = T)
+  dev.off()
+})
+
+
+##### STEP 8: compare observed to best condition #####
 #calc observed statistics
 load("alt_pts_ann_w_avg.RData")
 
@@ -467,7 +510,8 @@ hist(rnds$obs_d_avg_delta_t, breaks = 50, col = "lightgrey")
 abline(v = x$obs_d_avg_delta_t, col = "red") #random network is homogenous, that is why cv goes down the more randomization we do
 
 
-####### clogit
+##### STEP 9: clogit for observed vs available #####
+# 14 days before and after
 #test: autumn in tmpz
 names(segs_avg)<- paste(names(segs_avg),lapply(segs_avg, "[",1,"season"), lapply(segs_avg, "[",1,"zone"), sep = "_")
 
@@ -491,7 +535,7 @@ dat[,c(2:3,6)] %>% #only 950 level. only averages
 
 #scale the variables, zone-specific
 dat_z<-dat%>%
-  group_by(zone,season) %>% #cosider season later 
+  group_by(zone,season) %>% 
   mutate_at(c(2:3,6),
             list(z=~scale(.)))%>%
   as.data.frame()
@@ -499,7 +543,7 @@ dat_z<-dat%>%
 formula <- used ~ avg_delta_t_z + avg_ws_950_z + avg_abs_cw_950_z + strata(seg_id)
 #formula2 <- used ~ delta_t_z + u925_z + strata(obs_id)
 
-################################################################ 
+# 
 #all data clogit
 
 formula <- used ~ avg_delta_t_z + avg_ws_950_z + avg_abs_cw_950_z + strata(seg_id)
@@ -520,6 +564,31 @@ for (season in c("spring","autumn")){
     summary(model1)
   }
 }
+######################
+# 7 days before
+
+data_7_before <- segs_avg %>% 
+  reduce(rbind) %>% 
+  filter(days_to_add %in% c(-7:0)) %>% 
+  mutate(used = ifelse(days_to_add == 0, 1,0)) %>% 
+  as.data.frame()
 
 
+formula <- used ~ avg_delta_t_z + avg_ws_950_z + avg_abs_cw_950_z + strata(seg_id)
+formula2 <- used ~ avg_delta_t_z + strata(seg_id)
 
+for (s in c("spring","autumn")){
+  for(z in c("twz","tmpz","both")){
+    
+    data <-  data_7_before %>% 
+      filter(season == s & zone == z)
+    
+    data_z<-data%>% 
+      mutate_at(c(2,3,6),
+                list(z=~scale(.)))%>%
+      as.data.frame()
+    
+    model1 <- clogit(formula, data = data_z)
+    print(summary(model1))
+  }
+}
