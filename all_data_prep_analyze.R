@@ -133,7 +133,7 @@ save(dataset_sea, file = "R_files/all_spp_spatial_filtered_updated_no_buffer.RDa
 
 ##### STEP 4: temporal filter for autocorrelation #####
 
-load("R_files/all_spp_spatial_filtered_updated.RData") #named dataset_sea
+load("R_files/all_spp_spatial_filtered_updated_no_buffer.RData") #named dataset_sea
 dataset_sea <- dataset_sea %>% 
   dplyr::select(2,3,4,14,15,16,33,38,39,40)
 

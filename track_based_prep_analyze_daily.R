@@ -275,11 +275,12 @@ segs_w <- lapply(split(pts_ann,pts_ann$seg_id), function(x){ #for each segment
   x_w <- lapply(split(x, x$days_to_add), function(y){ #for each alternative version of the segment
     #calculate heading from each point to the endpoint
     if(nrow(y) < 2){
-      y_w <- mutate(heading = NA,
-                    wind_support_950 = NA,
-                    cross_wind_950 = NA,
-                    wind_support_10m = NA,
-                    cross_wind_10m = NA)
+      y_w <- y %>% 
+        mutate(heading = NA,
+               wind_support_950 = NA,
+               cross_wind_950 = NA,
+               wind_support_10m = NA,
+               cross_wind_10m = NA)
       y_w
     } else {
       y_w <- y %>% 

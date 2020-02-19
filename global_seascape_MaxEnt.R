@@ -6,37 +6,44 @@
 #tutorials
 #https://www.r-bloggers.com/advanced-sab-r-metrics-parallelization-with-the-mgcv-package/
   
-library(mgcv)
 library(parallel)
 library(dplyr)
 library(ncdf4)
-#library(googleway) #for local time calculations.. needs google API
-#library(XML)
-library(sf)
 library(raster)
 library(maps)
 library(lubridate)
-library(lutz)
 library(maptools)
 library(purrr)
-#library(multidplyr)
+library(miceadds)
+library(sf)
 
+wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
+setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
 
-setwd("C:/Users/mahle/ownCloud/Work/Projects/delta_t/")
+#input points for the analyses will be as follows. just to keep in mind and match months, etc.
 
-##### STEP 1: process the data #####
-## temp data
+load("R_files/all_spp_temp_sp_filtered_15km_alt_14days.RData") #alt_cmpl....make sure this is updated! in all_data_prep_analyze.R
+pts <- alt_cmpl %>% 
+  filter(period == "now")
 
-setwd("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_data_0_60")
+table(pts$season,pts$month) #spring: c(2:4); autumn: c(8:9)
+table(year(pts$date_time)) #2003:2019
+
+##### STEP 1: process the data-create yearly averges (season and zone-specific) #####
+## temp data #####
+setwd("/home/enourani/Documents/ERA_INTERIM_data_0_60")
 
 vname <- c("sst","t2m")
 file_list <- list.files(pattern = "sst_t2m.nc",full.names = TRUE)
 
-#start the cluster
-mycl <- makeCluster(detectCores() - 1)
+load("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/day_indices.RData") #days
 
-clusterExport(mycl, list("vname","file_list")) #define the variable that will be used within the function
+#start the cluster
+mycl <- makeCluster(detectCores() - 2)
+mycl <- makeCluster(6)
+clusterExport(mycl, list("vname","file_list","days")) #define the variable that will be used within the function
 
 clusterEvalQ(mycl, {
   
@@ -46,7 +53,7 @@ clusterEvalQ(mycl, {
 })
 
 
-data_list <- parLapply(cl = mycl,file_list,function(x){
+parLapply(cl = mycl,file_list,function(x){
   
   nc <- nc_open(x)
   
@@ -74,85 +81,196 @@ data_list <- parLapply(cl = mycl,file_list,function(x){
   colnames(var_df) <- c("lon","lat","date_time",vname)   #set column names
   
   #remove points over land (NAs)
-  
   sea_df <- var_df %>%
     na.omit() %>% #this omits all points over land
-    mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
+    mutate(row_n = row_number()) %>% 
+    filter(row_n %in% days$row_n) %>% #keep only rows that are daytime according to "days"
+    #mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
     mutate(delta_t = sst - t2m,
            yday = yday(date_time),
-           hour = hour(date_time)) 
+           hour = hour(date_time),
+           month = month(date_time),
+           year = year(date_time),
+           zone = ifelse(lat <= 30,"twz","tmpz"),
+           season = ifelse(month %in% c(2:4),"spring",
+                           ifelse(month %in% c(8:10), "autumn", "other")))
   
-  sea_df_crds <- as.matrix(sea_df[,c("lon","lat")])
-  
-  sea_df_dn <- sea_df %>%
-    mutate(daynight = ifelse(solarpos(sea_df_crds,date_time)[,2] < -6, "night","day")) %>% #night: when the sun is 6 degrees below the horizon
-  filter(daynight == "day") %>% 
-    
-    group_by(lon,lat) %>% 
+  #take averages
+  sea_avg <- sea_df %>% 
+    filter(season != "other") %>% 
+    group_by(zone, season,lon,lat) %>% 
     summarise(avg_delta_t = mean(delta_t,na.rm = T)) %>% 
-    as.data.frame() 
-    
-  #mutate(tz = tz_lookup_coords(lat,lon)) %>%
-    #rowwise() %>%
-    
-    mutate(local_date_time = as.character(as.POSIXlt(x = date_time, tz = tz))) %>% #has to be character. otherwise I get an error for POSIXlt format not being supported
-    mutate(local_hour = strsplit(strsplit(local_date_time,split = " ")[[1]][2],split = ":")[[1]][1]) %>%
-    as.data.frame()#local hour is NA when it should be 00
+    as.data.frame()
   
   
-  #extract timestamps at daytime
-  DayNight[solarpos(Leroy[-n.locs(Leroy)], timestamps(Leroy)[-n.locs(Leroy)])[,2] < -6 & 
-             solarpos(Leroy[-1], timestamps(Leroy)[-1])[,2] < -6] <- "Night"
+  #identify rows at daytime. only do this for the first file and use for others to subset days
+  # sea_df_crds <- as.matrix(sea_df[,c("lon","lat")])
+  # dn <- sea_df %>%
+  #   mutate(daynight = ifelse(solarpos(sea_df_crds,date_time)[,2] < -6, "night","day")) %>% #second vlaue returned by solarpos is the solar elevation angle. first one is azimuth
+  #   mutate(row_n = row_number()) 
+  # days <- dn %>%
+  #   filter(daynight == "day")
+  #   
+  # save(days, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/day_indices.RData")
   
-  save(sample,file = paste0("C:/Users/mahle/ownCloud/Work/Projects/delta_t/ERA_INTERIM_data_global_sampled/",
-                            paste(year(timestamp)[1],min(sample$yday),max(sample$yday),sep = "_"),".RData"))
-  gc()
-  gc()
+  save(sea_avg,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg/",
+                            paste(year(timestamp)[1],"avg_delta_t",sep = "_"),".RData"))
+
+  
 })
 
 stopCluster(mycl)
 
-#define variables
-wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
-mycl <- makeCluster(detectCores() - 1) 
+#-------------------------------------------------------------------------------
+## wind data #####
+setwd("/home/enourani/Documents/ERA_INTERIM_data_0_60")
+
+vname <- c("u","v")
+file_list <- list.files(pattern = "wind.nc",full.names = TRUE)
+
+load("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/day_indices_wind.RData") #days
+
+#start the cluster
+
+mycl <- makeCluster(8)
+clusterExport(mycl, list("vname","file_list","days")) #define the variable that will be used within the function
+
+clusterEvalQ(mycl, {
+  
+  library(ncdf4)
+  library(lubridate)
+  library(dplyr)
+})
 
 
-###step 1: open data ####
-file_ls <- list.files("ERA_INTERIM_data_global_sampled",".RData",full.names = TRUE) #data processed and sampled in ecmwf_in_R.R
+parLapply(cl = mycl,file_list,function(x){
+  
+  nc <- nc_open(x)
+  
+  #extract lon and lat
+  lat <- ncvar_get(nc,'latitude')
+  nlat <- dim(lat) 
+  lon <- ncvar_get(nc,'longitude') #this is from 0 - 360. convert to -180 to 180
+  nlon <- dim(lon) 
+  
+  #extract the time
+  t <- ncvar_get(nc, "time")
+  nt <- dim(t)
+  
+  #convert the hours into date + hour
+  timestamp <- as_datetime(c(t*60*60),origin = "1900-01-01")
+  
+  #put everything in a large df
+  row_names <- expand.grid(lon,lat,as.character(timestamp))
+  
+  var_df <- data.frame(cbind(
+    row_names,
+    matrix(as.vector(ncvar_get(nc,vname[1])), nrow = nlon * nlat * nt, ncol = 1), #array to vector to matrix
+    matrix(as.vector(ncvar_get(nc,vname[2])), nrow = nlon * nlat * nt, ncol = 1)))
+  
+  colnames(var_df) <- c("lon","lat","date_time",vname)   #set column names
+  
+  #  #identify rows at daytime. only do this for the first file and use for others to subset days
+  # var_df_crds <- as.matrix(var_df[,c("lon","lat")])
+  # dn <- var_df %>%
+  #   mutate(date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
+  #   mutate(daynight = ifelse(solarpos(var_df_crds,date_time)[,2] < -6, "night","day")) %>% #second vlaue returned by solarpos is the solar elevation angle. first one is azimuth
+  #   mutate(row_n = row_number())
+  # days <- dn %>%
+  #   filter(daynight == "day")
+  # 
+  # save(days, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/day_indices_wind.RData")
+  #  
+  
+  var_avg <- var_df %>%
+    mutate(row_n = row_number(),
+           date_time = as.POSIXct(strptime(date_time,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
+    filter(row_n %in% days$row_n) %>% #keep only rows that are daytime according to "days"
+    mutate(yday = yday(date_time),
+           hour = hour(date_time),
+           month = month(date_time),
+           year = year(date_time),
+           zone = ifelse(lat <= 30,"twz","tmpz"),
+           season = ifelse(month %in% c(2:4),"spring",
+                           ifelse(month %in% c(8:10), "autumn", "other"))) %>% 
+    filter(season != "other") %>% 
+    group_by(zone, season,lon,lat) %>% 
+    summarise(avg_u = mean(u,na.rm = T),
+              avg_v = mean(v,na.rm = T)) %>% 
+    as.data.frame()
 
-data_df <- file_ls %>%
-  map(read_csv) %>% 
-  reduce(rbind) %>%
-  mutate(year = year(date_time))
+  save(var_avg,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg/",
+                             paste(year(timestamp)[1],"avg_wind",sep = "_"),".RData"))
+  
+  
+})
 
-#data_df <- data.frame()
-#for (i in file_ls) {
-#  load(i)
-#  data_df <- rbind(data_df,sample)
-#  data_df
-#}
-
-#data_df$year <- year(data_df$date_time)
-
-save(data_df,file = "R_files/processed_era_interim_data/samples_df.RData")
+stopCluster(mycl)
 
 
 
-###step 2: convert hour of day to local time #####
-load("R_files/processed_era_interim_data/samples_df.RData") #called data_df
+##### STEP 2: create averages for the study period: 2003-2018 #####
+#open files, filter land and lakes, take average 
 
-df_lt <- data_df %>%
-  mutate(tz = tz_lookup_coords(lat,lon)) %>%
-  rowwise() %>%
-  mutate(local_date_time = as.character(as.POSIXlt(x = date_time, tz = tz))) %>% #has to be character. otherwise I get an error for POSIXlt format not being supported
-  mutate(local_hour = strsplit(strsplit(local_date_time,split = " ")[[1]][2],split = ":")[[1]][1]) %>%
-  as.data.frame()#local hour is NA when it should be 00
+ocean <- st_read("/home/enourani/ownCloud/Work/GIS_files/ne_110m_ocean/ne_110m_ocean.shp")[2,] #remove caspian sea
+setwd("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg")
 
-#conver NA local_hours to 00
-df_lt[is.na(df_lt$local_hour),"local_hour"] <- "00"
+#temperature
+t_files <- list.files(pattern = "delta_t",full.names = TRUE)[c(25:40)] #filter for years that correspond to empirical data
 
-save(df_lt,file = "R_files/processed_era_interim_data/samples_with_local_time_hour.RData")
+t_avg_3_18 <- lapply(t_files,load.Rdata2) %>%
+  reduce(rbind) %>% 
+  group_by(zone, season, lon,lat) %>% 
+  summarise(avg_delta_t = mean(avg_delta_t,na.rm = T)) %>% 
+  ungroup()
 
+#wind
+w_files <- list.files(pattern = "wind",full.names = TRUE)[c(25:40)] #filter for years that correspond to empirical data
+
+w_avg_3_18 <- lapply(w_files,load.Rdata2) %>%
+  reduce(rbind) %>% 
+  group_by(zone, season, lon,lat) %>% 
+  summarise(avg_u = mean(avg_u,na.rm = T),
+            avg_v = mean(avg_v,na.rm = T)) %>% 
+  ungroup() %>% 
+  #mutate(lon = lon -180) #longitude is from 0 - 360
+
+#create raster layers
+for (s in (c("spring","autumn"))){
+  for (z in c("twz","tmpz")){
+    #delta_t
+    t <- t_avg_3_18 %>% 
+      filter(season == s & zone == z) %>% 
+      as.data.frame()
+    
+    coordinates(t) <-~ lon + lat
+    gridded(t) <- TRUE
+    dr <- raster(t,layer = 3)
+    
+    #subset lakes and land
+    dr_masked <- mask(dr,ocean) 
+    save(dr_masked,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg/rasters/",paste(s,z,"2003_2018_delta_t.RData", sep = "_")))
+    
+    #-------------------
+    #wind
+    w <- w_avg_3_18 %>% 
+      filter(season == s & zone == z) %>% 
+      as.data.frame()
+    coordinates(w) <-~ lon + lat
+    gridded(w) <- TRUE
+    proj4string(w) <- wgs
+    ur <- raster(w,layer = 3)
+    ur_masked <- mask(ur, ocean)
+    vr <- raster(w,layer = 4)
+    vr_masked <- mask(vr,ocean)
+    
+    save(ur,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg/rasters/",paste(s,z,"2003_2018_u.RData", sep = "_")))
+    save(vr,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg/rasters/",paste(s,z,"2003_2018_v.RData", sep = "_")))
+
+  }
+}
+
+#remove lakes
 
 ###step 3: remove lakes! #####
 
@@ -160,6 +278,9 @@ load("R_files/processed_era_interim_data/samples_with_local_time_hour.RData") #c
 df_lt$group <- rep(1:3, length.out = nrow(df_lt), each = ceiling(nrow(df_lt)/3))
 
 land <- shapefile("C:/Users/mahle/ownCloud/Work/GIS_files/ne_10m_land/ne_10m_land.shp")
+
+ocean <- 
+
 land$land <- 1
 land <- unionSpatialPolygons(land,IDs = land2$land)
 land_sf <- st_as_sf(land,crs = wgs)
