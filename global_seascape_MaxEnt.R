@@ -16,6 +16,7 @@ library(maptools)
 library(purrr)
 library(miceadds)
 library(sf)
+library(dismo)
 
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
@@ -233,7 +234,7 @@ w_avg_3_18 <- lapply(w_files,load.Rdata2) %>%
   summarise(avg_u = mean(avg_u,na.rm = T),
             avg_v = mean(avg_v,na.rm = T)) %>% 
   ungroup() %>% 
-  #mutate(lon = lon -180) #longitude is from 0 - 360
+  mutate(lon = lon -180) #longitude is from 0 - 360
 
 #create raster layers
 for (s in (c("spring","autumn"))){
@@ -248,7 +249,8 @@ for (s in (c("spring","autumn"))){
     dr <- raster(t,layer = 3)
     
     #subset lakes and land
-    dr_masked <- mask(dr,ocean) 
+    dr_masked <- mask(dr,ocean) #remove lakes
+    
     save(dr_masked,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg/rasters/",paste(s,z,"2003_2018_delta_t.RData", sep = "_")))
     
     #-------------------
@@ -258,274 +260,61 @@ for (s in (c("spring","autumn"))){
       as.data.frame()
     coordinates(w) <-~ lon + lat
     gridded(w) <- TRUE
-    proj4string(w) <- wgs
     ur <- raster(w,layer = 3)
-    ur_masked <- mask(ur, ocean)
+    ur_masked <- mask(ur, ocean) #remove lakes and land
     vr <- raster(w,layer = 4)
     vr_masked <- mask(vr,ocean)
     
-    save(ur,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg/rasters/",paste(s,z,"2003_2018_u.RData", sep = "_")))
-    save(vr,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg/rasters/",paste(s,z,"2003_2018_v.RData", sep = "_")))
+    save(ur_masked,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg/rasters/",paste(s,z,"2003_2018_u.RData", sep = "_")))
+    save(vr_masked,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg/rasters/",paste(s,z,"2003_2018_v.RData", sep = "_")))
 
   }
 }
 
-#remove lakes
 
-###step 3: remove lakes! #####
+##### STEP 3: build MaxEnt model #####
 
-load("R_files/processed_era_interim_data/samples_with_local_time_hour.RData") #called df_lt
-df_lt$group <- rep(1:3, length.out = nrow(df_lt), each = ceiling(nrow(df_lt)/3))
+setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
 
-land <- shapefile("C:/Users/mahle/ownCloud/Work/GIS_files/ne_10m_land/ne_10m_land.shp")
+#open presence points. makes sure to discard 2019... no env data on Era-Interim
+load("R_files/all_spp_temp_sp_filtered_15km_alt_14days.RData") #alt_cmpl....make sure this is updated! in all_data_prep_analyze.R
+presence_ls <- alt_cmpl %>% 
+  filter(period == "now"& year(timestamp) != 2019) %>% 
+  group_split(season,zone) 
 
-ocean <- 
+names(presence_ls) <- c("autumn_tmpz","autumn_twz","spring_tmpz","spring_twz")
+presence_ls <- lapply(presence_ls, "[",,c("lon","lat"))  #only keep lon and lat columns
 
-land$land <- 1
-land <- unionSpatialPolygons(land,IDs = land2$land)
-land_sf <- st_as_sf(land,crs = wgs)
-
-#start the cluster
-clusterExport(mycl, list("land_sf","wgs")) #define the variable that will be used within the function
-
-clusterEvalQ(mycl, {#load packages for each node
-  library(sf)
-  #library(raster)
-  library(dplyr)
+#open raster data and create one raster stack per model
+raster_ls <- lapply(names(presence_ls), function(x){
+  files <- list.files("ERA_INTERIM_yearly_avg/rasters", pattern = x, full.names = TRUE)
+  rs <- lapply(files,load.Rdata2) 
+  stack(rs)
 })
+names(raster_ls) <- names(presence_ls)
 
+#generate background points
 
-
-ls_lt_lakes <- parLapply(cl = mycl,split(df_lt,df_lt$group),function(x){
-  
-  df_lt_lakes <- x %>%
-    st_as_sf(coords = c("lon", "lat"), crs = wgs) %>%
-    mutate(lon = as.numeric(st_coordinates(.)[,"X"]),
-           lat = as.numeric(st_coordinates(.)[,"Y"])) %>%
-    st_intersection(y = land_sf) %>%
-    st_drop_geometry() %>%
-    as.data.frame()
-  
-  df_lt_no_lake
-  
+bg_ls <- lapply(presence_ls, function(x){
+  #create a buffer around the points to select background points from
+  buff <- circles(x, d=1000000, lonlat=T) #create buffer around the points
+  buff <- intersect(buff@polygons,as(ocean, "Spatial")) #make sure the buffer is not over land
+  bg <- spsample(buff, 10000, type='random', iter=1000)
+  bg <- as.data.frame(bg)
+  colnames(bg) <- c("lon","lat")
+  bg
 })
-
-stopCluster(mycl)
-save(ls_lt_lakes,file = "R_files/processed_era_interim_data/samples_with_local_time_hour_over_lakes_ls.RData")
+names(bg_ls) <- names(presence_ls)
 
 
-#errors following the cluster computing attempt. trying it in QGIS
+#mask_tmpz <- subset(raster_ls[[1]],1) #use one raster layer as a masking layer
+#mask_twz <- subset(raster_ls[[2]],1)
+#points(randomPoints(mask_tmpz,1000))
+
+#build the model
+#make sure to set removeDuplicates to TRUE so >1 observations withn the same grid cell are removed
+
+maxentmodel<-maxent(raster_ls[[4]],p=as.data.frame(presence_ls[[4]]), a=bg_ls[[4]], removeDuplicates=T,args=c("responsecurves","jackknife","nothreshold","nohinge","product","noautofeature","maximumiterations=1000" ),
+                    path="R_files/maxent")
 
 
-
-###step 4: visualizations #####
-load("R_files/processed_era_interim_data/sample_of_samples_no_lakes.RData")
-
-#plot delta_t agains yday, separtely for each latitudinal zone
-windows(12,13)
-par(mfrow = c(2,1),
-    par(oma = c(5.1, 0,0,0), xpd = NA))
-
-#noon
-plot(delta_t ~ yday, data = sample2[sample2$local_hour == 12,],
-     type = "n",
-     xlab = "day of the year",
-     ylab = "delta T",
-     bty = "n",
-     ylim = c(-2.2,5), xlim = c(0,365), main = "global delta_t at local noon")
-axis(1,seq(0,350,50), c(seq(0,350,50)))
-lines(x = c(0,350),y = c(0,0),lty = 2, col = "gray")
-lines(lowess(sample2[between(sample2$lat,0,30) & sample2$local_hour == 12,c("yday","delta_t")]), col = "deepskyblue",lwd = 2) 
-lines(lowess(sample2[between(sample2$lat,-30,0) & sample2$local_hour == 12,c("yday","delta_t")]), col = "forestgreen",lwd = 2) 
-lines(lowess(sample2[between(sample2$lat,30,60) & sample2$local_hour == 12,c("yday","delta_t")]), col = "darkviolet",lwd = 2) 
-lines(lowess(sample2[between(sample2$lat,-60,-30) & sample2$local_hour == 12,c("yday","delta_t")]), col = "firebrick",lwd = 2) 
-
-#mid-day
-plot(delta_t ~ yday, data = sample2[sample2$local_hour %in% c(11:15),],
-     type = "n",
-     xlab = "day of the year",
-     ylab = "delta T",
-     bty = "n",
-     ylim = c(-1,2), xlim = c(0,365), main = "global delta_t at local mid-day (11:00 - 15:00)")
-axis(1,seq(0,350,50), c(seq(0,350,50)))
-lines(x = c(0,350),y = c(0,0),lty = 2, col = "gray")
-lines(lowess(sample2[between(sample2$lat,0,30) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","delta_t")]), col = "deepskyblue",lwd = 2) 
-lines(lowess(sample2[between(sample2$lat,-30,0) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","delta_t")]), col = "forestgreen",lwd = 2) 
-lines(lowess(sample2[between(sample2$lat,30,60) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","delta_t")]), col = "darkviolet",lwd = 2) 
-lines(lowess(sample2[between(sample2$lat,-60,-30) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","delta_t")]), col = "firebrick",lwd = 2) 
-
-
-legend("bottom",legend = c("0°- 30° N","0°- 30° S","30°- 60° N","30°- 60° S"),horiz = T, 
-       col = c("deepskyblue", "forestgreen", "darkviolet", "firebrick"), bty = "n", cex = 0.9,lty = 1, lwd = 2,inset = c(0,-0.6))
-
-
-
-#plot temperature
-#sst
-plot(sst ~ yday, data = sample2[sample2$local_hour %in% c(11:15),],
-     type = "n",
-     xlab = "day of the year",
-     ylab = "delta T",
-     bty = "n",
-     ylim =  c(270,310), xlim = c(0,365), main = "global sst at local mid-day (11:00 - 15:00)")
-axis(1,seq(0,350,50), c(seq(0,350,50)))
-lines(lowess(sample2[between(sample2$lat,0,30) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","sst")]), col = "deepskyblue",lwd = 2) 
-lines(lowess(sample2[between(sample2$lat,-30,0) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","sst")]), col = "forestgreen",lwd = 2) 
-lines(lowess(sample2[between(sample2$lat,30,60) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","sst")]), col = "darkviolet",lwd = 2) 
-lines(lowess(sample2[between(sample2$lat,-60,-30) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","sst")]), col = "firebrick",lwd = 2) 
-
-#t2m
-plot(t2m ~ yday, data = sample2[sample2$local_hour %in% c(11:15),],
-     type = "n",
-     xlab = "day of the year",
-     ylab = "delta T",
-     bty = "n",
-     ylim = c(270,310), xlim = c(0,365), main = "global t2m at local mid-day (11:00 - 15:00)")
-axis(1,seq(0,350,50), c(seq(0,350,50)))
-lines(lowess(sample2[between(sample2$lat,0,30) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","t2m")]), col = "deepskyblue",lwd = 2) 
-lines(lowess(sample2[between(sample2$lat,-30,0) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","t2m")]), col = "forestgreen",lwd = 2) 
-lines(lowess(sample2[between(sample2$lat,30,60) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","t2m")]), col = "darkviolet",lwd = 2) 
-lines(lowess(sample2[between(sample2$lat,-60,-30) & between(as.numeric(sample2$local_hour), 11, 15),c("yday","t2m")]), col = "firebrick",lwd = 2) 
-
-legend("bottom",legend = c("0°- 30° N","0°- 30° S","30°- 60° N","30°- 60° S"),horiz = T, 
-       col = c("deepskyblue", "forestgreen", "darkviolet", "firebrick"), bty = "n", cex = 0.9,lty = 1, lwd = 2,inset = c(0,-0.6))
-
-
-###step 5: modeling-testing-subset testing and training set #####
-#include in the model: delta T ~ s(yday)+ s(lon+lat) + local hour of day (as a random effect or just a factor?)
-#perhaps an interaction term for local hour and latitude to take into account seasonality?
-
-#for modleing, use bam() instead of gam(), it breaks the data into chunks and has a lower memory footprint. also has the option to parallelize
-#work on a sample first
-
-
-sample <- df_lt %>% 
-  sample_n(3000)
-
-#open data
-load("R_files/processed_era_interim_data/sample_of_samples_no_lakes.RData")
-
-#break up into testing and testing set
-train_set <- sample2 %>%
-  sample_frac(0.6, replace = F)
-
-test_set <- sample2 %>%
-  anti_join(train_set)
-  
-
-#model on a cluster
-clusterExport(mycl, "train_set") 
-
-model <- bam(delta_t ~ s(lon,lat) + s(yday,bs="cc") + factor(local_hour) , data = train_set, cluster = mycl) #in the example: method="GCV.Cp",
-
-stopCluster(mycl)
-
-#model without a cluster
-model <- bam(delta_t ~ s(lon,lat) + s(yday,bs="cc") + factor(local_hour) , data = train_set)
-AIC(model) 
-plot(model)
-
-
-#separate smooths for hour
-model2 <- bam(delta_t ~ s(lon,lat) + s(yday,bs="cc",by = factor(hour)) + factor(hour) , data = train_set)
-AIC(model2) 
-plot(model2)
-
-#compare models with Wald test
-anova(model, model2)
-
-#evaluate the best model
-gam.check(model)
-
-#test the model
-test_pred <- predict.bam(model2,test_set)
-plot(test_pred,test_set$delta_t)
-cor(test_pred,test_set$delta_t)
-
-##### from previous codes
-
-#-----------------------------------------------------------
-#effect plots 
-#-----------------------------------------------------------
-#previous attempts are in the previous version ;)
-
-pdf("delta_T_gam/yday_smoother_fig_model1_3.pdf", height = 4, width = 4)
-#x11()
-#dev.new(width=4, height=4)
-
-par(mfrow = c(1,1), bty="n", #no box around the plot
-    cex.axis = 0.75, #x and y labels have 0.75% of the default size
-    font.axis = 3, #axis labels are in italics
-    cex.lab = 1
-)
-
-
-plot(model2,select = 2, xlab = "Julian date",ylab = "Delta T", ylim = c(-2,2), shade = T, shade.col = "grey75",
-     scheme= 0,se = 12,bty = "l",labels = FALSE, tck = 0) #plot only the second smooth term
-
-#rect(xleft=268,ybottom=-2.3,xright=296,ytop=2.3, col="#96CDCD30",border=NA) #for juv...#last two digits are for transparency
-#rect(xleft=242,ybottom=-2.3,xright=277,ytop=2.3, col="#FA807230",border=NA) #for adults
-
-rect(xleft = 268,ybottom=-2.3,xright = 296,ytop = 1.14, col = "#96CDCD30",border = NA) #for juv...#last two digits are for transparency
-rect(xleft = 213,ybottom=0.35,xright = 268,ytop = 1.14, col = "#96CDCD30",border = NA)
-
-rect(xleft=242,ybottom=-2.3,xright=277,ytop=0.6, col="#FA807230",border=NA) #for adults
-rect(xleft=213,ybottom=-0.5,xright=242,ytop=0.6, col="#FA807230",border=NA)
-
-axis(side= 1, at= c(213,240,260,280,305), line=-0, labels= c(213,240,260,280,305), 
-     tick=T , col.ticks = 1, col=NA, tck=-.015)
-axis(side= 2, at= c(-1.5,0,1.5), line=0, labels= c(-1.5,0,1.5),
-     tick=T , col.ticks = 1,col=NA, tck=-.015, 
-     las=2) # text perpendicular to axis label 
-legend(x=212, y=2, legend=c("juveniles", "adults"), fill=c("#96CDCD40","#FA807240"), #coords indicate top-left
-       cex=0.8, bg="white",bty="n")
-
-dev.off()
-
-#----------------------------------------------------------------------------------------
-# Predict with the model!
-#----------------------------------------------------------------------------------------
-#make predictions with the model for the periods of adult and juvenile migration
-#juvenile Sep. 25-Oct. 23 (i.e. ydays 268-296); adults Aug 30-Oct. 4 (i.e. ydays 242-277)
-#create a set for each..... conclusion: the two prediction maps look very similar. so, just do one map for the entire autumn
-seasons <- list(
-  juv = data_aut_sea[data_aut_sea$yday %in% c(268:296),],
-  adlt = data_aut_sea[data_aut_sea$yday %in% c(242:277),]
-)
-
-#predict
-preds_ls<-lapply(seasons, function(x){
-  pred<-data.frame(pred=as.numeric(predict(model,x)),lon=x$lon,lat=x$lat)
-  
-  coordinates(pred)<-~lon+lat
-  gridded(pred)<-T
-  r<-raster(pred)
-  
-  return(r)
-})
-
-
-save(preds_ls,file="delta_T_gam/predictions_with_model1.RData")
-load("delta_T_gam/predictions_with_model1.RData")
-
-
-###step 6: modleing-full model #####
-
-###step 7: visualization #####
-#predict with the full model for autumn migration season
-
-# interpolate to 1 km for visualization purposes
-
-
-
-#####
-windows()
-maps::map("world",fill = TRUE,col = "gray",border = "gray")
-points(sample$lon,sample$lat,cex = 0.5,pch = 16,col = "red")
-points(sample2$lon,sample2$lat,cex = 0.3,pch = 16,col = "green")
-points(train_set$lon,train_set$lat,cex = 0.5,pch = 16,col = "red")
-points(test_set$lon,test_set$lat,cex = 0.5,pch = 16,col = "blue")
-
-plot(st_geometry(land_pol))
-lines(land)
-plot(lakes,col = "red",add = T)
