@@ -291,6 +291,7 @@ raster_ls <- lapply(names(presence_ls), function(x){
   rs <- lapply(files,load.Rdata2) 
   stack(rs)
 })
+
 names(raster_ls) <- names(presence_ls)
 
 #generate background points
