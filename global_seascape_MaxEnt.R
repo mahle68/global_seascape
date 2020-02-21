@@ -17,6 +17,7 @@ library(purrr)
 library(miceadds)
 library(sf)
 library(dismo)
+library(stars)
 
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
@@ -42,7 +43,6 @@ file_list <- list.files(pattern = "sst_t2m.nc",full.names = TRUE)
 load("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/day_indices.RData") #days
 
 #start the cluster
-mycl <- makeCluster(detectCores() - 2)
 mycl <- makeCluster(6)
 clusterExport(mycl, list("vname","file_list","days")) #define the variable that will be used within the function
 
@@ -99,7 +99,7 @@ parLapply(cl = mycl,file_list,function(x){
   #take averages
   sea_avg <- sea_df %>% 
     filter(season != "other") %>% 
-    group_by(zone, season,lon,lat) %>% 
+    group_by(season,lon,lat) %>% 
     summarise(avg_delta_t = mean(delta_t,na.rm = T)) %>% 
     as.data.frame()
   
@@ -114,7 +114,7 @@ parLapply(cl = mycl,file_list,function(x){
   #   
   # save(days, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/day_indices.RData")
   
-  save(sea_avg,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg/",
+  save(sea_avg,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg_both_z/",
                             paste(year(timestamp)[1],"avg_delta_t",sep = "_"),".RData"))
 
   
@@ -133,7 +133,7 @@ load("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/day_indices_wind.RDa
 
 #start the cluster
 
-mycl <- makeCluster(8)
+mycl <- makeCluster(6)
 clusterExport(mycl, list("vname","file_list","days")) #define the variable that will be used within the function
 
 clusterEvalQ(mycl, {
@@ -195,12 +195,12 @@ parLapply(cl = mycl,file_list,function(x){
            season = ifelse(month %in% c(2:4),"spring",
                            ifelse(month %in% c(8:10), "autumn", "other"))) %>% 
     filter(season != "other") %>% 
-    group_by(zone, season,lon,lat) %>% 
+    group_by(season,lon,lat) %>% 
     summarise(avg_u = mean(u,na.rm = T),
               avg_v = mean(v,na.rm = T)) %>% 
     as.data.frame()
 
-  save(var_avg,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg/",
+  save(var_avg,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg_both_z/",
                              paste(year(timestamp)[1],"avg_wind",sep = "_"),".RData"))
   
   
@@ -210,27 +210,32 @@ stopCluster(mycl)
 
 
 
+
+
 ##### STEP 2: create averages for the study period: 2003-2018 #####
 #open files, filter land and lakes, take average 
 
-ocean <- st_read("/home/enourani/ownCloud/Work/GIS_files/ne_110m_ocean/ne_110m_ocean.shp")[2,] #remove caspian sea
-setwd("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg")
+ocean_0_60 <- st_read("/home/enourani/ownCloud/Work/GIS_files/ne_110m_ocean/ne_110m_ocean.shp")[2,] %>%  #remove caspian sea
+  st_crop(c(xmin = -180, xmax = 180, ymin = 0, ymax = 60)) %>% 
+  st_set_crs(wgs)
+
+setwd("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg_both_z")
 
 #temperature
 t_files <- list.files(pattern = "delta_t",full.names = TRUE)[c(25:40)] #filter for years that correspond to empirical data
 
 t_avg_3_18 <- lapply(t_files,load.Rdata2) %>%
   reduce(rbind) %>% 
-  group_by(zone, season, lon,lat) %>% 
+  group_by(season, lon,lat) %>% 
   summarise(avg_delta_t = mean(avg_delta_t,na.rm = T)) %>% 
   ungroup()
 
 #wind
-w_files <- list.files(pattern = "wind",full.names = TRUE)[c(25:40)] #filter for years that correspond to empirical data
+w_files <- list.files(pattern = "wind",full.names = TRUE)[c(20:35)] #filter for years that correspond to empirical data
 
 w_avg_3_18 <- lapply(w_files,load.Rdata2) %>%
   reduce(rbind) %>% 
-  group_by(zone, season, lon,lat) %>% 
+  group_by(season, lon,lat) %>% 
   summarise(avg_u = mean(avg_u,na.rm = T),
             avg_v = mean(avg_v,na.rm = T)) %>% 
   ungroup() %>% 
@@ -238,71 +243,99 @@ w_avg_3_18 <- lapply(w_files,load.Rdata2) %>%
 
 #create raster layers
 for (s in (c("spring","autumn"))){
-  for (z in c("twz","tmpz")){
     #delta_t
     t <- t_avg_3_18 %>% 
-      filter(season == s & zone == z) %>% 
+      filter(season == s) %>% 
       as.data.frame()
     
     coordinates(t) <-~ lon + lat
     gridded(t) <- TRUE
-    dr <- raster(t,layer = 3)
-    
+    dr <- raster(t,layer = "avg_delta_t")
+    proj4string(dr) <- wgs
     #subset lakes and land
-    dr_masked <- mask(dr,ocean) #remove lakes
+    dr_masked <- mask(dr,ocean_0_60) #remove lakes
     
-    save(dr_masked,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg/rasters/",paste(s,z,"2003_2018_delta_t.RData", sep = "_")))
+    save(dr_masked,file = paste0("rasters/",paste(s,"2003_2018_delta_t.RData", sep = "_")))
     
     #-------------------
     #wind
     w <- w_avg_3_18 %>% 
-      filter(season == s & zone == z) %>% 
+      filter(season == s) %>% 
       as.data.frame()
     coordinates(w) <-~ lon + lat
     gridded(w) <- TRUE
-    ur <- raster(w,layer = 3)
-    ur_masked <- mask(ur, ocean) #remove lakes and land
-    vr <- raster(w,layer = 4)
-    vr_masked <- mask(vr,ocean)
+    ur <- raster(w,layer = "avg_u")
+    proj4string(ur) <- wgs
+    ur_masked <- mask(ur, ocean_0_60) #remove lakes and land
+    vr <- raster(w,layer = "avg_v")
+    proj4string(vr) <- wgs
+    vr_masked <- mask(vr,ocean_0_60)
     
-    save(ur_masked,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg/rasters/",paste(s,z,"2003_2018_u.RData", sep = "_")))
-    save(vr_masked,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg/rasters/",paste(s,z,"2003_2018_v.RData", sep = "_")))
+    save(ur_masked,file = paste0("rasters/",paste(s,"2003_2018_u.RData", sep = "_")))
+    save(vr_masked,file = paste0("rasters/",paste(s,"2003_2018_v.RData", sep = "_")))
 
-  }
 }
 
 
-##### STEP 3: build MaxEnt model #####
 
+##### STEP 3: create a zone layer #####
+twz <- crop(z,extent(-180,180,0,30))
+twzr <- rasterize(twz,raster_ls[[1]],field = twz$featurecla)
+
+z <- as(ocean_0_60,"Spatial")
+zr <- rasterize(z,raster_ls[[1]],field = z$featurecla)
+zr <- sum(zr,twzr, na.rm = T)
+
+zr <- mask(zrr,raster_ls[[1]]$avg_delta_t)
+names(zr) <- "zone"
+
+
+##### STEP 3: extract values at presence points #####
+#some points fall outside the raster cells. use extract with a buffer to solve this
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
 
 #open presence points. makes sure to discard 2019... no env data on Era-Interim
 load("R_files/all_spp_temp_sp_filtered_15km_alt_14days.RData") #alt_cmpl....make sure this is updated! in all_data_prep_analyze.R
 presence_ls <- alt_cmpl %>% 
   filter(period == "now"& year(timestamp) != 2019) %>% 
-  group_split(season,zone) 
+  group_split(season) 
 
-names(presence_ls) <- c("autumn_tmpz","autumn_twz","spring_tmpz","spring_twz")
+names(presence_ls) <- c("autumn","spring")
 presence_ls <- lapply(presence_ls, "[",,c("lon","lat"))  #only keep lon and lat columns
 
 #open raster data and create one raster stack per model
 raster_ls <- lapply(names(presence_ls), function(x){
-  files <- list.files("ERA_INTERIM_yearly_avg/rasters", pattern = x, full.names = TRUE)
+  files <- list.files("ERA_INTERIM_yearly_avg_both_z//rasters", pattern = x, full.names = TRUE)
   rs <- lapply(files,load.Rdata2) 
+  rs[[4]] <- zr
   stack(rs)
 })
-
 names(raster_ls) <- names(presence_ls)
 
-#generate background points
+env <- lapply(c("autumn","spring"), function(x){
+  pres <- presence_ls[names(presence_ls) == x][[1]]
+  rstack <- raster_ls[names(raster_ls) == x][[1]]
+  
+  env <- extract(rstack, pres, buffer = 2000) %>% 
+    reduce(rbind)
+})
 
+##### STEP 4: build MaxEnt model #####
+
+setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
+
+
+
+#generate background points
 bg_ls <- lapply(presence_ls, function(x){
   #create a buffer around the points to select background points from
-  buff <- circles(x, d=1000000, lonlat=T) #create buffer around the points
-  buff <- intersect(buff@polygons,as(ocean, "Spatial")) #make sure the buffer is not over land
-  bg <- spsample(buff, 10000, type='random', iter=1000)
-  bg <- as.data.frame(bg)
-  colnames(bg) <- c("lon","lat")
+  buff <- circles(x, d=1000000, lonlat=T)  #create buffer around the points
+  buff <- st_as_sf(buff@polygons) %>% 
+    st_set_crs(wgs)
+  buff <- st_intersection(buff,ocean_0_60) #make sure the buffer is not over land
+  bg <- st_sample(buff, 10000, type='random') %>% 
+    as("Spatial") %>% 
+    as.data.frame()
   bg
 })
 names(bg_ls) <- names(presence_ls)
@@ -315,7 +348,17 @@ names(bg_ls) <- names(presence_ls)
 #build the model
 #make sure to set removeDuplicates to TRUE so >1 observations withn the same grid cell are removed
 
-maxentmodel<-maxent(raster_ls[[4]],p=as.data.frame(presence_ls[[4]]), a=bg_ls[[4]], removeDuplicates=T,args=c("responsecurves","jackknife","nothreshold","nohinge","product","noautofeature","maximumiterations=1000" ),
-                    path="R_files/maxent")
+maxentmodel_aut<-maxent(raster_ls$autumn,p=as.data.frame(presence_ls$autumn), a=bg_ls$autumn, factors="zone",
+                    removeDuplicates=T,args=c("responsecurves","jackknife","nothreshold","nohinge","product",
+                                              "noautofeature","maximumiterations=1000" ),
+                    path="R_files/maxent/autumn")
 
+maxentmodel_spr<-maxent(raster_ls$spring,p=as.data.frame(presence_ls$spring), a=bg_ls$spring, factors="zone",
+                    removeDuplicates=T,args=c("responsecurves","jackknife","nothreshold","nohinge","product",
+                                              "noautofeature","maximumiterations=1000" ),
+                    path="R_files/maxent/spring")
+
+#make prediction maps for the 03-18 period. do this for forty years...
+pred_aut<- predict(maxentmodel_aut, raster_ls$autumn, filename="R_files/maxent/autumn/maxent_prediction.tif")
+pred_spr<- predict(maxentmodel_spr, raster_ls$spring, filename="R_files/maxent/spring/maxent_prediction.tif")
 
