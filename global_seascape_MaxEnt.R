@@ -18,11 +18,17 @@ library(miceadds)
 library(sf)
 library(dismo)
 library(stars)
+library(mapview)
 
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
+
+ocean_0_60 <- st_read("/home/enourani/ownCloud/Work/GIS_files/ne_110m_ocean/ne_110m_ocean.shp")[2,] %>%  #remove caspian sea
+  st_crop(c(xmin = -180, xmax = 180, ymin = 0, ymax = 60)) %>% 
+  st_set_crs(wgs)
+
 
 #input points for the analyses will be as follows. just to keep in mind and match months, etc.
 
@@ -133,7 +139,7 @@ load("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/day_indices_wind.RDa
 
 #start the cluster
 
-mycl <- makeCluster(6)
+mycl <- makeCluster(5)
 clusterExport(mycl, list("vname","file_list","days")) #define the variable that will be used within the function
 
 clusterEvalQ(mycl, {
@@ -144,7 +150,7 @@ clusterEvalQ(mycl, {
 })
 
 
-parLapply(cl = mycl,file_list,function(x){
+parLapply(cl = mycl,file_list[c(16:20)],function(x){
   
   nc <- nc_open(x)
   
@@ -209,15 +215,8 @@ parLapply(cl = mycl,file_list,function(x){
 stopCluster(mycl)
 
 
-
-
-
 ##### STEP 2: create averages for the study period: 2003-2018 #####
 #open files, filter land and lakes, take average 
-
-ocean_0_60 <- st_read("/home/enourani/ownCloud/Work/GIS_files/ne_110m_ocean/ne_110m_ocean.shp")[2,] %>%  #remove caspian sea
-  st_crop(c(xmin = -180, xmax = 180, ymin = 0, ymax = 60)) %>% 
-  st_set_crs(wgs)
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg_both_z")
 
@@ -277,21 +276,82 @@ for (s in (c("spring","autumn"))){
 }
 
 
+##### STEP 3: create averages for forty years: 1979-2018 #####
+#open files, filter land and lakes, take average 
 
-##### STEP 3: create a zone layer #####
+setwd("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_INTERIM_yearly_avg_both_z")
+
+#temperature
+t_files <- list.files(pattern = "delta_t",full.names = TRUE)
+
+t_avg_all <- lapply(t_files,load.Rdata2) %>%
+  reduce(rbind) %>% 
+  group_by(season, lon,lat) %>% 
+  summarise(avg_delta_t = mean(avg_delta_t,na.rm = T)) %>% 
+  ungroup()
+
+#wind
+w_files <- list.files(pattern = "wind",full.names = TRUE)
+
+w_avg_all <- lapply(w_files,load.Rdata2) %>%
+  reduce(rbind) %>% 
+  group_by(season, lon,lat) %>% 
+  summarise(avg_u = mean(avg_u,na.rm = T),
+            avg_v = mean(avg_v,na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(lon = lon -180) #longitude is from 0 - 360
+
+#create raster layers
+for (s in (c("spring","autumn"))){
+  #delta_t
+  t <- t_avg_all %>% 
+    filter(season == s) %>% 
+    as.data.frame()
+  
+  coordinates(t) <-~ lon + lat
+  gridded(t) <- TRUE
+  dr <- raster(t,layer = "avg_delta_t")
+  proj4string(dr) <- wgs
+  #subset lakes and land
+  dr_masked <- mask(dr,ocean_0_60) #remove lakes
+  
+  save(dr_masked,file = paste0("rasters/",paste(s,"all_yrs_delta_t.RData", sep = "_")))
+  
+  #-------------------
+  #wind
+  w <- w_avg_all %>% 
+    filter(season == s) %>% 
+    as.data.frame()
+  coordinates(w) <-~ lon + lat
+  gridded(w) <- TRUE
+  ur <- raster(w,layer = "avg_u")
+  proj4string(ur) <- wgs
+  ur_masked <- mask(ur, ocean_0_60) #remove lakes and land
+  vr <- raster(w,layer = "avg_v")
+  proj4string(vr) <- wgs
+  vr_masked <- mask(vr,ocean_0_60)
+  
+  save(ur_masked,file = paste0("rasters/",paste(s,"all_yrs_u.RData", sep = "_")))
+  save(vr_masked,file = paste0("rasters/",paste(s,"all_yrs_v.RData", sep = "_")))
+  
+}
+
+
+
+##### STEP 4: create a zone layer #####
+z <- as(ocean_0_60,"Spatial")
 twz <- crop(z,extent(-180,180,0,30))
 twzr <- rasterize(twz,raster_ls[[1]],field = twz$featurecla)
 
-z <- as(ocean_0_60,"Spatial")
 zr <- rasterize(z,raster_ls[[1]],field = z$featurecla)
 zr <- sum(zr,twzr, na.rm = T)
 
-zr <- mask(zrr,raster_ls[[1]]$avg_delta_t)
+zr <- mask(zr,raster_ls[[1]]$avg_delta_t)
 names(zr) <- "zone"
 
+writeRaster(zr,"ERA_INTERIM_yearly_avg_both_z/rasters/zones.tif", "GTiff")
 
-##### STEP 3: extract values at presence points #####
-#some points fall outside the raster cells. use extract with a buffer to solve this
+##### STEP 5: prepare presence points #####
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
 
 #open presence points. makes sure to discard 2019... no env data on Era-Interim
@@ -303,16 +363,37 @@ presence_ls <- alt_cmpl %>%
 names(presence_ls) <- c("autumn","spring")
 presence_ls <- lapply(presence_ls, "[",,c("lon","lat"))  #only keep lon and lat columns
 
-#open raster data and create one raster stack per model
-raster_ls <- lapply(names(presence_ls), function(x){
-  files <- list.files("ERA_INTERIM_yearly_avg_both_z//rasters", pattern = x, full.names = TRUE)
+##### STEP 6: prepare raster stacks #####
+#open raster data and create one raster stack per model: study period
+raster_ls_w_zone <- lapply(names(presence_ls), function(x){
+  files <- list.files("ERA_INTERIM_yearly_avg_both_z//rasters", pattern = paste0(x,"_2003_2018"), full.names = TRUE)
   rs <- lapply(files,load.Rdata2) 
   rs[[4]] <- zr
   stack(rs)
 })
+names(raster_ls_w_zone) <- names(presence_ls)
+ 
+raster_ls <- lapply(names(presence_ls), function(x){
+  files <- list.files("ERA_INTERIM_yearly_avg_both_z//rasters", pattern = paste0(x,"_2003_2018"), full.names = TRUE)
+  rs <- lapply(files,load.Rdata2) 
+  #rs[[4]] <- zr
+  stack(rs)
+})
 names(raster_ls) <- names(presence_ls)
 
-env <- lapply(c("autumn","spring"), function(x){
+
+#raster stacks for the 40-yr period. for projections
+raster_ls_40 <- lapply(names(presence_ls), function(x){
+  files <- list.files("ERA_INTERIM_yearly_avg_both_z/rasters", pattern = paste0(x,"_all_yrs"), full.names = TRUE)
+  rs <- lapply(files,load.Rdata2) 
+  stack(rs)
+})
+names(raster_ls_40) <- names(presence_ls)
+
+
+
+##### STEP 7: extract values at presence points (not used) #####
+env <- lapply(c("autumn","spring"), function(x){ #extract values at presence points.. can be skipped. there are still points that dont get assigned any env values
   pres <- presence_ls[names(presence_ls) == x][[1]]
   rstack <- raster_ls[names(raster_ls) == x][[1]]
   
@@ -320,11 +401,9 @@ env <- lapply(c("autumn","spring"), function(x){
     reduce(rbind)
 })
 
-##### STEP 4: build MaxEnt model #####
+##### STEP 8: build MaxEnt model #####
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
-
-
 
 #generate background points
 bg_ls <- lapply(presence_ls, function(x){
@@ -341,24 +420,44 @@ bg_ls <- lapply(presence_ls, function(x){
 names(bg_ls) <- names(presence_ls)
 
 
-#mask_tmpz <- subset(raster_ls[[1]],1) #use one raster layer as a masking layer
-#mask_twz <- subset(raster_ls[[2]],1)
-#points(randomPoints(mask_tmpz,1000))
-
 #build the model
+#with pre-defined background points
 #make sure to set removeDuplicates to TRUE so >1 observations withn the same grid cell are removed
 
-maxentmodel_aut<-maxent(raster_ls$autumn,p=as.data.frame(presence_ls$autumn), a=bg_ls$autumn, factors="zone",
-                    removeDuplicates=T,args=c("responsecurves","jackknife","nothreshold","nohinge","product",
+maxentmodel_aut<-maxent(raster_ls$autumn,p=as.data.frame(presence_ls$autumn), a=bg_ls$autumn, #factors="zone",
+                    removeDuplicates=T,args=c("replicates=10","replicatetype=crossvalidate","responsecurves","jackknife","nothreshold","nohinge","product",
                                               "noautofeature","maximumiterations=1000" ),
-                    path="R_files/maxent/autumn")
+                    path="R_files/maxent/autumn_bg_predefined")
 
-maxentmodel_spr<-maxent(raster_ls$spring,p=as.data.frame(presence_ls$spring), a=bg_ls$spring, factors="zone",
-                    removeDuplicates=T,args=c("responsecurves","jackknife","nothreshold","nohinge","product",
-                                              "noautofeature","maximumiterations=1000" ),
-                    path="R_files/maxent/spring")
+maxentmodel_spr<-maxent(raster_ls$spring,p=as.data.frame(presence_ls$spring), a=bg_ls$spring, #factors="zone",
+                    removeDuplicates=T,args=c("replicates=10","replicatetype=crossvalidate","responsecurves","jackknife","nothreshold","nohinge","product",
+                                              "noautofeature","maximumiterations=1000"),
+                    path="R_files/maxent/spring_bg_predefined")
 
 #make prediction maps for the 03-18 period. do this for forty years...
-pred_aut<- predict(maxentmodel_aut, raster_ls$autumn, filename="R_files/maxent/autumn/maxent_prediction.tif")
-pred_spr<- predict(maxentmodel_spr, raster_ls$spring, filename="R_files/maxent/spring/maxent_prediction.tif")
+pred_aut<- predict(maxentmodel_aut, raster_ls$autumn, filename="R_files/maxent/autumn_bg_predefined/maxent_prediction.tif")
+pred_spr<- predict(maxentmodel_spr, raster_ls$spring, filename="R_files/maxent/spring_bg_predefined/maxent_prediction.tif")
 
+#without pre-defined background points
+maxentmodel_aut<-maxent(raster_ls$autumn,p=as.data.frame(presence_ls$autumn), #a=bg_ls$autumn, factors="zone",
+                        removeDuplicates=T,args=c("replicates=10","replicatetype=crossvalidate","responsecurves","jackknife","nothreshold","nohinge","product",
+                                                  "noautofeature","maximumiterations=1000" ),
+                        path="R_files/maxent/autumn")
+
+maxentmodel_spr<-maxent(raster_ls$spring,p=as.data.frame(presence_ls$spring), #a=bg_ls$spring, factors="zone",
+                        removeDuplicates=T,args=c("replicates=10","replicatetype=crossvalidate","responsecurves","jackknife","nothreshold","nohinge","product",
+                                                  "noautofeature","maximumiterations=1000" ),
+                        path="R_files/maxent/spring")
+
+#make prediction maps for the 03-18 period. do this for forty years...
+pred_aut<- predict(maxentmodel_aut, raster_ls$autumn, filename="R_files/maxent/autumn/maxent_prediction.tif", overwrite = T)
+pred_spr<- predict(maxentmodel_spr, raster_ls$spring, filename="R_files/maxent/spring/maxent_prediction.tif", overwrite = T)
+  
+
+pred_aut_40<- predict(maxentmodel_aut, raster_ls_40$autumn)
+pred_spr_40<- predict(maxentmodel_spr, raster_ls_40$spring)
+
+X11()
+par(mfrow = c(2,1))
+plot(pred_aut, main = "autumn")
+plot(pred_spr, main = "spring")
