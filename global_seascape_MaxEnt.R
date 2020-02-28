@@ -461,3 +461,16 @@ X11()
 par(mfrow = c(2,1))
 plot(pred_aut, main = "autumn")
 plot(pred_spr, main = "spring")
+
+
+#model using only delta T
+#without pre-defined background points
+maxentmodel_aut<-maxent(raster_ls$autumn$avg_delta_t,p=as.data.frame(presence_ls$autumn), #a=bg_ls$autumn, factors="zone",
+                        removeDuplicates=T,args=c("replicates=10","replicatetype=crossvalidate","responsecurves","jackknife","nothreshold","nohinge",
+                                                  "noautofeature","maximumiterations=1000" ),
+                        path="R_files/maxent/autumn")
+
+maxentmodel_spr<-maxent(raster_ls$spring$avg_delta_t,p=as.data.frame(presence_ls$spring), #a=bg_ls$spring, factors="zone",
+                        removeDuplicates=T,args=c("replicates=10","replicatetype=crossvalidate","responsecurves","jackknife","nothreshold","nohinge","product",
+                                                  "noautofeature","maximumiterations=1000" ),
+                        path="R_files/maxent/spring")
