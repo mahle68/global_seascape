@@ -19,6 +19,7 @@ library(sf)
 library(dismo)
 library(stars)
 library(mapview)
+library(fields) #for Tps
 
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
@@ -438,6 +439,8 @@ maxentmodel_spr<-maxent(raster_ls$spring,p=as.data.frame(presence_ls$spring), a=
 pred_aut<- predict(maxentmodel_aut, raster_ls$autumn, filename="R_files/maxent/autumn_bg_predefined/maxent_prediction.tif")
 pred_spr<- predict(maxentmodel_spr, raster_ls$spring, filename="R_files/maxent/spring_bg_predefined/maxent_prediction.tif")
 
+
+#-------------------------------------------------------------
 #without pre-defined background points
 maxentmodel_aut<-maxent(raster_ls$autumn,p=as.data.frame(presence_ls$autumn), #a=bg_ls$autumn, factors="zone",
                         removeDuplicates=T,args=c("replicates=10","replicatetype=crossvalidate","responsecurves","jackknife","nothreshold","nohinge","product",
@@ -474,3 +477,87 @@ maxentmodel_spr<-maxent(raster_ls$spring$avg_delta_t,p=as.data.frame(presence_ls
                         removeDuplicates=T,args=c("replicates=10","replicatetype=crossvalidate","responsecurves","jackknife","nothreshold","nohinge","product",
                                                   "noautofeature","maximumiterations=1000" ),
                         path="R_files/maxent/spring")
+
+
+###############################
+#for macro2020 and dept seminar marrch 3 and 4
+#no cv
+maxentmodel_aut<-maxent(raster_ls$autumn,p=as.data.frame(presence_ls$autumn), a=bg_ls$autumn, #factors="zone",
+                        removeDuplicates=T,args=c("responsecurves","jackknife","nothreshold","nohinge","product",
+                                                  "noautofeature","maximumiterations=1000" ),
+                        path="R_files/maxent/autumn_bg_predefined")
+
+maxentmodel_spr<-maxent(raster_ls$spring,p=as.data.frame(presence_ls$spring), a=bg_ls$spring, #factors="zone",
+                        removeDuplicates=T,args=c("responsecurves","jackknife","nothreshold","nohinge","product",
+                                                  "noautofeature","maximumiterations=1000"),
+                        path="R_files/maxent/spring_bg_predefined")
+
+#make prediction maps for forty years...
+pred_aut_40<- predict(maxentmodel_aut, raster_ls_40$autumn, filename="/home/enourani/ownCloud/Work/conferences/in_house_presentations/dept_seminar_mar3_2020/aut_maxent_prediction.tif", overwrite = T)
+pred_spr_40<- predict(maxentmodel_spr, raster_ls_40$spring, filename="/home/enourani/ownCloud/Work/conferences/in_house_presentations/dept_seminar_mar3_2020/spr_maxent_prediction.tif", overwrite = T)
+
+#interpolate prediction maps to 1 km resolution
+pred_aut_40_h <- disaggregate(pred_aut_40,fact = 50)
+pred_spr_40_h <- disaggregate(pred_spr_40,fact = 50)
+
+#create a color palette
+cuts<-seq(0,1,0.01) #set breaks
+pal <- colorRampPalette(c("dodgerblue","darkturquoise","goldenrod1","coral","firebrick1"))
+#land <-shapefile("/home/enourani/ownCloud/Work/GIS_files/ne_10m_land/ne_10m_land.shp")
+p <- as(extent(ocean_0_60), 'SpatialPolygons') #region extent
+
+#plot
+pdf("/home/enourani/ownCloud/Work/conferences/in_house_presentations/dept_seminar_mar3_2020/40_yr_preds_aut.pdf",width = 16, height = 6)
+#X11(width = 16, height = 4.8)
+par(mfrow=c(1,1), bty="n", #no box around the plot
+    #cex.axis= 0.90, #x and y labels have 0.75% of the default size
+    #cex.lab= 0.90,
+    font.axis= 3, #axis labels are in italics
+    mar= c(0.5,5,0.2,0.5), #plot margin size in lines
+    oma= c(0,0,0.2,0.5)#,
+    #tck=-.5
+)
+
+plot(pred_aut_40_h,axes = F, box = F, legend = FALSE,breaks = cuts, col = pal(120)) #plot the prediction raster with no axes or legend
+plot(as(ocean_0_60, "Spatial"),border = "black", lwd = 1.5, add = T) #add coastlines
+plot(p,lwd = 1.5, add=T)#plot a box for the extent
+axis(side= 2, at= c(0,30,60), line=0, labels= c("0.00", "30.00 N","60.00 N"), #add latitude axis.
+     tick=T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
+     tck=-.015 , #tick marks smaller than default by this proportion
+     las=2 ) # text perpendicular to axis label 
+dev.off()
+
+pdf("/home/enourani/ownCloud/Work/conferences/in_house_presentations/dept_seminar_mar3_2020/40_yr_preds_spr.pdf",width = 16, height = 6)
+#X11(width = 16, height = 4.8)
+par(mfrow=c(1,1), bty="n", #no box around the plot
+    #cex.axis= 0.90, #x and y labels have 0.75% of the default size
+    #cex.lab= 0.90,
+    font.axis= 3, #axis labels are in italics
+    mar= c(0.5,5,0.2,0.5), #plot margin size in lines
+    oma= c(0,0,0.2,0.5)#,
+    #tck=-.5
+)
+plot(pred_spr_40_h,axes = F, box = F, legend = FALSE,breaks = cuts, col = pal(120)) #plot the prediction raster with no axes or legend
+plot(as(ocean_0_60, "Spatial"),border = "black", lwd = 1.5, add = T) #add coastlines
+plot(p,lwd = 1.5, add=T)#plot a box for the extent
+axis(side= 2, at= c(0,30,60), line=0, labels= c("0.00", "30.00 N","60.00 N"), #add latitude axis.
+     tick=T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
+     tck=-.015 , #tick marks smaller than default by this proportion
+     las=2 ) # text perpendicular to axis label 
+#mtext(text="spring", line=-4, at=c(-170, 59.5),font=2, cex=1.2)
+axis(side= 1, at= c(-150,0,150), line=-7.5, labels= c("150.00 W","0.00", "150.00 E"), 
+     tick=T ,col = NA, col.ticks = 1, tck=-.015)#add longitude axis
+
+dev.off()
+
+####################
+#only delta t
+maxentmodel_aut<-maxent(raster_ls$autumn,p=as.data.frame(presence_ls$autumn), a=bg_ls$autumn, #factors="zone",
+                        removeDuplicates=T,args=c("responsecurves","jackknife","nothreshold","nohinge","product",
+                                                  "noautofeature","maximumiterations=1000" ),
+                        path="R_files/maxent/autumn_bg_predefined")
+
+maxentmodel_spr<-maxent(raster_ls$spring,p=as.data.frame(presence_ls$spring), a=bg_ls$spring, #factors="zone",
+                        removeDuplicates=T,args=c("responsecurves","jackknife","nothreshold","nohinge","product",
+                                                  "noautofeature","maximumiterations=1000"),
+                        path="R_files/maxent/spring_bg_predefined")
