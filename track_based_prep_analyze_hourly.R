@@ -65,8 +65,6 @@ NCEP.loxodrome.na <- function (lat1, lat2, lon1, lon2) {
   return(head)
 }
 
-
-
 ##### STEP 1: create alternative tracks in time #####
 
 load("segs_dt.RData") #segs_ann
@@ -126,6 +124,7 @@ pts_ann <- lapply(file_ls,read.csv, stringsAsFactors = F) %>%
 
 
 save(pts_ann, file = "alt_pts_mb_ann_6hr.RData")
+load ("alt_pts_mb_ann_6hr.RData")
 
 #investigate NAs for sst
 X11();maps::map("world")
