@@ -17,7 +17,7 @@ library(RNCEP)
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
-setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/") #remove this before submitting to cluster
+setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/")
 
 source("wind_support_Kami.R")
 
