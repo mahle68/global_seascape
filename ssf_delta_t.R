@@ -7,6 +7,9 @@ library(dplyr)
 library(purrr)
 library(move)
 library(sf)
+library(circular)
+library(CircStats)
+library(fitdistrplus)
 
 #meters_proj <- CRS("+proj=moll +ellps=WGS84")
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
@@ -29,110 +32,60 @@ segs <- segs_ann %>%
 rows_to_delete <- sapply(getDuplicatedTimestamps(x = as.factor(segs$seg_id),timestamps = segs$date_time,sensorType = "gps"),"[",2) #get the second row of each pair of duplicate rows
 segs <- segs[-rows_to_delete,]
 
-#create a move list
-# move_ls<-lapply(split(segs,segs$species),function(x){
-#   x<-as.data.frame(x)
-#   mv<-move(x=x$x,y=x$y,time=x$date_time,data=x,animal=x$seg_id,proj=wgs)
-#   mv
-# })
-
 mv <- move(x = segs$x,y = segs$y,time = segs$date_time,
            data = segs,animal = segs$seg_id,proj = wgs)
 
-segs_th <- lapply(split(mv),function(one_seg){ #for each track within the group
-
+segs_th_an <- lapply(split(mv),function(one_seg){ #for each track within the group
   seg_th <- one_seg %>%
     thinTrackTime(interval = as.difftime(1, units = 'hours'),
                   tolerance = as.difftime(15, units = 'mins'))
-
+  
   #convert back to a move object (from move burst)
   seg_th <- as(seg_th,"Move")
-  seg_th$track <- one_seg@idData$track #reassign the track
-  seg_th$seg_id <- one_seg@idData$seg_id
-  seg_th$length <- one_seg@idData$length
-  seg_th$species <- one_seg@idData$species
-
-  seg_th
+  
+  #calculate step lengths and turning angles
+  if(nrow(seg_th) == 1){
+    seg_th$step_length <- NA
+    seg_th$turning_angle <- NA
+  } else {
+    seg_th$step_length <- c(distance(seg_th),NA)
+    seg_th$turning_angle <- c(NA,turnAngleGc(seg_th),NA) #if the segment has less than three points, all will be NA
+  }
+  
+  seg_th %>% 
+    as.data.frame() %>% 
+    dplyr::select(c(x, y, track, seg_id, date_time, length, step_length, turning_angle, species))
+  
 }) %>%
   reduce(rbind)
 
 
 # STEP 2: summarise distribution of step length and turning angle #####
-
-#calculate step lengths and turning angles
-
-segs_th_an <- lapply(split(segs_th, segs_th$species),)
-burst_ls<-split(thinned_track,thinned_track$burst_id)
-burst_ls<-Filter(function(x) length(x)>=3, burst_ls) #remove bursts with less than 3 observations
-
-
-burst_ls<-lapply(burst_ls,function(burst){
-  burst$step_length<-c(distance(burst),NA) #
-  burst$turning_angle<-c(NA,turnAngleGc(burst),NA)
-  burst
+   #per species
+distr <- lapply(split(segs_th_an, segs_th_an$species), function(species){
+  #estimate von Mises parameters for turning angles
+  #calculate the averages (mu).steps: 1)convert to radians. step 2) calc mean of the cosines and sines. step 3) take the arctan.OR use circular::mean.circular
+  mu<-mean.circular(rad(species$turning_angle[complete.cases(species$turning_angle)])) #unit is considered in radians
+  kappa <- est.kappa(rad(species$turning_angle[complete.cases(species$turning_angle)]))
+  
+  #estimate gamma distribution for step lengths and CONVERT TO KM!!! :p
+  sl<-species$step_length[complete.cases(species$step_length) & species$step_length > 0]/1000 #remove 0s and NAs 
+  
+  #some step lengths are over 1200 km!!?? what?
+  
+  fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
+  
+  
+  #plot
+  X11();par(mfrow=c(1,2))
+  hist(sl,freq=F,main="",xlab = "Step length (km)")
+  plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
+                          rate = fit.gamma1$estimate[[2]]), add = TRUE, from = 0.1, to = 1200, col = "blue")
+  
+  hist(rad(species$turning_angle[complete.cases(species$turning_angle)]),freq=F,main="",xlab="Turning angles (radians)")
+  plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
 })
 
-#put burst_ls into one dataframe
-bursted_sp<-do.call(rbind,burst_ls)
-bursted_sp$track<-track@idData$track #reassign the track id
-bursted_sp
-
-
-
-
-
-
-
-
-
-
-
-lapply(move_ls,function(species){ #for each of the groups (country-continent specific)
-  
-  sp_obj_ls<-lapply(split(species),function(seg){ 
-  
-  # thinned_track<-seg %>%
-  #   thinTrackTime(interval = as.difftime(2, units='hours'),
-  #                 tolerance = as.difftime(15, units='mins'))#the unselected bursts are the large gaps between the selected ones
-  # 
-  #   #---STEP 2: assign burst IDs (each chunk of track with 2 hour intervals is one burst... longer gaps will divide the brusts) 
-  #   thinned_track$selected <- c(as.character(thinned_track@burstId),NA) #assign selected as a variable
-  #   
-  #   thinned_track$burst_id<-c(1,rep(NA,nrow(thinned_track)-1)) #define value for first row
-  #   
-  #   for(i in 2:nrow(thinned_track@data)){
-  #     
-  #     if(i== nrow(thinned_track@data)){
-  #       thinned_track@data$burst_id[i]<-NA
-  #     } else
-  #       if(thinned_track@data[i-1,"selected"] == "selected"){
-  #         thinned_track@data$burst_id[i]<-thinned_track@data[i-1,"burst_id"]
-  #       } else {
-  #         thinned_track@data$burst_id[i]<-thinned_track@data[i-1,"burst_id"]+1
-  #       }
-  #   }
-  #   
-  #   #convert back to a move object (from move burst)
-  #   thinned_track <- as(thinned_track,"Move")
-    
-    #----------------STEP 3: calculate step lengths and turning angles 
-    #sl_ and ta_ calculations should be done for each burst. converting to a move burst doesnt make this automatic. so just split manually
-    burst_ls<-split(thinned_track,thinned_track$burst_id)
-    burst_ls<-Filter(function(x) length(x)>=3, burst_ls) #remove bursts with less than 3 observations
-    
-    
-    burst_ls<-lapply(burst_ls,function(burst){
-      burst$step_length<-c(distance(burst),NA) #
-      burst$turning_angle<-c(NA,turnAngleGc(burst),NA)
-      burst
-    })
-    
-    #put burst_ls into one dataframe
-    bursted_sp<-do.call(rbind,burst_ls)
-    bursted_sp$track<-track@idData$track #reassign the track id
-    bursted_sp
-  })
-  
   #----------------STEP 4: estimate step length and turning angle distributions
   #put everything in one df
   sp_obj_ls<-Filter(function(x) length(x)>1, sp_obj_ls) #remove tracks with no observation (these have only one obs due to the assignment of track id)
@@ -149,12 +102,12 @@ lapply(move_ls,function(species){ #for each of the groups (country-continent spe
   fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
   
   #plot
-  windows();par(mfrow=c(1,2))
+  X11();par(mfrow=c(1,2))
   hist(sl,freq=F,main="",xlab = "Step length (km)")
   plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
                           rate = fit.gamma1$estimate[[2]]), add = TRUE, from = 0.1, to = 150, col = "blue")
   
-  hist(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]),freq=F,main="",xlab="Turning angles (radians)")
+  hist(rad(species$turning_angle[complete.cases(species$turning_angle)]),freq=F,main="",xlab="Turning angles (radians)")
   plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
   
   #------------------------------------------------------------------------------
