@@ -11,11 +11,18 @@ library(sf)
 library(circular)
 library(CircStats)
 library(fitdistrplus)
+library(RNCEP)
+library(lubridate)
+library(mapview)
 
 #meters_proj <- CRS("+proj=moll +ellps=WGS84")
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
+meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
 maps::map("world",fil=TRUE,col="ivory") #flyway
+
+setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/")
+
 
 # STEP 1: prepare the input data#####
 #open segments (not tracks, because tracks may be intersected by land)
@@ -34,7 +41,6 @@ segs <- segs_ann %>%
   as("Spatial") %>%
   as.data.frame() 
 
-#thin hourly
 #create a move object
 rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(segs$seg_id),timestamps = segs$date_time,sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
 segs <- segs[-rows_to_delete,]
@@ -60,16 +66,16 @@ lapply(move_ls,function(group){
     if(nrow(seg_th@data) == 1){
       seg_th@data$burst_id <- seg_th$burst_id
     } else {for(i in 2:nrow(seg_th@data)){
-        
-        if(i== nrow(seg_th@data)){
-          seg_th@data$burst_id[i]<-NA
-        } else
-          if(seg_th@data[i-1,"selected"] == "selected"){
-            seg_th@data$burst_id[i]<-seg_th@data[i-1,"burst_id"]
-          } else {
-            seg_th@data$burst_id[i]<-seg_th@data[i-1,"burst_id"]+1
-          }
-      }
+      
+      if(i== nrow(seg_th@data)){
+        seg_th@data$burst_id[i]<-NA
+      } else
+        if(seg_th@data[i-1,"selected"] == "selected"){
+          seg_th@data$burst_id[i]<-seg_th@data[i-1,"burst_id"]
+        } else {
+          seg_th@data$burst_id[i]<-seg_th@data[i-1,"burst_id"]+1
+        }
+    }
     }
     #convert back to a move object (from move burst)
     seg_th <- as(seg_th,"Move")
@@ -87,13 +93,22 @@ lapply(move_ls,function(group){
     
     #put burst_ls into one dataframe
     bursted_sp<-do.call(rbind,burst_ls)
-    bursted_sp$seg_id<-seg@idData$seg_id #reassign the track id
+    
+    #reassign values
+    
+    if(length(bursted_sp) >= 1){
+      bursted_sp$track<-seg@idData$track
+      bursted_sp$group<-seg@idData$group
+    }
+    
+    bursted_sp$seg_id<-seg@idData$seg_id 
     bursted_sp
-  })
+  }) %>% 
+    Filter(function(x) length(x) > 1, .) #remove segments with no observation (these have only one obs due to the assignment of segment id)
   
-  #----------------STEP 4: estimate step length and turning angle distributions
+  #--STEP 4: estimate step length and turning angle distributions
   #put everything in one df
-  bursted_df <- Filter(function(x) length(x)>1, sp_obj_ls) %>%  #remove tracks with no observation (these have only one obs due to the assignment of track id)
+  bursted_df <- sp_obj_ls %>%  
     reduce(rbind) %>% 
     as.data.frame() %>% 
     dplyr::select(-c("coords.x1","coords.x2"))
@@ -108,55 +123,76 @@ lapply(move_ls,function(group){
   fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
   
   #plot
-  windows();par(mfrow=c(1,2))
-  hist(sl,freq=F,main="",xlab = "Step length (km)")
+  X11();par(mfrow=c(1,2))
+  hist(sl,freq=F,main="",xlab = "Step length (m)")
   plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
                           rate = fit.gamma1$estimate[[2]]), add = TRUE, from = 0.1, to = 150, col = "blue")
   
   hist(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]),freq=F,main="",xlab="Turning angles (radians)")
   plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
   
-  #------------------------------------------------------------------------------
-  #----------------STEP 5: produce alternative steps
-  alt_steps_ls<-lapply(sp_obj_ls, function(track){ #within each track
-    alt_steps_burst<-lapply(split(track,track$burst_id),function(burst){ #within each burst,
+  #--STEP 5: produce alternative steps
+  
+  alt_steps_ls<-lapply(sp_obj_ls, function(seg){ #for each segment
+    #alt_steps_burst<-
+      lapply(split(seg,seg$burst_id),function(burst){ #for each burst,
       
-      for(this_point in 2:length(burst)){ #for each point. start from the second point. the first point has no bearing
+      #for(this_point in 2:length(burst)){ #for each point. start from the second point. the first point has no turning angle
+        used_av_ls <- lapply(c(2:length(burst)), function(current_point){
         current_point<- burst[this_point,]
         previous_point<-burst[this_point-1,]
         
+
         #randomly generate 49 step lengths and turning angles
         rta <- as.vector(rvonmises(n = 49, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
-        rsl<-rgamma(n= 49, shape=fit.gamma1$estimate[[1]], rate= fit.gamma1$estimate[[2]])  #generate random step lengths from the gamma distribution
+        rsl<-rgamma(n= 49, shape=fit.gamma1$estimate[[1]], rate= fit.gamma1$estimate[[2]])*1000  #generate random step lengths from the gamma distribution. make sure unit is meters
         
         #calculate bearing of previous point
-        prev_bearing<-bearing(previous_point,current_point)
-        #find the gepgraphic location of each alternative point
-        #calculate bearing for the current point. this is the bearing of previous step plus turning angle. then, subtract 360 if it is larger than 360.
+        #prev_bearing<-bearing(previous_point,current_point) #am I allowing negatives?... no, right? then use NCEP.loxodrome
+        prev_bearing<-NCEP.loxodrome(previous_point@coords[,2], current_point@coords[,2],
+                                     previous_point@coords[,1], current_point@coords[,1])
         
-        #BE CAREFUL! the angle here should be the bearing, not ta_
-        #ALSO, find a good way to convert lat and lon to meters in a consistent way.
+        #find the gepgraphic location of each alternative point; calculate bearing to the next point: add ta to the bearing of the previous point
+        current_point_m <- spTransform(current_point, meters_proj) #convert to meters proj
+        rnd <- data.frame(lon = current_point_m@coords[,1] + rsl*cos(rta),lat = current_point_m@coords[,2] + rsl*sin(rta)) #for this to work, lat and lon should be in meters as well. boo. coordinates in meters?
+
+        #assign date_time....one hour after the start point of the step
+        rnd$date_time<- current_point$date_time+ hours(1)
         
-        #e turning angle. so, calculate bearing:add ta to the bearing of the previous point?
-        rnd<- data.frame(long=start_point$long+slr*cos(tar),lat=start_point$lat+slr*sin(tar)) #for this to work, lat and lon should be in meters as well. boo. coordinates in meters?
-        
-        #assign date_time....two hours after the start point of the step
-        rnd$date_time<- start_point$date_time+ hours(2)
-        
-        #check the random points. covnert back to latlon for plotting
+        #covnert back to lat-lon proj
         rnd_sp<-rnd
-        coordinates(rnd_sp)<-~long+lat
+        coordinates(rnd_sp)<-~lon+lat
         proj4string(rnd_sp)<-meters_proj
         rnd_sp<-spTransform(rnd_sp,wgs)
         
-        #also convert  starting point back to lat-long
-        coordinates(start_point)<-~long+lat
-        proj4string(start_point)<-meters_proj
-        start_point_wgs<-spTransform(start_point,wgs)
-      }
+        #put used and available points together
+        
+        
+
+        
+        })
+        
+      #}
     })
   })
 })
+
+#get rid of alt. points that fall over land (do this later for all alternative poinst together :p)
+
+
+
+maps::map("world",xlim = c(-75,-70), ylim = c(15,25),fil = TRUE,col = "ivory") #flyway
+points(burst,col = "grey", pch = 16, cex = 0.5)
+points(previous_point,col = "green", pch = 16, cex = 1)
+points(current_point,col = "red", pch = 16, cex = 1)
+points(rnd_sp, col = "orange", pch = 16, cex = 0.5)
+
+
+#plotting
+#r <- mapview(burst)
+#r + mapview(current_point,color = "red") + mapview(previous_point, color = "green")
+
+
 
 #check for duplicated time-stamps
 rows_to_delete <- sapply(getDuplicatedTimestamps(x = as.factor(segs$seg_id),timestamps = segs$date_time,sensorType = "gps"),"[",2) #get the second row of each pair of duplicate rows
