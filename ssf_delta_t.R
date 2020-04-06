@@ -1,5 +1,6 @@
 #script to estimate the step selection function for water-crossing raptors.
-#each segment is analyzed separately, so I'm not burstifying the segments (1 hour continuous) because I will lose a lot of points of already short segments
+#each segment is analyzed separately, so first I tried not burstifying the segments (1 hour continuous) because I'd lose a lot of points of already short segments
+#but that made the distribution of turning angles and step lengths problematic. some step lenghts are too large. so, back to burstifying (Apr. 6)
 #April 2. 2020. Radolfzell, Germany.
 #Elham Nourani
 
@@ -14,20 +15,73 @@ library(fitdistrplus)
 #meters_proj <- CRS("+proj=moll +ellps=WGS84")
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
 
+maps::map("world",xlim = c(-180,-30), ylim = c(-180,60),fil=TRUE,col="ivory") #flyway
+
 # STEP 1: prepare the input data#####
 #open segments (not tracks, because tracks may be intersected by land)
 load("segs_dt.RData") #segs_ann; prepared in track_based_prep_analyze_daily.R; filtered to be over 30 km and have more than 2 points
 
-#remove spring
+#remove spring and give different values to Osprey and Peregrine in each flyway
 segs <- segs_ann %>% 
   dplyr::filter(season == "autumn") %>% 
   dplyr::arrange(species,seg_id,date_time) %>% 
   as("Spatial") %>%
-  as.data.frame() 
+  as.data.frame() %>% 
+  mutate(group = ifelse(species == "OHB", "OHB",
+                        ifelse(species == "GFB", "GFB",
+                               ifelse(species == "O" & x < -30, "O_A",
+                                      ifelse(species == "O" & x > -30, "O_E",
+                                             ifelse(species == "PF" & x < -30, "PF_A",
+                                                    "PF_E"))))))
 
 #thin hourly
 #create a move object
+rows_to_delete <- sapply(getDuplicatedTimestamps(x = as.factor(segs$seg_id),timestamps = segs$date_time,sensorType = "gps"),"[",2) #get the second row of each pair of duplicate rows
+segs <- segs[-rows_to_delete,]
 
+mv <- move(x = segs$x,y = segs$y,time = segs$date_time,
+           data = segs,animal = segs$seg_id,proj = wgs)
+
+
+sp_obj_ls<-lapply((split(mv),function(track){ #for each species
+  
+  
+  thinned_track<-track%>%
+    thinTrackTime(interval = as.difftime(2, units='hours'),
+                  tolerance = as.difftime(15, units='mins'))#the unselected bursts are the large gaps between the selected ones
+  
+  #----------------STEP 2: assign burst IDs (each chunk of track with 2 hour intervals is one burst... longer gaps will divide the brusts) 
+  thinned_track$selected <- c(as.character(thinned_track@burstId),NA) #assign selected as a variable
+  
+  thinned_track$burst_id<-c(1,rep(NA,nrow(thinned_track)-1)) #define value for first row
+  
+  for(i in 2:nrow(thinned_track@data)){
+    
+    if(i== nrow(thinned_track@data)){
+      thinned_track@data$burst_id[i]<-NA
+    } else
+      if(thinned_track@data[i-1,"selected"] == "selected"){
+        thinned_track@data$burst_id[i]<-thinned_track@data[i-1,"burst_id"]
+      } else {
+        thinned_track@data$burst_id[i]<-thinned_track@data[i-1,"burst_id"]+1
+      }
+  }
+  
+  #convert back to a move object (from move burst)
+  thinned_track <- as(thinned_track,"Move")
+  
+  #----------------STEP 3: calculate step lengths and turning angles 
+  #sl_ and ta_ calculations should be done for each burst. converting to a move burst doesnt make this automatic. so just split manually
+  burst_ls<-split(thinned_track,thinned_track$burst_id)
+  burst_ls<-Filter(function(x) length(x)>=3, burst_ls) #remove bursts with less than 3 observations
+  
+  
+  burst_ls<-lapply(burst_ls,function(burst){
+    burst$step_length<-c(distance(burst),NA) #
+    burst$turning_angle<-c(NA,turnAngleGc(burst),NA)
+    burst
+  })
+  
 #check for duplicated time-stamps
 rows_to_delete <- sapply(getDuplicatedTimestamps(x = as.factor(segs$seg_id),timestamps = segs$date_time,sensorType = "gps"),"[",2) #get the second row of each pair of duplicate rows
 segs <- segs[-rows_to_delete,]
