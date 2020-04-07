@@ -2,6 +2,7 @@
 #Elham Nourani,
 #Dec. 31. 2019. Radolfzell, Germany.
 #update Jan 29, 2020: remove location class 0 from all ptt data
+#update Apr 7, 2020: prep OHB GPS data (end of script)
 
 library(tidyverse)
 library(readxl) #read_excel()
@@ -19,6 +20,7 @@ meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
 
 load("R_files/land_15km.RData") #called land_15 km
+load("R_files/land_0_60.RData") #called land_0_60; this doesnt have the 15 km buffer
 
 alt_pts_temporal <- function(date_time,n_days) {
   #same year, same hour, only day changes
@@ -122,7 +124,8 @@ dataset <- list(OHB,GFB, PF, OE, OA) %>%
 
 save(dataset, file = "R_files/all_spp_unfiltered_updated_lc_0_removed_new_track_id.RData")
 
-##### STEP 3: filter out points over land ##### from here on is not updated with the new version of dataset (new track id) Feb.6
+##### STEP 3: filter out points over land ##### 
+#from here on is not updated with the new version of dataset (new track id) Feb.6
 
 dataset_sea <- dataset %>% 
   drop_na(c("location.long", "location.lat")) %>% 
@@ -286,3 +289,149 @@ text(x = -175, y = 32, "30° N", col = "grey50", cex = 0.7)
 text(x = -175, y = 62, "60° N", col = "grey50", cex = 0.7)
 
 dev.off()
+
+
+
+##### OHB GPS DATA PREP #####
+
+OHB_GPS_aut <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/data/Tracking_of_the_migration_of_Oriental_Honey_Buzzards.csv") %>% 
+  mutate(date_time = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
+  mutate(month = month(date_time),
+         year = year(date_time),
+         species = "OHB",
+         yday = yday(date_time)) %>%
+  mutate(season = ifelse(between(yday,253,294),"autumn",ifelse(month == 5,"spring","other")),  #11 Sep-20 Oct; spring between 1-5 May
+         track = paste(tag.local.identifier, year,season,sep = "_")) %>% 
+  filter(season == "autumn" & location.lat >= 0)
+
+#from track_based_prep_analyze_daily.R
+load("R_files/land_0_60.RData") #land_0_60
+load("R_files/ocean_0_60.RData") #ocean
+
+
+##### STEP 1: convert tracks to spatial lines and remove portions over land #####
+ocean_sp <- as(ocean,"Spatial")
+land_sp <- as(land_0_60,"Spatial")
+land_b<-buffer(land_sp,width=0.001)
+
+coordinates(OHB_GPS_aut) <- ~location.long + location.lat
+proj4string(OHB_GPS_aut) <- wgs
+
+track_ls <- split(OHB_GPS_aut,OHB_GPS_aut$track)
+track_ls <- track_ls[lapply(track_ls,nrow)>1] 
+
+b <- Sys.time()
+mycl <- makeCluster(6) 
+
+clusterExport(mycl, c("track_ls", "land_sp","ocean_sp","wgs")) #define the variable that will be used within the function
+
+clusterEvalQ(mycl, {
+  library(raster)
+  library(mapview)
+})
+
+Lines_ls<-parLapply(mycl,track_ls,function(x){
+  #find out if the track has any points over water
+  over_sea <- intersect(x,ocean_sp) #track_ls needs to be spatial for this to work
+  #if the track has any point over water, convert to spatial line and subset for sea
+  if(nrow(over_sea) != 0){
+    x <- x[order(x$date_time),]
+    line<-coords2Lines(x@coords, ID=x$track[1],proj4string = wgs)
+    line_sea <- erase(line,land_sp)
+    line_sea$track <- x$track[1]
+  } else {
+    line_sea <- NA
+  }
+  
+  line_sea
+})
+
+stopCluster(mycl)
+
+Sys.time() - b # 2 min
+
+##### STEP 2: break up tracks into sea-crossing segments and filter #####
+
+#remove elements with 0 elements (tracks with no sea-crossing)
+Lines_ls_no_na <- Lines_ls[lapply(Lines_ls,is.na) == FALSE] 
+
+#only keep the track column (some objects have an ID column)
+Lines_ls_no_na <- lapply(Lines_ls_no_na,"[",,"track")
+
+#convert to one object
+lines <- do.call(rbind,Lines_ls_no_na)
+
+#filter segments
+segs_filtered<- st_as_sf(lines) %>% #convert to sf object
+  st_cast("LINESTRING") %>% #convert to linestring (separate the segments)
+  mutate(length = as.numeric(st_length(.)),
+         n = npts(.,by_feature = T)) %>% 
+  filter(n > 2 & length >= 30000) #remove sea-crossing shorter than 30 km and segment with less than 2 points 
+
+segs_filtered$track <- as.character(segs_filtered$track)
+
+##### STEP 3: annotate with date-time #####
+#convert segments to points
+segs_pts <- segs_filtered %>% 
+  mutate(seg_id = seq(1:nrow(.))) %>% 
+  st_cast("POINT")
+
+#create a buffer around the dataset points to make polygons. then overlay
+dataset_buff <- OHB_GPS_aut %>% 
+  st_as_sf(coords = c("location.long","location.lat"), crs = wgs) %>% 
+  st_transform(meters_proj) %>% 
+  st_buffer(dist = units::set_units(10, 'm')) %>% 
+  st_transform(wgs) 
+
+#for each segs_pts point, find the index of the dataset_buff polygon that it intersects, then extract that row from dataset and add to segs_pts
+mycl <- makeCluster(6) 
+clusterExport(mycl, c("segs_pts", "dataset_buff")) #define the variable that will be used within the function
+
+clusterEvalQ(mycl, {
+  library(sf)
+  library(raster)
+  library(tidyverse)
+})
+
+b <- Sys.time()
+
+segs_ann_OHB <- parLapply(mycl,split(segs_pts,segs_pts$track), function(x){ #separate by track first to break up the job into smaller chunks
+  data <- dataset_buff[dataset_buff$track == x$track[1],]
+  #track_ann <- apply(x,1,function(y){ #for each point on the track
+  #x2 <- list()
+  track_ann <- lapply(split(x,rownames(x)), function(y){ #for each point on the track
+    #for (i in 1:nrow(x)){
+    #   y <- x[i,]
+    inter <- st_intersection(y,data)
+    
+    if(nrow(inter) == 0){ #if there are no intersections, find the nearest neighbor
+      nearest <- data[st_nearest_feature(y,data),]
+      # x$date_time[i] <- as.character(nearest$date_time)
+      # x$season[i] <- nearest$season
+      # x$species[i] <- nearest$species
+      
+      y <- y %>% 
+        full_join(st_drop_geometry(nearest))
+      y
+    } else { #if there is an intersection, just return the intersection result
+      # x$date_time[i] <- as.character(inter$date_time)
+      # x$season[i] <- inter$season
+      # x$species[i] <- inter$species
+      inter %>% 
+        dplyr::select(-track.1)
+    }
+    #}
+  }) %>% 
+    reduce(rbind)
+  
+  track_ann
+  
+}) %>% 
+  reduce(rbind)
+Sys.time() - b
+
+stopCluster(mycl)
+
+
+save(segs_ann_OHB, file = "R_files/segs_OHB_dt.RData")
+

@@ -1,8 +1,10 @@
 #script to estimate the step selection function for water-crossing raptors.
 #each segment is analyzed separately, so first I tried not burstifying the segments (1 hour continuous) because I'd lose a lot of points of already short segments
 #but that made the distribution of turning angles and step lengths problematic. some step lenghts are too large. so, back to burstifying (Apr. 6)
-#April 2. 2020. Radolfzell, Germany.
-#Elham Nourani
+#April 2. 2020. Radolfzell, Germany. Elham Nourani, PhD
+#update APril 7. The ptt data (OHB and GFB) are too coarse and after thinning and burstification, no data point remains. So, processed OHB GPS data
+#separately and will add to the analysis instead of OHB ptt. for GFB, use data from Open Science paper.
+
 
 library(dplyr)
 library(purrr)
@@ -73,6 +75,8 @@ setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/")
 #open segments (not tracks, because tracks may be intersected by land)
 load("segs_dt.RData") #segs_ann; prepared in track_based_prep_analyze_daily.R; filtered to be over 30 km and have more than 2 points
 
+load("segs_OHB_dt.RData") #segs_ann_OHB; annotated OHB GPS data for autumn. prepared in all_data_prep_analyze.R
+
 #remove spring and give different values to Osprey and Peregrine in each flyway
 segs <- segs_ann %>% 
   dplyr::filter(season == "autumn") %>% 
@@ -94,16 +98,28 @@ segs <- segs[-rows_to_delete,]
 
 move_ls<-lapply(split(segs,segs$group),function(x){
   x<-as.data.frame(x)
-  mv<-move(x=x$x,y=x$y,time=x$date_time,data=x,animal=x$seg_id,proj=wgs)
+  mv<-move(x = x$x,y = x$y,time = x$date_time,data = x,animal = x$seg_id,proj = wgs)
   mv
 })
+
+#create move object for OHB GPS
+rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(segs_ann_OHB$seg_id),
+                                                        timestamps = segs_ann_OHB$date_time,sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
+segs_ann_OHB <- segs_ann_OHB[-rows_to_delete,]
+
+OHB <- segs_ann_OHB %>% 
+  dplyr::arrange(seg_id,date_time) %>% 
+  as("Spatial") %>%
+  as.data.frame()
+
+mv_OHB <- move(x = OHB$x,y = OHB$y,time = OHB$date_time, data = OHB,animal= OHB$seg_id,proj = wgs)
 
 #for each species/flyway, thin the data, burstify, and produce alternative steps
 
 # STEP 2: prepare alternative steps#####
 start_time <- Sys.time()
 used_av_ls <- lapply(move_ls[-c(1,4)],function(group){ #each group is a species/flyway combo
-  
+  #group <- mv_OHB #use this as group
   sp_obj_ls<-lapply(split(group),function(seg){ #sp_obj_ls will have the filtered and bursted segments
     
     #--STEP 1: thin the data to 1-hourly intervals
@@ -237,6 +253,7 @@ used_av_ls <- lapply(move_ls[-c(1,4)],function(group){ #each group is a species/
 Sys.time() - start_time
 
 save(used_av_ls, file = "ssf_input_PF_O.RData")
+#save(used_av_seg, file = "ssf_input_OHB.RData")
 
 #get rid of alt. points that fall over land (do this later for all alternative poinst together :p)... actually, dont do this now. after track annotation, those with NA for
 #sst can be easily removed :p
@@ -265,12 +282,23 @@ used_av_all <- lapply(used_av_ls, function(x){
 }) %>% 
   reduce(rbind)
 
-
 #rename columns
 colnames(used_av_all)[c(2,3)] <- c("location-long","location-lat")
 
 write.csv(used_av_all, "ssf_input_PF_O.csv")
 
+#OHB
+OHB_mb <-used_av_seg %>% 
+  mutate(group = "OHB") %>% 
+  dplyr::select(c("date_time", "x", "y", "burst_id", "track", "group", "seg_id", "step_id", "used")) %>% #later, add a unique step id: paste track, seg_id, burst_id and step_id. lol
+  mutate(timestamp = paste(as.character(date_time),"000",sep = ".")) %>% 
+  as.data.frame()
+colnames(OHB_mb)[c(2,3)] <- c("location-long","location-lat")
+write.csv(OHB_mb, "ssf_input_OHB.csv")
+
+#open annotated data
+ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/ssf_input_PF_O.csv-5429699439155723090/ssf_input_PF_O.csv-5429699439155723090.csv",
+                stringsAsFactors = F)
 
 # STEP 4: glmm#####
 
