@@ -14,12 +14,57 @@ library(fitdistrplus)
 library(RNCEP)
 library(lubridate)
 library(mapview)
+library(parallel)
 
 #meters_proj <- CRS("+proj=moll +ellps=WGS84")
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
 maps::map("world",fil=TRUE,col="ivory") #flyway
+
+NCEP.loxodrome.na <- function (lat1, lat2, lon1, lon2) {
+  deg2rad <- pi/180
+  acot <- function(x) {
+    return(atan(1/x))
+  }
+  lat1 <- deg2rad * lat1
+  lat2 <- deg2rad * lat2
+  lon1 <- deg2rad * lon1
+  lon2 <- deg2rad * lon2
+  deltaLon <- lon2 - lon1
+  pi4 <- pi/4
+  Sig1 <- log(tan(pi4 + lat1/2))
+  Sig2 <- log(tan(pi4 + lat2/2))
+  deltaSig <- Sig2 - Sig1
+  if (deltaLon == 0 && deltaSig > 0) {
+    head <- 0
+  }
+  else if (deltaLon == 0 && deltaSig < 0) {
+    head <- 180
+  }
+  else if (deltaSig == 0 && deltaLon > 0) {
+    head <- 90
+  }
+  else if (deltaSig == 0 && deltaLon < 0) {
+    head <- 270
+  }
+  else if (deltaSig < 0 && deltaLon < 0) {
+    head <- acot(deltaSig/deltaLon) * 180/pi + 180
+  }
+  else if (deltaSig < 0 && deltaLon > 0) {
+    head <- acot(deltaSig/deltaLon) * 180/pi + 180
+  }
+  else if (deltaSig > 0 && deltaLon > 0) {
+    head <- acot(deltaSig/deltaLon) * 180/pi
+  }
+  else if (deltaSig > 0 && deltaLon < 0) {
+    head <- acot(deltaSig/deltaLon) * 180/pi + 360
+  }
+  else {
+    head <-NA}
+  return(head)
+}
+
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/")
 
@@ -45,6 +90,8 @@ segs <- segs_ann %>%
 rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(segs$seg_id),timestamps = segs$date_time,sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
 segs <- segs[-rows_to_delete,]
 
+#maybe, unique seg_id needs to be track_id*seg_id? but it seems that seg_id within each species are unique
+
 move_ls<-lapply(split(segs,segs$group),function(x){
   x<-as.data.frame(x)
   mv<-move(x=x$x,y=x$y,time=x$date_time,data=x,animal=x$seg_id,proj=wgs)
@@ -52,7 +99,10 @@ move_ls<-lapply(split(segs,segs$group),function(x){
 })
 
 #for each species/flyway, thin the data, burstify, and produce alternative steps
-lapply(move_ls,function(group){ #each group is a species/flyway combo
+
+# STEP 2: prepare alternative steps#####
+start_time <- Sys.time()
+used_av_ls <- lapply(move_ls[-c(1,4)],function(group){ #each group is a species/flyway combo
   
   sp_obj_ls<-lapply(split(group),function(seg){ #sp_obj_ls will have the filtered and bursted segments
     
@@ -124,19 +174,22 @@ lapply(move_ls,function(group){ #each group is a species/flyway combo
   fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
   
   #plot
-  X11();par(mfrow=c(1,2))
-  hist(sl,freq=F,main="",xlab = "Step length (m)")
-  plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
-                          rate = fit.gamma1$estimate[[2]]), add = TRUE, from = 0.1, to = 150, col = "blue")
+  #X11();par(mfrow=c(1,2))
+  #hist(sl,freq=F,main="",xlab = "Step length (m)")
+  #plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
+  #                        rate = fit.gamma1$estimate[[2]]), add = TRUE, from = 0.1, to = 150, col = "blue")
   
-  hist(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]),freq=F,main="",xlab="Turning angles (radians)")
-  plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
+  #hist(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]),freq=F,main="",xlab="Turning angles (radians)")
+  #plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
   
   #--STEP 5: produce alternative steps
   used_av_seg <- lapply(sp_obj_ls, function(seg){ #for each segment
     
     used_av_burst <- lapply(split(seg,seg$burst_id),function(burst){ #for each burst,
       
+      #assign unique step id
+      burst$step_id <- 1:nrow(burst)
+        
       used_av_step <- lapply(c(2:(length(burst)-1)), function(this_point){ #first point has no bearing to calc turning angle, last point has no used endpoint.
         
         current_point<- burst[this_point,]
@@ -149,7 +202,7 @@ lapply(move_ls,function(group){ #each group is a species/flyway combo
         
         #calculate bearing of previous point
         #prev_bearing<-bearing(previous_point,current_point) #am I allowing negatives?... no, right? then use NCEP.loxodrome
-        prev_bearing<-NCEP.loxodrome(previous_point@coords[,2], current_point@coords[,2],
+        prev_bearing<-NCEP.loxodrome.na(previous_point@coords[,2], current_point@coords[,2],
                                      previous_point@coords[,1], current_point@coords[,1])
         
         #find the gepgraphic location of each alternative point; calculate bearing to the next point: add ta to the bearing of the previous point
@@ -180,9 +233,13 @@ lapply(move_ls,function(group){ #each group is a species/flyway combo
   }) %>% 
     reduce(rbind)
   used_av_seg
-}) 
+})
+Sys.time() - start_time
 
-#get rid of alt. points that fall over land (do this later for all alternative poinst together :p)
+save(used_av_ls, file = "ssf_input_PF_O.RData")
+
+#get rid of alt. points that fall over land (do this later for all alternative poinst together :p)... actually, dont do this now. after track annotation, those with NA for
+#sst can be easily removed :p
 
 
 
@@ -198,133 +255,22 @@ points(used_point, col = "purple", pch = 16, cex = 1)
 #r + mapview(current_point,color = "red") + mapview(previous_point, color = "green")
 
 
+# STEP 3: annotate data#####
 
-#check for duplicated time-stamps
-rows_to_delete <- sapply(getDuplicatedTimestamps(x = as.factor(segs$seg_id),timestamps = segs$date_time,sensorType = "gps"),"[",2) #get the second row of each pair of duplicate rows
-segs <- segs[-rows_to_delete,]
-
-mv <- move(x = segs$x,y = segs$y,time = segs$date_time,
-           data = segs,animal = segs$seg_id,proj = wgs)
-
-segs_th_an <- lapply(split(mv),function(one_seg){ #for each segment within the group
-  seg_th <- one_seg %>%
-    thinTrackTime(interval = as.difftime(1, units = 'hours'),
-                  tolerance = as.difftime(15, units = 'mins'))
-  
-  #convert back to a move object (from move burst)
-  seg_th <- as(seg_th,"Move")
-  
-  #calculate step lengths and turning angles
-  if(nrow(seg_th) == 1){
-    seg_th$step_length <- NA
-    seg_th$turning_angle <- NA
-  } else {
-    seg_th$step_length <- c(distance(seg_th),NA)
-    seg_th$turning_angle <- c(NA,turnAngleGc(seg_th),NA) #if the segment has less than three points, all will be NA
-  }
-  
-  seg_th %>% 
-    as.data.frame() %>% 
-    dplyr::select(c(x, y, track, seg_id, date_time, length, step_length, turning_angle, species))
-  
-}) %>%
+used_av_all <- lapply(used_av_ls, function(x){
+  x %>% 
+    dplyr::select(c("date_time", "x", "y", "burst_id", "track", "group", "seg_id", "step_id", "used")) %>% #later, add a unique step id: paste track, seg_id, burst_id and step_id. lol
+    mutate(timestamp = paste(as.character(date_time),"000",sep = ".")) %>% 
+    as.data.frame()
+}) %>% 
   reduce(rbind)
 
 
-# STEP 2: summarise distribution of step length and turning angle #####
-   #per species
-distr <- lapply(split(segs_th_an, segs_th_an$species), function(species){
-  #estimate von Mises parameters for turning angles
-  #calculate the averages (mu).steps: 1)convert to radians. step 2) calc mean of the cosines and sines. step 3) take the arctan.OR use circular::mean.circular
-  mu<-mean.circular(rad(species$turning_angle[complete.cases(species$turning_angle)])) #unit is considered in radians
-  kappa <- est.kappa(rad(species$turning_angle[complete.cases(species$turning_angle)]))
-  
-  #estimate gamma distribution for step lengths and CONVERT TO KM!!! :p
-  sl<-species$step_length[complete.cases(species$step_length) & species$step_length > 0]/1000 #remove 0s and NAs 
-  
-  #some step lengths are over 1200 km!!?? what?
-  
-  fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
-  
-  
-  #plot
-  X11();par(mfrow=c(1,2))
-  hist(sl,freq=F,main="",xlab = "Step length (km)")
-  plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
-                          rate = fit.gamma1$estimate[[2]]), add = TRUE, from = 0.1, to = 1200, col = "blue")
-  
-  hist(rad(species$turning_angle[complete.cases(species$turning_angle)]),freq=F,main="",xlab="Turning angles (radians)")
-  plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
-})
+#rename columns
+colnames(used_av_all)[c(2,3)] <- c("location-long","location-lat")
 
-  #----------------STEP 4: estimate step length and turning angle distributions
-  #put everything in one df
-  sp_obj_ls<-Filter(function(x) length(x)>1, sp_obj_ls) #remove tracks with no observation (these have only one obs due to the assignment of track id)
-  bursted_df<-do.call(rbind,lapply(sp_obj_ls,as.data.frame))
-  bursted_df<-bursted_df[,-which(names(bursted_df) %in% c("coords.x1","coords.x2","coords.x1.1","coords.x2.1"))]#remove repeated variables for lat and long
-  
-  #estimate von Mises parameters for turning angles
-  #calculate the averages (mu).steps: 1)convert to radians. step 2) calc mean of the cosines and sines. step 3) take the arctan.OR use circular::mean.circular
-  mu<-mean.circular(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]))
-  kappa <- est.kappa(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]))
-  
-  #estimate gamma distribution for step lengths and CONVERT TO KM!!! :p
-  sl<-bursted_df$step_length[complete.cases(bursted_df$step_length) & bursted_df$step_length > 0]/1000 #remove 0s and NAs
-  fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
-  
-  #plot
-  X11();par(mfrow=c(1,2))
-  hist(sl,freq=F,main="",xlab = "Step length (km)")
-  plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
-                          rate = fit.gamma1$estimate[[2]]), add = TRUE, from = 0.1, to = 150, col = "blue")
-  
-  hist(rad(species$turning_angle[complete.cases(species$turning_angle)]),freq=F,main="",xlab="Turning angles (radians)")
-  plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
-  
-  #------------------------------------------------------------------------------
-  #----------------STEP 5: produce alternative steps
-  alt_steps_ls<-lapply(sp_obj_ls, function(track){ #within each track
-    alt_steps_burst<-lapply(split(track,track$burst_id),function(burst){ #within each burst,
-      
-      for(this_point in 2:length(burst)){ #for each point. start from the second point. the first point has no bearing
-        current_point<- burst[this_point,]
-        previous_point<-burst[this_point-1,]
-        
-        #randomly generate 49 step lengths and turning angles
-        rta <- as.vector(rvonmises(n = 49, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
-        rsl<-rgamma(n= 49, shape=fit.gamma1$estimate[[1]], rate= fit.gamma1$estimate[[2]])  #generate random step lengths from the gamma distribution
-        
-        #calculate bearing of previous point
-        prev_bearing<-bearing(previous_point,current_point)
-        #find the gepgraphic location of each alternative point
-        #calculate bearing for the current point. this is the bearing of previous step plus turning angle. then, subtract 360 if it is larger than 360.
-        
-        #BE CAREFUL! the angle here should be the bearing, not ta_
-        #ALSO, find a good way to convert lat and lon to meters in a consistent way.
-        
-        #e turning angle. so, calculate bearing:add ta to the bearing of the previous point?
-        rnd<- data.frame(long=start_point$long+slr*cos(tar),lat=start_point$lat+slr*sin(tar)) #for this to work, lat and lon should be in meters as well. boo. coordinates in meters?
-        
-        #assign date_time....two hours after the start point of the step
-        rnd$date_time<- start_point$date_time+ hours(2)
-        
-        #check the random points. covnert back to latlon for plotting
-        rnd_sp<-rnd
-        coordinates(rnd_sp)<-~long+lat
-        proj4string(rnd_sp)<-meters_proj
-        rnd_sp<-spTransform(rnd_sp,wgs)
-        
-        #also convert  starting point back to lat-long
-        coordinates(start_point)<-~long+lat
-        proj4string(start_point)<-meters_proj
-        start_point_wgs<-spTransform(start_point,wgs)
-      }
-    })
-  })
+write.csv(used_av_all, "ssf_input_PF_O.csv")
 
-  
-# STEP 3: generate random steps. remove random steps over land #####
 
-# STEP 4: annotate ####
+# STEP 4: glmm#####
 
-# STEP 5: glmm! #####
