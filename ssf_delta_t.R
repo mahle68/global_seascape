@@ -41,7 +41,7 @@ segs <- segs_ann %>%
   as("Spatial") %>%
   as.data.frame() 
 
-#create a move object
+#create a move list
 rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(segs$seg_id),timestamps = segs$date_time,sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
 segs <- segs[-rows_to_delete,]
 
@@ -51,9 +51,10 @@ move_ls<-lapply(split(segs,segs$group),function(x){
   mv
 })
 
-lapply(move_ls,function(group){
+#for each species/flyway, thin the data, burstify, and produce alternative steps
+lapply(move_ls,function(group){ #each group is a species/flyway combo
   
-  sp_obj_ls<-lapply(split(group),function(seg){ #for each species/flyway
+  sp_obj_ls<-lapply(split(group),function(seg){ #sp_obj_ls will have the filtered and bursted segments
     
     #--STEP 1: thin the data to 1-hourly intervals
     seg_th<-seg%>%
@@ -112,7 +113,7 @@ lapply(move_ls,function(group){
     reduce(rbind) %>% 
     as.data.frame() %>% 
     dplyr::select(-c("coords.x1","coords.x2"))
-    
+  
   #estimate von Mises parameters for turning angles
   #calculate the averages (mu).steps: 1)convert to radians. step 2) calc mean of the cosines and sines. step 3) take the arctan.OR use circular::mean.circular
   mu<-mean.circular(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]))
@@ -132,17 +133,16 @@ lapply(move_ls,function(group){
   plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
   
   #--STEP 5: produce alternative steps
-  
-  alt_steps_ls<-lapply(sp_obj_ls, function(seg){ #for each segment
-    #alt_steps_burst<-
-      lapply(split(seg,seg$burst_id),function(burst){ #for each burst,
+  used_av_seg <- lapply(sp_obj_ls, function(seg){ #for each segment
+    
+    used_av_burst <- lapply(split(seg,seg$burst_id),function(burst){ #for each burst,
       
-      #for(this_point in 2:length(burst)){ #for each point. start from the second point. the first point has no turning angle
-        used_av_ls <- lapply(c(2:length(burst)), function(current_point){
+      used_av_step <- lapply(c(2:(length(burst)-1)), function(this_point){ #first point has no bearing to calc turning angle, last point has no used endpoint.
+        
         current_point<- burst[this_point,]
         previous_point<-burst[this_point-1,]
+        used_point <- burst[this_point+1,] #this is the next point. the observed end-point of the step starting from the current_point
         
-
         #randomly generate 49 step lengths and turning angles
         rta <- as.vector(rvonmises(n = 49, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
         rsl<-rgamma(n= 49, shape=fit.gamma1$estimate[[1]], rate= fit.gamma1$estimate[[2]])*1000  #generate random step lengths from the gamma distribution. make sure unit is meters
@@ -155,9 +155,6 @@ lapply(move_ls,function(group){
         #find the gepgraphic location of each alternative point; calculate bearing to the next point: add ta to the bearing of the previous point
         current_point_m <- spTransform(current_point, meters_proj) #convert to meters proj
         rnd <- data.frame(lon = current_point_m@coords[,1] + rsl*cos(rta),lat = current_point_m@coords[,2] + rsl*sin(rta)) #for this to work, lat and lon should be in meters as well. boo. coordinates in meters?
-
-        #assign date_time....one hour after the start point of the step
-        rnd$date_time<- current_point$date_time+ hours(1)
         
         #covnert back to lat-lon proj
         rnd_sp<-rnd
@@ -167,15 +164,23 @@ lapply(move_ls,function(group){
         
         #put used and available points together
         
+        df <- used_point@data %>%  
+          slice(rep(row_number(),50)) %>% #paste each row 49 times for the used and alternative steps
+          mutate(x = c(head(x,1),rnd_sp@coords[,1]),
+                 y = c(head(y,1),rnd_sp@coords[,2]),
+                 used = c(1,rep(0,49))) #one hour after the start point of the step
+        df
         
-
-        
-        })
-        
-      #}
-    })
-  })
-})
+      }) %>% 
+        reduce(rbind)
+      used_av_step
+    }) %>% 
+      reduce(rbind)
+    used_av_burst
+  }) %>% 
+    reduce(rbind)
+  used_av_seg
+}) 
 
 #get rid of alt. points that fall over land (do this later for all alternative poinst together :p)
 
@@ -186,7 +191,7 @@ points(burst,col = "grey", pch = 16, cex = 0.5)
 points(previous_point,col = "green", pch = 16, cex = 1)
 points(current_point,col = "red", pch = 16, cex = 1)
 points(rnd_sp, col = "orange", pch = 16, cex = 0.5)
-
+points(used_point, col = "purple", pch = 16, cex = 1)
 
 #plotting
 #r <- mapview(burst)
