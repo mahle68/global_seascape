@@ -6,8 +6,7 @@
 #separately and will add to the analysis instead of OHB ptt. for GFB, use data from Open Science paper.
 
 
-library(dplyr)
-library(purrr)
+library(tidyverse)
 library(move)
 library(sf)
 library(circular)
@@ -17,6 +16,7 @@ library(RNCEP)
 library(lubridate)
 library(mapview)
 library(parallel)
+library(tidyr)
 
 #meters_proj <- CRS("+proj=moll +ellps=WGS84")
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
@@ -272,7 +272,7 @@ points(used_point, col = "purple", pch = 16, cex = 1)
 #r + mapview(current_point,color = "red") + mapview(previous_point, color = "green")
 
 
-# STEP 3: annotate data#####
+# STEP 3: annotate data (movebank)#####
 
 used_av_all <- lapply(used_av_ls, function(x){
   x %>% 
@@ -299,6 +299,46 @@ write.csv(OHB_mb, "ssf_input_OHB.csv")
 #open annotated data
 ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/ssf_input_PF_O.csv-5429699439155723090/ssf_input_PF_O.csv-5429699439155723090.csv",
                 stringsAsFactors = F)
+ann_OHB <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/ssf_input_OHB.csv-8718182124794569750/ssf_input_OHB.csv-8718182124794569750.csv",
+                    stringsAsFactors = F)
+
+#merge
+ann_all <- ann %>% 
+  full_join(ann_OHB) %>% 
+  mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
+  rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature ,
+         t2m = ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.,
+         u925 = ECMWF.Interim.Full.Daily.PL.U.Wind,
+         v925 = ECMWF.Interim.Full.Daily.PL.V.Wind) %>%
+  mutate(delta_t = sst - t2m) %>% 
+  drop_na() %>% 
+  mutate(row_id = row_number())
+
+# STEP 3: annotate data (prep variance layer)#####
+#prep a dataframe with 40 rows corresponding to 40 years (1979-2019), for each point. then i can calculate variance of delta t over 40 years for each point
+df_40 <- ann_all %>% 
+  dplyr::select(-c(v925,u925,t2m,sst,delta_t)) %>% 
+  slice(rep(row_number(),41)) %>% 
+  group_by(row_id) %>% 
+  mutate(year = c(1979:2019)) %>%
+  ungroup() %>%
+  mutate(timestamp = paste(as.character(date_time),"000",sep = "."))
+
+str_sub(df_40$timestamp,1,4) <- df_40$year #replace original year with years from 1979-2019
+colnames(df_40)[c(3,4)] <- c("location-long","location-lat") #rename columns to match movebank format
+
+#break up into two parts. over 1 million rows
+df_40_1 <- df_40 %>% 
+  slice(1:1000000)
+write.csv(df_40_1, "ssf_40_all_spp_1.csv")
+
+df_40_2 <- df_40 %>% 
+  slice(1000001:2000000)
+write.csv(df_40_2, "ssf_40_all_spp_2.csv")
+
+df_40_3 <- df_40 %>% 
+  slice(2000001:nrow(.))
+write.csv(df_40_3, "ssf_40_all_spp_3.csv")
 
 # STEP 4: glmm#####
 
