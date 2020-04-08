@@ -69,13 +69,19 @@ NCEP.loxodrome.na <- function (lat1, lat2, lon1, lon2) {
 
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/")
+source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 
 
 # STEP 1: prepare the input data#####
 #open segments (not tracks, because tracks may be intersected by land)
 load("segs_dt.RData") #segs_ann; prepared in track_based_prep_analyze_daily.R; filtered to be over 30 km and have more than 2 points
-
 load("segs_OHB_dt.RData") #segs_ann_OHB; annotated OHB GPS data for autumn. prepared in all_data_prep_analyze.R
+
+segs_OHB_df <- segs_ann_OHB %>% 
+  dplyr::select(intersect(colnames(segs_ann),colnames(segs_ann_OHB))) %>% 
+  mutate(group = "OHB_GPS") %>% 
+  as("Spatial") %>% 
+  as.data.frame()
 
 #remove spring and give different values to Osprey and Peregrine in each flyway
 segs <- segs_ann %>% 
@@ -85,10 +91,12 @@ segs <- segs_ann %>%
                                ifelse(species == "O" & st_coordinates(.)[,1] < -30, "O_A",
                                       ifelse(species == "O" & st_coordinates(.)[,1] > -30, "O_E",
                                              ifelse(species == "PF" & st_coordinates(.)[,1] < -30, "PF_A",
-                                                    "PF_E")))))) %>% 
-  dplyr::arrange(group,seg_id,date_time) %>% 
+                                                    "PF_E"))))))  %>% 
   as("Spatial") %>%
-  as.data.frame() 
+  as.data.frame() %>% 
+  full_join(segs_OHB_df)%>% 
+  dplyr::arrange(group,seg_id,date_time)
+
 
 #create a move list
 rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(segs$seg_id),timestamps = segs$date_time,sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
@@ -102,17 +110,6 @@ move_ls<-lapply(split(segs,segs$group),function(x){
   mv
 })
 
-#create move object for OHB GPS
-rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(segs_ann_OHB$seg_id),
-                                                        timestamps = segs_ann_OHB$date_time,sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
-segs_ann_OHB <- segs_ann_OHB[-rows_to_delete,]
-
-OHB <- segs_ann_OHB %>% 
-  dplyr::arrange(seg_id,date_time) %>% 
-  as("Spatial") %>%
-  as.data.frame()
-
-mv_OHB <- move(x = OHB$x,y = OHB$y,time = OHB$date_time, data = OHB,animal= OHB$seg_id,proj = wgs)
 
 #for each species/flyway, thin the data, burstify, and produce alternative steps
 
@@ -209,7 +206,7 @@ used_av_ls <- lapply(move_ls[-c(1,4)],function(group){ #each group is a species/
       used_av_step <- lapply(c(2:(length(burst)-1)), function(this_point){ #first point has no bearing to calc turning angle, last point has no used endpoint.
         
         current_point<- burst[this_point,]
-        previous_point<-burst[this_point-1,]
+        previous_point<-burst[this_point-1,] #this is the previous point, for calculating turning angle.
         used_point <- burst[this_point+1,] #this is the next point. the observed end-point of the step starting from the current_point
         
         #randomly generate 49 step lengths and turning angles
@@ -232,12 +229,15 @@ used_av_ls <- lapply(move_ls[-c(1,4)],function(group){ #each group is a species/
         rnd_sp<-spTransform(rnd_sp,wgs)
         
         #put used and available points together
-        
         df <- used_point@data %>%  
           slice(rep(row_number(),50)) %>% #paste each row 49 times for the used and alternative steps
           mutate(x = c(head(x,1),rnd_sp@coords[,1]),
                  y = c(head(y,1),rnd_sp@coords[,2]),
-                 used = c(1,rep(0,49))) #one hour after the start point of the step
+                 used = c(1,rep(0,49)))  %>% #one hour after the start point of the step
+          rowwise() %>% 
+          mutate(heading = NCEP.loxodrome.na(lat1=current_point$y,lat2=y,lon1=current_point$x,lon2= x)) %>% 
+          as.data.frame()
+        
         df
         
       }) %>% 
@@ -252,14 +252,13 @@ used_av_ls <- lapply(move_ls[-c(1,4)],function(group){ #each group is a species/
 })
 Sys.time() - start_time
 
-save(used_av_ls, file = "ssf_input_PF_O.RData")
-#save(used_av_seg, file = "ssf_input_OHB.RData")
+save(used_av_ls, file = "ssf_input_all.RData")
+
 
 #get rid of alt. points that fall over land (do this later for all alternative poinst together :p)... actually, dont do this now. after track annotation, those with NA for
 #sst can be easily removed :p
 
-
-
+X11()
 maps::map("world",xlim = c(-75,-70), ylim = c(15,25),fil = TRUE,col = "ivory") #flyway
 points(burst,col = "grey", pch = 16, cex = 0.5)
 points(previous_point,col = "green", pch = 16, cex = 1)
@@ -267,16 +266,19 @@ points(current_point,col = "red", pch = 16, cex = 1)
 points(rnd_sp, col = "orange", pch = 16, cex = 0.5)
 points(used_point, col = "purple", pch = 16, cex = 1)
 
+plot(current_point)
+text(y~x, labels=row.names(df),data=df, cex=0.5, font=2)
+points(y~x, data = df)
+
 #plotting
 #r <- mapview(burst)
 #r + mapview(current_point,color = "red") + mapview(previous_point, color = "green")
-
 
 # STEP 3: annotate data (movebank)#####
 
 used_av_all <- lapply(used_av_ls, function(x){
   x %>% 
-    dplyr::select(c("date_time", "x", "y", "burst_id", "track", "group", "seg_id", "step_id", "used")) %>% #later, add a unique step id: paste track, seg_id, burst_id and step_id. lol
+    dplyr::select(c("date_time", "x", "y", "burst_id", "track", "group", "seg_id", "step_id", "used", "heading")) %>% #later, add a unique step id: paste track, seg_id, burst_id and step_id. lol
     mutate(timestamp = paste(as.character(date_time),"000",sep = ".")) %>% 
     as.data.frame()
 }) %>% 
@@ -285,34 +287,22 @@ used_av_all <- lapply(used_av_ls, function(x){
 #rename columns
 colnames(used_av_all)[c(2,3)] <- c("location-long","location-lat")
 
-write.csv(used_av_all, "ssf_input_PF_O.csv")
+write.csv(used_av_all, "ssf_input_all.csv")
 
-#OHB
-OHB_mb <-used_av_seg %>% 
-  mutate(group = "OHB") %>% 
-  dplyr::select(c("date_time", "x", "y", "burst_id", "track", "group", "seg_id", "step_id", "used")) %>% #later, add a unique step id: paste track, seg_id, burst_id and step_id. lol
-  mutate(timestamp = paste(as.character(date_time),"000",sep = ".")) %>% 
-  as.data.frame()
-colnames(OHB_mb)[c(2,3)] <- c("location-long","location-lat")
-write.csv(OHB_mb, "ssf_input_OHB.csv")
-
-#open annotated data
-ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/ssf_input_PF_O.csv-5429699439155723090/ssf_input_PF_O.csv-5429699439155723090.csv",
-                stringsAsFactors = F)
-ann_OHB <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/ssf_input_OHB.csv-8718182124794569750/ssf_input_OHB.csv-8718182124794569750.csv",
-                    stringsAsFactors = F)
-
-#merge
-ann_all <- ann %>% 
-  full_join(ann_OHB) %>% 
+#open annotated data and add wind support and crosswind
+ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/ssf_input_all.csv-6333944159911063870/ssf_input_all.csv-6333944159911063870.csv",
+                stringsAsFactors = F) %>%
+  drop_na() %>%
   mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
   rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature ,
          t2m = ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.,
          u925 = ECMWF.Interim.Full.Daily.PL.U.Wind,
          v925 = ECMWF.Interim.Full.Daily.PL.V.Wind) %>%
-  mutate(delta_t = sst - t2m) %>% 
-  drop_na() %>% 
-  mutate(row_id = row_number())
+  mutate(row_id = row_number(),
+         delta_t = sst - t2m,
+         wind_support= wind_support(u=u925,v=v925,heading=heading),
+         cross_wind= cross_wind(u=u925,v=v925,heading=heading))
+  
 
 # STEP 3: annotate data (prep variance layer)#####
 #prep a dataframe with 40 rows corresponding to 40 years (1979-2019), for each point. then i can calculate variance of delta t over 40 years for each point
@@ -339,6 +329,9 @@ write.csv(df_40_2, "ssf_40_all_spp_2.csv")
 df_40_3 <- df_40 %>% 
   slice(2000001:nrow(.))
 write.csv(df_40_3, "ssf_40_all_spp_3.csv")
+
+#calculate variance delta-t for each point and merge with previously annotated data
+
 
 # STEP 4: glmm#####
 
