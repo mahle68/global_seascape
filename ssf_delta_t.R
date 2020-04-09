@@ -305,8 +305,8 @@ ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotati
   
 
 # STEP 3: annotate data (prep variance layer)#####
-#prep a dataframe with 40 rows corresponding to 40 years (1979-2019), for each point. then i can calculate variance of delta t over 40 years for each point
-df_40 <- ann_all %>% 
+#prep a dataframe with 41 rows corresponding to 41 years (1979-2019), for each point. then i can calculate variance of delta t over 41 years for each point
+df_40 <- ann %>% 
   dplyr::select(-c(v925,u925,t2m,sst,delta_t)) %>% 
   slice(rep(row_number(),41)) %>% 
   group_by(row_id) %>% 
@@ -319,19 +319,43 @@ colnames(df_40)[c(3,4)] <- c("location-long","location-lat") #rename columns to 
 
 #break up into two parts. over 1 million rows
 df_40_1 <- df_40 %>% 
-  slice(1:1000000)
+  slice(1:700000)
 write.csv(df_40_1, "ssf_40_all_spp_1.csv")
 
 df_40_2 <- df_40 %>% 
-  slice(1000001:2000000)
+  slice(700001:1400000)
 write.csv(df_40_2, "ssf_40_all_spp_2.csv")
 
 df_40_3 <- df_40 %>% 
-  slice(2000001:nrow(.))
+  slice(1400001:nrow(.))
 write.csv(df_40_3, "ssf_40_all_spp_3.csv")
 
 #calculate variance delta-t for each point and merge with previously annotated data
+ann_40_ls <- list.files("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/all_ssf_40yrs",pattern = ".csv", full.names = T) 
 
+ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>% 
+  reduce(full_join) %>% 
+  rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature ,
+         t2m = ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.,
+         u925 = ECMWF.Interim.Full.Daily.PL.U.Wind,
+         v925 = ECMWF.Interim.Full.Daily.PL.V.Wind) %>% 
+  mutate(delta_t = sst - t2m,
+         wind_support= wind_support(u=u925,v=v925,heading=heading),
+         cross_wind= cross_wind(u=u925,v=v925,heading=heading)) %>% 
+  group_by(row_id) %>%   
+  summarise(avg_delta_t = mean(delta_t,na.rm = T), 
+            avg_ws = mean(wind_support, na.rm = T),
+            avg_cw = mean(abs(cross_wind), na.rm = T),
+            avg_u925 = mean(u925,na.rm = T),
+            avg_v925 = mean(v925,na.rm = T),
+            var_delta_t = var(delta_t,na.rm = T),
+            var_u925 = var(u925,na.rm = T),
+            var_v925 = var(v925,na.rm = T),
+            var_ws = var(wind_support, na.rm = T),
+            var_cw = var(abs(cross_wind),na.rm = T)) %>% 
+  full_join(ann, by = "row_id")
+  
+#assign unique step-ids
 
 # STEP 4: glmm#####
 
