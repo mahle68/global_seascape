@@ -355,7 +355,24 @@ ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>%
             var_cw = var(abs(cross_wind),na.rm = T)) %>% 
   full_join(ann, by = "row_id")
   
+save(ann_cmpl, file = "ssf_input_ann.RData")
 #assign unique step-ids
+ann_cmpl <- ann_cmpl %>% 
+  mutate(unique_step_id = paste(track, seg_id, burst_id, step_id, sep = "_")) %>% 
+  as.data.frame()
 
-# STEP 4: glmm#####
+# STEP 4: data exploration#####
+
+X11();par(mfrow= c(4,1))
+for(i in c("avg_delta_t","avg_ws","avg_cw","var_delta_t")){
+
+boxplot(ann_cmpl[,i] ~ ann_cmpl[,"group"], data = ann_cmpl, boxfill = NA, border = NA, main = i)
+boxplot(ann_cmpl[,i] ~ ann_cmpl[,"group"], data = ann_cmpl[ann_cmpl$used == 1,], xaxt = "n", add = T, boxfill = "red",
+        boxwex = 0.25, at = 1:length(unique(ann_cmpl$group)) - 0.15)
+boxplot(ann_cmpl[,i] ~ ann_cmpl[,"group"], data = ann_cmpl[ann_cmpl$used == 0,], xaxt = "n", add = T, boxfill = "blue",
+        boxwex = 0.25, at = 1:length(unique(ann_cmpl$group)) + 0.15)
+
+}
+
+# STEP 5: glmm#####
 
