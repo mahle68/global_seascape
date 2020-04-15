@@ -17,6 +17,10 @@ library(lubridate)
 library(mapview)
 library(parallel)
 library(tidyr)
+library(corrr)
+library(lme4)
+library(MuMIn)
+library(mgcv)
 
 #meters_proj <- CRS("+proj=moll +ellps=WGS84")
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
@@ -356,23 +360,162 @@ ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>%
   full_join(ann, by = "row_id")
   
 save(ann_cmpl, file = "ssf_input_ann.RData")
-#assign unique step-ids
+#assign unique step-ids and species
 ann_cmpl <- ann_cmpl %>% 
   mutate(unique_step_id = paste(track, seg_id, burst_id, step_id, sep = "_")) %>% 
+  rowwise() %>% 
+  mutate(species = strsplit(group, "_")[[1]][1],
+         lat_zone = ifelse(location.lat > 30, "tmpz","twz")) %>% 
   as.data.frame()
 
 # STEP 4: data exploration#####
 
-X11();par(mfrow= c(4,1))
-for(i in c("avg_delta_t","avg_ws","avg_cw","var_delta_t")){
-
-boxplot(ann_cmpl[,i] ~ ann_cmpl[,"group"], data = ann_cmpl, boxfill = NA, border = NA, main = i)
-boxplot(ann_cmpl[,i] ~ ann_cmpl[,"group"], data = ann_cmpl[ann_cmpl$used == 1,], xaxt = "n", add = T, boxfill = "red",
-        boxwex = 0.25, at = 1:length(unique(ann_cmpl$group)) - 0.15)
-boxplot(ann_cmpl[,i] ~ ann_cmpl[,"group"], data = ann_cmpl[ann_cmpl$used == 0,], xaxt = "n", add = T, boxfill = "blue",
-        boxwex = 0.25, at = 1:length(unique(ann_cmpl$group)) + 0.15)
-
+#plot
+X11();par(mfrow= c(3,1))
+for(i in c("avg_ws","avg_cw","avg_delta_t")){
+  
+  boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = i)
+  boxplot(ann_cmpl[ann_cmpl$used == 1,i] ~ ann_cmpl[ann_cmpl$used == 1,"species"], xaxt = "n", add = T, boxfill = "orange",
+          boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) - 0.15)
+  boxplot(ann_cmpl[ann_cmpl$used == 0,i] ~ ann_cmpl[ann_cmpl$used == 0,"species"], xaxt = "n", add = T, boxfill = "grey",
+          boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) + 0.15)
+  
 }
 
-# STEP 5: glmm#####
+X11();par(mfrow= c(3,1))
+for(i in c("var_ws", "var_cw","var_delta_t")){
+  
+  boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = i)
+  boxplot(ann_cmpl[ann_cmpl$used == 1,i] ~ ann_cmpl[ann_cmpl$used == 1,"species"], xaxt = "n", add = T, boxfill = "orange",
+          boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) - 0.15)
+  boxplot(ann_cmpl[ann_cmpl$used == 0,i] ~ ann_cmpl[ann_cmpl$used == 0,"species"], xaxt = "n", add = T, boxfill = "grey",
+          boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) + 0.15)
+  
+}
+
+#calculate correlation
+#correlation
+lapply(split(ann_cmpl,ann_cmpl$species), function(x){
+  
+  x[,c("var_ws","var_cw","var_delta_t","avg_ws","avg_cw","avg_delta_t","location.lat")] %>%
+    correlate() %>% 
+    stretch() %>% 
+    filter(abs(r)>0.7) #a lot of correlation.... interesting. also latitude is correlated with avg_ws, var_delta_t, and var_cw for Osprey and Peregrine. also variance and average wind are correlated a lot.
+})
+
+data_z<-lapply(split(ann_cmpl,ann_cmpl$species), function(x){ #z-transformation
+  x %>%
+    mutate_at(c("var_ws","var_cw","var_delta_t","avg_ws","avg_cw","avg_delta_t"),
+              list(z = ~scale(.))) %>%
+    as.data.frame()
+})
+
+
+#plot the z-transformed variables
+X11(); par(mfrow = c(3,6))
+lapply(data_z, function(species){
+  apply(species[,c("var_ws_z","var_cw_z","var_delta_t_z","avg_ws_z","avg_cw_z","avg_delta_t_z")], 2, hist)
+})
+
+
+# STEP 5: modeling#####
+all_data <- do.call(rbind,data_z)
+
+#following Zuur et al protocol (p. 130).. 
+# strata as a random effect. species as a randomm effect. latitude as an interaction term, because I actually care about it.
+
+#step 1 : no random effects at first
+form <- formula(used ~ lat_zone * var_delta_t_z + lat_zone * avg_delta_t_z + lat_zone * avg_cw_z + lat_zone * avg_ws_z)
+M.1m <- lm(form, 
+         data = all_data)
+
+plot(M.1m, select = c(1))
+E <- rstandard(M.1m)
+boxplot(E ~ species, data = all_data, axes = F) #if all the data clouds around zero, no need to include species as a random effect. but that is not really the case here
+abline(0,0); axis(2)
+X11(); boxplot(E ~ unique_step_id, data = all_data, axes = F) 
+abline(0,0); axis(2)
+
+#step 2: make the same model with gls, to allow for comparisons with the mixed effect models
+M.gls <- gls(form, data = all_data)
+
+#step 3 and 4: choose a variance structure and build model (later try to add latitude as a varident structure. ch. 4 of book)
+#try only random effect on intercept
+M1.lme <- lme(form, random = ~ 1| species, method = "REML", data = all_data)
+
+#step 5: compare models
+anova(M.gls,M1.lme)
+
+#############using glm
+
+#model with 
+form <- formula()
+
+B1 <- glm(used ~ lat_zone * var_delta_t_z + lat_zone * avg_delta_t_z + lat_zone * avg_cw_z + lat_zone * avg_ws_z, 
+          family = binomial, data = all_data)
+
+B2 <- glmer(used ~ lat_zone * var_delta_t_z + lat_zone * avg_delta_t_z + lat_zone * avg_cw_z + lat_zone * avg_ws_z + 
+              (1 | unique_step_id) + (1 |species), 
+            family = binomial, data = all_data) #singular
+
+
+#adjust fixed structure
+B2 <- glmer(used ~ lat_zone * avg_delta_t_z + lat_zone * avg_cw_z + lat_zone * avg_ws_z + 
+              (1 | unique_step_id) + (1 |species), 
+            family = binomial, data = all_data) #did not converge
+
+#move lat from fixed to random
+B2 <- glmer(used ~ var_delta_t_z + avg_delta_t_z + avg_cw_z + avg_ws_z + 
+              (1 | unique_step_id) + (1 |species) + (1|lat_zone), 
+            family = binomial, data = all_data) #
+
+
+
+B3 <- glmer(used ~ var_delta_t + avg_delta_t + avg_cw + avg_ws + lat_zone + 
+              (1 + var_delta_t + avg_delta_t + avg_cw + avg_ws| unique_step_id) + 
+              (1 + var_delta_t + avg_delta_t + avg_cw + avg_ws|species), family = binomial, data = all_data)
+
+
+
+#step 1: beyond optimal model with all variables, comparing different interaction structures
+
+
+#all species together first! lol
+
+
+var_model <- glmer(used ~ var_ws_z + var_cw_z + var_delta_t_z + var_ws_z:lat_zone + var_cw_z:lat_zone + var_delta_t_z:lat_zone +
+                     (1 | unique_step_id) + (1|species), 
+                   family = binomial, data = all_data )
+summary(var_model)
+r.squaredLR(var_model)
+
+
+library(interactions)
+interact_plot(var_model, pred = var_delta_t_z, modx = lat_zone, plot.points = TRUE)
+
+
+avg_model <- glmer(used ~ avg_ws_z + var_cw_z + avg_delta_t_z + avg_ws_z:lat_zone + avg_cw_z:lat_zone + avg_delta_t_z:lat_zone +
+                     (1 | unique_step_id) + (1|species), 
+                   family = binomial, data = all_data )
+summary(avg_model)
+r.squaredLR(avg_model)
+
+#model with only delta t
+delta_t_model <- glmer(used ~ avg_delta_t_z + var_delta_t_z + (avg_delta_t_z|lat_zone) + (var_delta_t_z|lat_zone) +
+                     (1 | unique_step_id) + (1|species), 
+                   family = binomial, data = all_data )
+summary(var_model)
+r.squaredLR(var_model)
+
+#gam... do I need to scale the variables?
+all_data$fzone <- factor(all_data$lat_zone)
+m1 <- gam(used ~ s(scale(avg_u925),scale(avg_v925)) + avg_delta_t, family = binomial, data = all_data )
+
+
+
+
+lapply(data_z, function(x){
+
+  
+})
 
