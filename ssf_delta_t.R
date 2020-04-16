@@ -21,6 +21,10 @@ library(corrr)
 library(lme4)
 library(MuMIn)
 library(mgcv)
+library(survival)
+
+
+setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/")
 
 #meters_proj <- CRS("+proj=moll +ellps=WGS84")
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
@@ -360,9 +364,12 @@ ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>%
   full_join(ann, by = "row_id")
   
 save(ann_cmpl, file = "ssf_input_ann.RData")
+
 #assign unique step-ids and species
+load("ssf_input_ann.RData")
+
 ann_cmpl <- ann_cmpl %>% 
-  mutate(unique_step_id = paste(track, seg_id, burst_id, step_id, sep = "_")) %>% 
+  mutate(stratum = paste(track, seg_id, burst_id, step_id, sep = "_")) %>% 
   rowwise() %>% 
   mutate(species = strsplit(group, "_")[[1]][1],
          lat_zone = ifelse(location.lat > 30, "tmpz","twz")) %>% 
@@ -417,6 +424,29 @@ lapply(data_z, function(species){
   apply(species[,c("var_ws_z","var_cw_z","var_delta_t_z","avg_ws_z","avg_cw_z","avg_delta_t_z")], 2, hist)
 })
 
+### for all data
+ann_cmpl <- ann_cmpl %>% 
+  mutate(stratum = paste(track, seg_id, burst_id, step_id, sep = "_")) %>% 
+  rowwise() %>% 
+  mutate(species = strsplit(group, "_")[[1]][1],
+         lat_zone = ifelse(location.lat > 30, "tmpz","twz")) %>% 
+  as.data.frame()
+
+#correlation
+ann_cmpl %>% 
+  dplyr::select(c("var_ws","var_cw","var_delta_t","avg_ws","avg_cw","avg_delta_t","location.lat")) %>% 
+  correlate() %>% 
+  stretch() %>% 
+  filter(abs(r) > 0.7) #correlated: var_cw with avg_cw, avg_ws with location.lat
+
+#z-transform
+all_data <- ann_cmpl %>% 
+  #group_by(species) # z_transform for each species separately. or not? ... huh!
+  mutate_at(c("var_ws","var_cw","var_delta_t","avg_ws","avg_cw","avg_delta_t"),
+            list(z = ~scale(.))) %>%
+  as.data.frame()
+
+save(all_data, file = "ssf_input_ann_z.RData")
 
 # STEP 5: modeling#####
 all_data <- do.call(rbind,data_z)
@@ -509,7 +539,8 @@ r.squaredLR(var_model)
 
 #gam... do I need to scale the variables?
 all_data$fzone <- factor(all_data$lat_zone)
-m1 <- gam(used ~ s(scale(avg_u925),scale(avg_v925)) + avg_delta_t, family = binomial, data = all_data )
+m1 <- gamm(used ~ s(scale(avg_u925),scale(avg_v925)) + avg_delta_t, 
+           random = list(species = ~1), family = binomial, data = all_data )
 
 
 
@@ -517,5 +548,69 @@ m1 <- gam(used ~ s(scale(avg_u925),scale(avg_v925)) + avg_delta_t, family = bino
 lapply(data_z, function(x){
 
   
+})
+
+
+############## try geeglm (p. 319)
+load("ssf_input_ann_z.RData") #all_data
+
+library(geepack)
+
+#reminder: avg and var cw were correlated.
+
+geem1 <- geeglm(used ~ var_delta_t_z , 
+                family = binomial(link = "cloglog"), data = all_data,
+                id = stratum, corstr = "exchangeable") #crashes rstudio
+
+############## try clogit I guess. lol
+
+#make sure to have equal number of available steps for each stratum
+strata_l <- all_data %>% 
+  group_by(stratum) %>% 
+  summarise(n= n()) %>% 
+  dplyr::select(n) %>% 
+  as.data.frame() #28 strata have lengths less than 50, 11 have lengths less than 49. keep the 49s...
+
+
+
+form_all <- formula(used ~ lat_zone * var_delta_t_z + lat_zone * var_ws_z + lat_zone * avg_delta_t_z + 
+                      lat_zone * avg_ws_z + lat_zone * avg_cw_z +
+                      strata(stratum))
+
+form1 <- formula(used ~ var_delta_t_z + var_ws_z + var_cw_z +  
+             strata(stratum))
+form2 <- formula(used ~ avg_delta_t_z + avg_ws_z + avg_cw_z +  
+                   strata(stratum))
+m1 <- clogit(form1, data = all_data)
+m2 <- clogit(form2, data = all_data)
+
+m_all <- clogit(form_all, data = all_data)
+
+models <- lapply(split(all_data, all_data$species), function(x){
+  m <- clogit(used ~ scale(avg_ws) + scale(avg_delta_t) + scale(delta_t) + scale(wind_support) + scale(cross_wind) + scale(avg_cw) +
+                strata(stratum), data = x)
+  summary(m)
+})
+
+for (i in c("O","OHB","PF")){
+  x <- all_data[]
+}
+
+library(TwoStepCLogit)
+m3 <- Ts.estim(used ~ lat_zone * var_delta_t_z + lat_zone * var_ws_z + lat_zone * avg_delta_t_z + 
+                 lat_zone * avg_ws_z + lat_zone * avg_cw_z +  strata(stratum) + cluster(species),
+           random = ~ var_delta_t_z + var_ws_z + avg_delta_t_z + avg_ws_z, 
+           data = all_data, 
+           D="UN(1)")
+
+lapply(data_ls_z,function(x){
+  
+  #model with wind and average updraft conditions
+  Ts.estim(y ~ cos(ta_) + log(sl_) + wind_support_z + cross_wind_z + dist_target_z + clim_cross_wind_z + 
+             clim_wind_support_z +  strata(step_id_) + cluster(id),
+           random = ~ wind_support_z + cross_wind_z + dist_target_z + clim_cross_wind_z + 
+             clim_wind_support_z, 
+           data = x, 
+           D="UN(1)") #D is the structure of the output matrix
 })
 
