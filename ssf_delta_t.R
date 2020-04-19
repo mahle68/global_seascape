@@ -400,88 +400,136 @@ for(i in c("var_ws", "var_cw","var_delta_t")){
   
 }
 
-#calculate correlation
-#correlation
-lapply(split(ann_cmpl,ann_cmpl$species), function(x){
-  
-  x[,c("var_ws","var_cw","var_delta_t","avg_ws","avg_cw","avg_delta_t","location.lat")] %>%
-    correlate() %>% 
-    stretch() %>% 
-    filter(abs(r)>0.7) #a lot of correlation.... interesting. also latitude is correlated with avg_ws, var_delta_t, and var_cw for Osprey and Peregrine. also variance and average wind are correlated a lot.
-})
-
-data_z<-lapply(split(ann_cmpl,ann_cmpl$species), function(x){ #z-transformation
-  x %>%
-    mutate_at(c("var_ws","var_cw","var_delta_t","avg_ws","avg_cw","avg_delta_t"),
-              list(z = ~scale(.))) %>%
-    as.data.frame()
-})
-
-
-#plot the z-transformed variables
-X11(); par(mfrow = c(3,6))
-lapply(data_z, function(species){
-  apply(species[,c("var_ws_z","var_cw_z","var_delta_t_z","avg_ws_z","avg_cw_z","avg_delta_t_z")], 2, hist)
-})
-
-### for all data
-ann_cmpl <- ann_cmpl %>% 
-  mutate(stratum = paste(track, seg_id, burst_id, step_id, sep = "_")) %>% 
-  rowwise() %>% 
-  mutate(species = strsplit(group, "_")[[1]][1],
-         lat_zone = ifelse(location.lat > 30, "tmpz","twz")) %>% 
-  as.data.frame()
-
 #correlation
 ann_cmpl %>% 
-  dplyr::select(c("var_ws","var_cw","var_delta_t","avg_ws","avg_cw","avg_delta_t","location.lat")) %>% 
+  dplyr::select(c("var_ws","var_cw","var_delta_t","wind_support","cross_wind","delta_t","location.lat")) %>% 
   correlate() %>% 
   stretch() %>% 
-  filter(abs(r) > 0.7) #correlated: var_cw with avg_cw, avg_ws with location.lat
+  filter(abs(r) > 0.6) #correlated: var_cw with location.lat and var_delta_t with location.lat
 
 #z-transform
 all_data <- ann_cmpl %>% 
   #group_by(species) # z_transform for each species separately. or not? ... huh!
-  mutate_at(c("var_ws","var_cw","var_delta_t","avg_ws","avg_cw","avg_delta_t"),
+  mutate_at(c("var_ws","var_cw","var_delta_t","wind_support","cross_wind","delta_t"),
             list(z = ~scale(.))) %>%
   as.data.frame()
 
 save(all_data, file = "ssf_input_ann_z.RData")
 
 # STEP 5: modeling#####
-all_data <- do.call(rbind,data_z)
-
-#following Zuur et al protocol (p. 130).. 
-# strata as a random effect. species as a randomm effect. latitude as an interaction term, because I actually care about it.
-
-#step 1 : no random effects at first
-form <- formula(used ~ lat_zone * var_delta_t_z + lat_zone * avg_delta_t_z + lat_zone * avg_cw_z + lat_zone * avg_ws_z)
-M.1m <- lm(form, 
-         data = all_data)
-
-plot(M.1m, select = c(1))
-E <- rstandard(M.1m)
-boxplot(E ~ species, data = all_data, axes = F) #if all the data clouds around zero, no need to include species as a random effect. but that is not really the case here
-abline(0,0); axis(2)
-X11(); boxplot(E ~ unique_step_id, data = all_data, axes = F) 
-abline(0,0); axis(2)
-
-#step 2: make the same model with gls, to allow for comparisons with the mixed effect models
-M.gls <- gls(form, data = all_data)
-
-#step 3 and 4: choose a variance structure and build model (later try to add latitude as a varident structure. ch. 4 of book)
-#try only random effect on intercept
-M1.lme <- lme(form, random = ~ 1| species, method = "REML", data = all_data)
-
-#step 5: compare models
-anova(M.gls,M1.lme)
+load("ssf_input_ann_z.RData") #all_data
 
 #############using glm
+#instantaneous model
+form_inst <- formula(used ~ lat_zone * delta_t_z + lat_zone * wind_support_z + lat_zone * cross_wind_z)
+form_inst_m <- formula(used ~ lat_zone * delta_t_z + lat_zone * wind_support_z + lat_zone * cross_wind_z + (1 | stratum) + (1 |species))
 
-#model with 
-form <- formula()
+m1_inst <- glmer(form_inst_m, family = binomial(link = "cloglog"), data = all_data) #did not converge
 
-B1 <- glm(used ~ lat_zone * var_delta_t_z + lat_zone * avg_delta_t_z + lat_zone * avg_cw_z + lat_zone * avg_ws_z, 
+m2_inst <- gamm(used ~ s(wind_support) + s(cross_wind) + delta_t,
+           random = list(stratum = ~1, species = ~1), family = binomial(link = "cloglog"), data = all_data )
+
+m3_inst <- gamm(used ~ s(wind_support_z) + s(cross_wind_z) + delta_t_z,
+                random = list(stratum = ~1, species = ~1), family = binomial(link = "cloglog"), data = all_data ) #lower AIC than without scaling
+
+
+#contemporaneous model
+form_cnt <- formula(used ~ lat_zone * var_delta_t_z + lat_zone * var_ws_z + lat_zone * var_cw_z)
+form_cnt_m <- formula(used ~ lat_zone * var_delta_t_z + lat_zone * var_ws_z + lat_zone * var_cw_z + (1 | stratum) + (1 |species))
+
+m1_cnt <- glmer(form_cnt_m, family = binomial(link = "cloglog"), data = all_data)
+
+m2_cnt <- gamm(used ~ s(var_ws) + s(var_cw) + var_delta_t,
+                random = list(stratum = ~1, species = ~1), family = binomial(link = "cloglog"), data = all_data )
+
+all_data$lat_zone_f <- factor(all_data$lat_zone)
+all_data$species_f <- factor(all_data$species)
+all_data$stratum_f <- factor(all_data$stratum)
+
+m3_cnt <- gamm(used ~ s(var_ws, by = lat_zone_f) + s(var_cw, by = lat_zone_f) + var_delta_t * lat_zone_f,
+               random = list(stratum = ~1, species = ~1), family = binomial(link = "cloglog"), data = all_data ) #singluar
+
+m4_cnt <- gamm(used ~ s(var_ws) + s(var_cw) + var_delta_t * lat_zone_f,
+               random = list(stratum = ~1, species = ~1), family = binomial(link = "cloglog"), data = all_data ) #interaction not significant
+
+m5_cnt <- gamm(used ~ s(var_ws) + s(var_cw) + var_delta_t + f(lat_zone_f),
+               random = list(stratum = ~1, species = ~1), family = binomial(link = "cloglog"), data = all_data )
+
+#inspo from https://drmowinckels.io/blog/gamm-random-effects/
+m6_cnt <- gamm(used ~ s(var_ws, bs = "cr") + s(var_cw, bs = "cr") + s(var_delta_t, bs = "cr") +
+                 s(stratum_f, bs = "re") + s(species_f, bs = "re") + s(lat_zone_f, bs = "re"), #random effects can be assigned this way, instead of using the random argument
+               family = binomial(link = "cloglog"), data = all_data , correlation=corAR1()) #what's the deal with the correlation?? sooo slow
+
+
+
+form <- formula(used ~ lat_zone * delta_t_z + lat_zone * var_delta_t_z + lat_zone * wind_support_z + lat_zone * var_ws_z + 
+                  lat_zone * cross_wind_z + lat_zone * var_cw_z )
+
+ 
+
+
+############# gamm + poisson distribution (as suggested by Muff et al 2018)
+
+#the weight implements different variances per species. the by commamd
+# in the smoother ensures that we have one smoother for each bird species (p. 368)... but data format needs to be changed
+lmc <- lmeControl(niterEM = 5000, msMaxIter = 1000)
+
+form <- formula(used ~ delta_t_z + wind_support_z + (1|stratum_f) + (0 + delta_t_z | species) + (0 + wind_support_z | species))
+
+TMBstr <- glmmTMB(form, family = poisson, data = all_data, doFit = F)
+#fix the standard deviation of the first random term, which is the (1|stratum) component in the model equation
+TMBstr$parameters$theta[1] <- log(1e3)
+TMBstr$mapArg <- list(theta = factor(c(NA,1:2))) #I have no idea what is happening here. refer to Muff et al
+
+mTMB <- glmmTMB:::fitTMB(TMBstr)
+
+gamm(form, control = lmc, method = "REML", weights = varIdent(form = ~1 | species), family = poisson, data = all_data) #muff et al say dont use weigths for ssf
+
+
+##codes from muff et al supp material https://conservancy.umn.edu/bitstream/handle/11299/204737/Otters_SSF.r?sequence=22&isAllowed=y
+
+#' To fit the model with random slopes in INLA, we need to generate new (but identical) variables of individual ID (ID cannot be used multiple times in the model formula):
+dat$ANIMAL_ID1 <- dat$ANIMAL_ID
+dat$ANIMAL_ID2 <- dat$ANIMAL_ID
+dat$ANIMAL_ID3 <- dat$ANIMAL_ID
+
+#' Set the model formula as for the fixed-effects model, but now add three random slope terms, namely for river width and for the two levels of the categorical variable (STAU1 and REST1) which are not the reference categories. The priors for precision of the three random slopes are PC(3,0.05), while the intercept variance is again fixed:
+formula.random <- Loc ~  -1 + STAU1 + REST1 + Sohlenbrei +  
+  Breaks_Dis +
+  f(str_ID,model="iid",hyper=list(theta = list(initial=log(1e-6),fixed=T))) +
+  f(ANIMAL_ID1,Sohlenbrei,values=1:9,model="iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  f(ANIMAL_ID2,STAU1,values=1:9,model="iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  f(ANIMAL_ID3,REST1,values=1:9,model="iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) 
+
+#' Fit the model
+r.inla.random <- inla(formula.random, family ="Poisson", data=dat, 
+                      control.fixed = list(
+                        mean = mean.beta,
+                        prec = list(default = prec.beta)
+                      )
+)
+
+#' The summary for the posterior distribution of the fixed effects:
+r.inla.random$summary.fixed 
+
+#' Since variances are parameterized and treated as precisions, the summary of the respective posterior distributions is given for the precisions:
+r.inla.random$summary.hyperpar
+
+
+#' Source R functions for calculating posterior means 
+#' and medians of the precisions.
+source("inla_emarginal.R")
+source("inla_mmarginal.R")
+inla_emarginal(r.inla.random)
+inla_mmarginal(r.inla.random)
+
+
+
+############################################
+B1 <- glm(form, 
           family = binomial, data = all_data)
 
 B2 <- glmer(used ~ lat_zone * var_delta_t_z + lat_zone * avg_delta_t_z + lat_zone * avg_cw_z + lat_zone * avg_ws_z + 
@@ -614,3 +662,31 @@ lapply(data_ls_z,function(x){
            D="UN(1)") #D is the structure of the output matrix
 })
 
+
+
+################################
+#following Zuur et al protocol (p. 130).. 
+# strata as a random effect. species as a randomm effect. latitude as an interaction term, because I actually care about it.
+
+#step 1 : no random effects at first
+form <- formula(used ~ lat_zone * delta_t_z + lat_zone * var_delta_t_z + lat_zone * wind_support_z + lat_zone * var_ws_z + 
+                  lat_zone * cross_wind_z + lat_zone * var_cw_z )
+M.1m <- lm(form, 
+           data = all_data)
+
+plot(M.1m, select = c(1))
+E <- rstandard(M.1m)
+boxplot(E ~ species, data = all_data, axes = F) #if all the data clouds around zero, no need to include species as a random effect. but that is not really the case here
+abline(0,0); axis(2)
+X11(); boxplot(E ~ unique_step_id, data = all_data, axes = F) 
+abline(0,0); axis(2)
+
+#step 2: make the same model with gls, to allow for comparisons with the mixed effect models
+M.gls <- gls(form, data = all_data)
+
+#step 3 and 4: choose a variance structure and build model (later try to add latitude as a varident structure. ch. 4 of book)
+#try only random effect on intercept
+M1.lme <- lme(form, random = ~ 1| species, method = "REML", data = all_data)
+
+#step 5: compare models
+anova(M.gls,M1.lme)
