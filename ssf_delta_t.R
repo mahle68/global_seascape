@@ -22,6 +22,8 @@ library(lme4)
 library(MuMIn)
 library(mgcv)
 library(survival)
+library(INLA)
+library(ggregplot) #devtools::install_github("gfalbery/ggregplot")
 
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/")
@@ -485,9 +487,104 @@ mTMB <- glmmTMB:::fitTMB(TMBstr)
 
 gamm(form, control = lmc, method = "REML", weights = varIdent(form = ~1 | species), family = poisson, data = all_data) #muff et al say dont use weigths for ssf
 
-
+############# inla
 ##codes from muff et al supp material https://conservancy.umn.edu/bitstream/handle/11299/204737/Otters_SSF.r?sequence=22&isAllowed=y
+##and https://ourcodingclub.github.io/tutorials/inla/
 
+#my stuff
+#repeat variabels that will be used as random slopes
+all_data <- all_data %>% 
+  mutate(species1 = factor(species),
+         species2 = factor(species),
+         species3 = factor(species),
+         species4 = factor(species),
+         species5 = factor(species),
+         species6 = factor(species),
+         stratum = factor(stratum),
+         lat_zone = factor(lat_zone))
+
+formula2 <- used ~ -1 + lat_zone * delta_t_z + lat_zone * wind_support_z + lat_zone * cross_wind_z +
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + # stratum-specific  intercepts  are  implicitly estimated by modelling them as a random intercept with a fixed variance log(1e-6)(why is it a log?)
+  f(species1, delta_t_z, model = "iid",  # what are values? i thought they correspond to the number of alternative steps, but I get an error when setting it to 1:49
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + #param corresponds to the precision priors assinged to the random slopes. see text
+  f(species2, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species3, cross_wind_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
+
+formula <- used ~ -1 + delta_t_z + wind_support_z + cross_wind_z + var_delta_t_z + var_ws_z +
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + # stratum-specific  intercepts  are  implicitly estimated by modelling them as a random intercept with a fixed variance log(1e-6)(why is it a log?)
+  f(species1, delta_t_z, model = "iid",  # what are values? i thought they correspond to the number of alternative steps, but I get an error when setting it to 1:49
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + #param corresponds to the precision priors assinged to the random slopes. see text
+  f(species2, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species3, cross_wind_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species4, var_delta_t_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species5, var_ws_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
+
+# Set mean and precision for the priors of slope coefficients
+mean.beta <- 0
+prec.beta <- 1e-4 
+
+m1 <- inla(formula, family ="Poisson",  #random effect for species
+           control.fixed = list(
+             mean = mean.beta,
+             prec = list(default = prec.beta)),
+             data = all_data)
+
+#view fixed effects
+m1$summary.fixed
+
+#summary of posterior distrbution
+m1$summary.hyperpar
+
+#plot coefficients
+Efxplot(m1) + theme_tufte() # theme_bw()
+
+#model selection
+resp <- "used" # Response variable
+
+covar <- c("delta_t_z", 
+           "wind_support_z", 
+           "cross_wind_z", 
+           "var_delta_t_z",
+           "var_ws_z")
+
+HostModelSel <- INLAModelSel(resp, covar, "species", "iid", "poisson", all_data)
+
+Finalcovar <- HostModelSel$Removed[[length(HostModelSel$Removed)]] #only var_delta_t gets thrown out
+
+#write the final formula using the final covars
+f_final <- used ~ -1 + delta_t_z + wind_support_z + cross_wind_z + var_ws_z +
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + # stratum-specific  intercepts  are  implicitly estimated by modelling them as a random intercept with a fixed variance log(1e-6)(why is it a log?)
+  f(species1, delta_t_z, model = "iid",  # what are values? i thought they correspond to the number of alternative steps, but I get an error when setting it to 1:49
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + #param corresponds to the precision priors assinged to the random slopes. see text
+  f(species2, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species3, cross_wind_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species5, var_ws_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
+
+#final model
+mf <- inla(f_final, family ="Poisson",  #random effect for species
+           control.fixed = list(
+             mean = mean.beta,
+             prec = list(default = prec.beta)),
+           data = all_data)
+
+summary(mf)
+Efxplot(mf) + theme_bw()
+
+
+
+#from muff:
 #' To fit the model with random slopes in INLA, we need to generate new (but identical) variables of individual ID (ID cannot be used multiple times in the model formula):
 dat$ANIMAL_ID1 <- dat$ANIMAL_ID
 dat$ANIMAL_ID2 <- dat$ANIMAL_ID
@@ -505,6 +602,9 @@ formula.random <- Loc ~  -1 + STAU1 + REST1 + Sohlenbrei +
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) 
 
 #' Fit the model
+#' #' Set mean and precision for the priors of slope coefficients
+mean.beta <- 0
+prec.beta <- 1e-4 
 r.inla.random <- inla(formula.random, family ="Poisson", data=dat, 
                       control.fixed = list(
                         mean = mean.beta,
