@@ -501,9 +501,18 @@ all_data <- all_data %>%
          species5 = factor(species),
          species6 = factor(species),
          stratum = factor(stratum),
-         lat_zone = factor(lat_zone))
+         lat_zone = factor(lat_zone),
+         lat_zone1 = factor(lat_zone),
+         lat_zone2 = factor(lat_zone),
+         lat_zone3 = factor(lat_zone),
+         lat_zone4 = factor(lat_zone),
+         lat_zone5 = factor(lat_zone))
 
-formula2 <- used ~ -1 + lat_zone * delta_t_z + lat_zone * wind_support_z + lat_zone * cross_wind_z +
+#priors are set using hyper. theta is name assigned to the hyperparametr; initial: initial values of the hyperparameter in the interla scale; fixed: whether to keep the hyperparameter fixed
+#prior: name of prior distribution; param: parameter values of prior distribution (mean, precision)
+
+####### random effect for species and latitudinal zone
+formula3 <- used ~ -1 + delta_t_z + wind_support_z + cross_wind_z + var_ws_z +
   f(stratum, model = "iid", 
     hyper = list(theta = list(initial = log(1e-6),fixed = T))) + # stratum-specific  intercepts  are  implicitly estimated by modelling them as a random intercept with a fixed variance log(1e-6)(why is it a log?)
   f(species1, delta_t_z, model = "iid",  # what are values? i thought they correspond to the number of alternative steps, but I get an error when setting it to 1:49
@@ -511,31 +520,32 @@ formula2 <- used ~ -1 + lat_zone * delta_t_z + lat_zone * wind_support_z + lat_z
   f(species2, wind_support_z,  model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(species3, cross_wind_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
-
-formula <- used ~ -1 + delta_t_z + wind_support_z + cross_wind_z + var_delta_t_z + var_ws_z +
-  f(stratum, model = "iid", 
-    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + # stratum-specific  intercepts  are  implicitly estimated by modelling them as a random intercept with a fixed variance log(1e-6)(why is it a log?)
-  f(species1, delta_t_z, model = "iid",  # what are values? i thought they correspond to the number of alternative steps, but I get an error when setting it to 1:49
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + #param corresponds to the precision priors assinged to the random slopes. see text
-  f(species2, wind_support_z,  model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species3, cross_wind_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species4, var_delta_t_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  #f(species4, var_delta_t_z, model = "iid",
+  #  hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(species5, var_ws_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(lat_zone1, delta_t_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  f(lat_zone2, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(lat_zone3, cross_wind_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+ # f(lat_zone4, var_delta_t_z, model = "iid",
+ #  hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(lat_zone5, var_ws_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
 
 # Set mean and precision for the priors of slope coefficients
 mean.beta <- 0
 prec.beta <- 1e-4 
 
-m1 <- inla(formula, family ="Poisson",  #random effect for species
+m1 <- inla(formula3, family ="Poisson",  #random effect for species
            control.fixed = list(
              mean = mean.beta,
              prec = list(default = prec.beta)),
-             data = all_data)
+             data = all_data) #,
+           #control.compute = list(mlik = T,dic = T)) #model evaluation criteria
 
 #view fixed effects
 m1$summary.fixed
@@ -544,7 +554,7 @@ m1$summary.fixed
 m1$summary.hyperpar
 
 #plot coefficients
-Efxplot(m1) + theme_tufte() # theme_bw()
+Efxplot(list(m1,mf)) + theme_bw()
 
 #model selection
 resp <- "used" # Response variable
@@ -577,10 +587,221 @@ mf <- inla(f_final, family ="Poisson",  #random effect for species
            control.fixed = list(
              mean = mean.beta,
              prec = list(default = prec.beta)),
-           data = all_data)
+           data = all_data,
+           control.compute = list(mlik = T,dic = T))
 
 summary(mf)
 Efxplot(mf) + theme_bw()
+
+
+###### include a nested random effect for individuals within species
+#create a model matrix for the nested effect
+#create a var for individual id
+all_data <- all_data %>% 
+  rowwise() %>% 
+  mutate(ind = strsplit(track, "_")[[1]][1]) %>% 
+  as.data.frame()
+
+Z_ind <- as(model.matrix(~ 0 + species:ind, data = all_data), "Matrix") #this notation means that ind is nested in species
+all_data$indinsp <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]})) #create an index variable
+all_data$indinsp2 <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]}))
+all_data$indinsp3 <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]}))
+all_data$indinsp4 <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]}))
+
+formula4 <- used ~ -1 + delta_t_z + wind_support_z + cross_wind_z + var_ws_z +
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + # stratum-specific  intercepts  are  implicitly estimated by modelling them as a random intercept with a fixed variance log(1e-6)(why is it a log?)
+  f(species1, delta_t_z, model = "iid",  # what are values? i thought they correspond to the number of alternative steps, but I get an error when setting it to 1:49
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + #param corresponds to the precision priors assinged to the random slopes. see text
+  f(species2, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species3, cross_wind_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species4, var_ws_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(indinsp, delta_t_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  f(indinsp2, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(indinsp3, cross_wind_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(indinsp4, var_ws_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
+
+m4 <- inla(formula4, family ="Poisson", 
+           control.fixed = list(
+             mean = mean.beta,
+             prec = list(default = prec.beta)),
+           data = all_data) #,
+           #control.compute = list(mlik = T,dic = T))
+#high estimates of precision could indicate that these parameters are poorly identified and may require a more informative prior
+summary(m4)
+
+Efxplot(list(m1,mf,m4)) + theme_bw()
+
+
+#extracting point estimates of the random effects
+m4$summary.random$species1 #species-specific for delta_t
+m4$summary.random$species2 #species-specific for wind support
+m4$summary.random$species3 #species-specific for cross_wind
+m4$summary.random$species4 #species-specific for variance of wind support
+
+
+#### non-scaled vars... leads to many warnings
+#*** WARNING *** Eigenvalue 0 of the Hessian is -19306.1 < 0
+#*** WARNING *** Set this eigenvalue to 16840.4
+#*** WARNING *** This have consequence for the accurancy of
+#*** WARNING *** the approximations; please check!!!
+#*** WARNING *** R-inla: Use option inla(..., control.inla = list(h = h.value), ...) 
+#*** WARNING *** R-inla: to chose a different  `h.value'.
+formula5 <- used ~ -1 + delta_t + wind_support + cross_wind + var_ws +
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + # stratum-specific  intercepts  are  implicitly estimated by modelling them as a random intercept with a fixed variance log(1e-6)(why is it a log?)
+  f(species1, delta_t, model = "iid",  # what are values? i thought they correspond to the number of alternative steps, but I get an error when setting it to 1:49
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + #param corresponds to the precision priors assinged to the random slopes. see text
+  f(species2, wind_support,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species3, cross_wind, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species4, var_ws, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(indinsp, delta_t, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  f(indinsp2, wind_support,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(indinsp3, cross_wind, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(indinsp4, var_ws, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
+
+m5 <- inla(formula5, family ="Poisson", 
+           control.fixed = list(
+             mean = mean.beta,
+             prec = list(default = prec.beta)),
+           data = all_data) 
+
+summary(m5)
+
+Efxplot(list(m1,mf,m4,m5)) + theme_bw()
+
+
+#extracting point estimates of the random effects
+m5$summary.random$species1 #species-specific for delta_t
+m5$summary.random$species2 #species-specific for wind support
+m5$summary.random$species3 #species-specific for cross_wind
+m5$summary.random$species4 #species-specific for variance of wind support
+
+
+####model with smooth terms for latitude. alteratively, use the spde method. will produce narrower CI. also many warnings!!!!!!!
+#without the inla.group, it will be assumed that measurements are regular
+all_data$ws_z_grp <- inla.group(all_data$wind_support_z, n = 20, method = "quantile")
+summary(all_data$ws_z_grp )
+
+all_data$lat_grp <- inla.group(all_data$location.lat, n = 20, method = "quantile")
+summary(all_data$lat_grp )
+
+formula6 <-  used ~ -1 + delta_t_z + wind_support_z + cross_wind_z + var_ws_z +
+  f(lat_grp, model = "rw1", constr = F) + #use rw1 or rw2 for smooth terms
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + # stratum-specific  intercepts  are  implicitly estimated by modelling them as a random intercept with a fixed variance log(1e-6)(why is it a log?)
+  f(species1, delta_t_z, model = "iid",  # what are values? i thought they correspond to the number of alternative steps, but I get an error when setting it to 1:49
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + #param corresponds to the precision priors assinged to the random slopes. see text
+  f(species2, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species3, cross_wind_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species4, var_ws_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(indinsp, delta_t_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  f(indinsp2, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(indinsp3, cross_wind_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(indinsp4, var_ws_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
+
+m6 <- inla(formula6, family ="Poisson", 
+           control.fixed = list(
+             mean = mean.beta,
+             prec = list(default = prec.beta)),
+           data = all_data) #,
+
+Efxplot(list(m1,mf,m4,m6)) + theme_bw()
+
+
+#############
+#including species as a fixed effect. does it make sense though? lol. NO!!
+formula7 <- used ~ -1 + delta_t_z + wind_support_z + cross_wind_z + var_ws_z + species +
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T))) +
+  f(indinsp, delta_t_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  f(indinsp2, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(indinsp3, cross_wind_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(indinsp4, var_ws_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
+
+m7 <- inla(formula7, family ="Poisson", 
+           control.fixed = list(
+             mean = mean.beta,
+             prec = list(default = prec.beta)),
+           data = all_data) #,
+#control.compute = list(mlik = T,dic = T))
+#high estimates of precision could indicate that these parameters are poorly identified and may require a more informative prior
+summary(m7)
+
+Efxplot(list(m1,mf,m4,m7)) + theme_bw()
+
+
+######
+# include random effect of species, nested for individual, and latitudinal zone
+formula8 <- used ~ -1 + delta_t_z + wind_support_z + cross_wind_z + var_ws_z +
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
+  f(species1, delta_t_z, model = "iid",  
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  f(species2, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species3, cross_wind_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species4, var_ws_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(indinsp, delta_t_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  f(indinsp2, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(indinsp3, cross_wind_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(indinsp4, var_ws_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))+
+  f(lat_zone1, delta_t_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  f(lat_zone2, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(lat_zone3, cross_wind_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(lat_zone5, var_ws_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
+
+m8 <- inla(formula8, family ="Poisson", 
+           control.fixed = list(
+             mean = mean.beta,
+             prec = list(default = prec.beta)),
+           data = all_data) #,
+
+summary(m8)
+
+Efxplot(list(m1,mf,m4,m8)) + theme_bw()
+
+
+
+
+
+
+
 
 
 
