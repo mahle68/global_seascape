@@ -24,6 +24,7 @@ library(mgcv)
 library(survival)
 library(INLA)
 library(ggregplot) #devtools::install_github("gfalbery/ggregplot")
+library(maptools)
 
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/")
@@ -1027,3 +1028,40 @@ m4d <- inla(formula4d, family ="Poisson",
 summary(m4b) #improved compared to m4 :D
 
 Efxplot(list(m1,mf,m4,m4b, m4d)) + theme_bw()
+
+
+### spde in inla #####
+#create a mesh
+#consider ocean_sp as mesh
+load("ocean_0_60.RData") #ocean
+load("ssf_input_ann_z.RData") #all_data
+
+ocean_sp <- as(ocean, "Spatial")
+
+pts <- all_data[all_data$used == 1,]
+coordinates(pts) <-~ location.long + location.lat 
+proj4string(pts) <- wgs
+#pts_m <- spTransform(pts, meters_proj)
+
+#define boundary
+bdy <- unionSpatialPolygons(
+  as(ocean_sp, "SpatialPolygons "), rep (1, length(ocean_sp)) #this method produces a uniform mesh
+)
+bdy2 <- bdy@polygons[[1]]@Polygons[[2]]@coords
+
+mesh <- inla.mesh.2d(loc.domain = bdy, max.edge = c(15,50), offset = c(10,25))
+par(mar = c(0, 0, 0, 0))
+plot(mesh, asp = 1, main = "")
+lines(bdy)
+
+mesh_a <- inla.mesh.2d(loc.domain = pts, max.edge = c(5, 10)) #regular grid
+mesh_b <- inla.mesh.2d(pts, max.edge = c(5, 10))
+
+X11();par(mfrow = c(2,1), mar = c(0, 0, 0, 0))
+plot(mesh_a, main = "")
+points(pts, pch = 16, cex = 0.4, col = "orange")
+plot(mesh_b, main = "")
+plot(mesh_b, main = "")
+plot(ocean_sp, add = T
+     )
+
