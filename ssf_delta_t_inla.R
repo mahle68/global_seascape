@@ -551,7 +551,7 @@ ann_cmpl <- ann_cmpl %>%
 
 ann_cmpl$species <- factor(ann_cmpl$species) #for the purpose of plotting
 
-save(ann_cmpl, file = "ssf_input_ann_1hr.RData")
+save(ann_cmpl, file = "ssf_input_ann_1hr_10yrly_dist_coast.RData")
 
 # STEP 6: data exploration#####
 
@@ -654,7 +654,8 @@ mtext("values at timestamp of each point", side = 3, outer = T, cex = 1.3)
 ###conclusion: 
 #correlation
 ann_cmpl %>% 
-  dplyr::select(c("var_ws","var_cw","var_delta_t","wind_support","cross_wind","delta_t","location.lat")) %>% 
+  dplyr::select(c("var_ws_40","var_cw_40","var_delta_t_40","avg_ws_40","avg_cw_40","avg_delta_t_40", 
+                  "wind_support","cross_wind","delta_t","location.lat")) %>% 
   correlate() %>% 
   stretch() %>% 
   filter(abs(r) > 0.6) #correlated: var_cw with location.lat and var_delta_t with location.lat
@@ -662,14 +663,14 @@ ann_cmpl %>%
 #z-transform
 all_data <- ann_cmpl %>% 
   #group_by(species) # z_transform for each species separately. or not? ... huh!
-  mutate_at(c("var_ws","var_cw","var_delta_t","wind_support","cross_wind","delta_t"),
+  mutate_at(c("var_ws_40","var_cw_40","var_delta_t_40","wind_support","cross_wind","delta_t"),
             list(z = ~scale(.))) %>%
   as.data.frame()
 
-save(all_data, file = "ssf_input_ann_z.RData")
+save(all_data, file = "ssf_input_ann_1hr_z.RData")
 
 # STEP 7: modeling#####
-load("ssf_input_ann_z.RData") #all_data
+load("ssf_input_ann_1hr_z.RData") #all_data
 
 #############using glm
 #instantaneous model
@@ -942,7 +943,7 @@ m5$summary.random$species3 #species-specific for cross_wind
 m5$summary.random$species4 #species-specific for variance of wind support
 
 
-####model with smooth terms for latitude. alteratively, use the spde method. will produce narrower CI. also many warnings!!!!!!!
+####model with smooth terms for latitude. alteratively, use the spde method. will produce narrower CI. also many warnings!!!!!!! also, latitude is correlated with some atm vars
 #without the inla.group, it will be assumed that measurements are regular
 all_data$ws_z_grp <- inla.group(all_data$wind_support_z, n = 20, method = "quantile")
 summary(all_data$ws_z_grp )
