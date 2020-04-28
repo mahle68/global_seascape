@@ -7,6 +7,7 @@
 #update April 28. I tried the analysis with 2 hourly intervals, but much of the data was lost, and the boxplots did not show much difference. so, back to 
 #one-hour intervals, but with a tolerance of 30 min (instead of 15)
 #update April 28. tried 10-year avg and variances. very similar to 40 yr values. continue with 40 yr.
+#also distance to coast was added, but boxplots show littel variance
 
 library(tidyverse)
 library(move)
