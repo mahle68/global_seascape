@@ -6,6 +6,7 @@
 #separately and will add to the analysis instead of OHB ptt. for GFB, use data from Open Science paper.
 #update April 28. I tried the analysis with 2 hourly intervals, but much of the data was lost, and the boxplots did not show much difference. so, back to 
 #one-hour intervals, but with a tolerance of 30 min (instead of 15)
+#update April 28. tried 10-year avg and variances. very similar to 40 yr values. continue with 40 yr.
 
 library(tidyverse)
 library(move)
@@ -442,6 +443,14 @@ ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotati
          wind_support= wind_support(u=u925,v=v925,heading=heading),
          cross_wind= cross_wind(u=u925,v=v925,heading=heading))
   
+#add distance to coast (annotate separately)
+ann2 <- ann %>% mutate(timestamp = paste(as.character(date_time),"000",sep = "."))
+colnames(ann2)[c(3,4)] <- c("location-long","location-lat")
+write.csv(ann2, "annotate_only_dist_coast.csv")
+dist <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/annotate_only_dist_coast.csv-4138218756109615066/annotate_only_dist_coast.csv-4138218756109615066.csv",
+                        stringsAsFactors = F) %>% 
+  rename(dist_coast = NASA.Distance.to.Coast..Signed.) %>% 
+  dplyr::select(c(row_id,dist_coast))
 
 # STEP 5: annotate data (prep variance layer)#####
 #prep a dataframe with 41 rows corresponding to 41 years (1979-2019), for each point. then i can calculate variance of delta t over 41 years for each point
@@ -451,7 +460,8 @@ df_40 <- ann %>%
   group_by(row_id) %>% 
   mutate(year = c(1979:2019)) %>%
   ungroup() %>%
-  mutate(timestamp = paste(as.character(date_time),"000",sep = "."))
+  mutate(timestamp = paste(as.character(date_time),"000",sep = ".")) %>% 
+  as.data.frame()
 
 str_sub(df_40$timestamp,1,4) <- df_40$year #replace original year with years from 1979-2019
 colnames(df_40)[c(3,4)] <- c("location-long","location-lat") #rename columns to match movebank format
@@ -479,9 +489,9 @@ write.csv(df_40_5, "ssf_40_all_spp_1hr_5.csv")
 
 
 #calculate variance delta-t for each point and merge with previously annotated data
-ann_40_ls <- list.files("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/all_ssf_40yrs_2hrly/",pattern = ".csv", full.names = T) 
+ann_40_ls <- list.files("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/all_ssf_40yrs_1hr/",pattern = ".csv", full.names = T) 
 
-ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>% 
+ann_40 <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>% 
   reduce(full_join) %>% 
   rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature ,
          t2m = ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.,
@@ -491,19 +501,44 @@ ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>%
          wind_support= wind_support(u=u925,v=v925,heading=heading),
          cross_wind= cross_wind(u=u925,v=v925,heading=heading)) %>% 
   group_by(row_id) %>%   
-  summarise(avg_delta_t = mean(delta_t,na.rm = T), 
-            avg_ws = mean(wind_support, na.rm = T),
-            avg_cw = mean(abs(cross_wind), na.rm = T),
-            avg_u925 = mean(u925,na.rm = T),
-            avg_v925 = mean(v925,na.rm = T),
-            var_delta_t = var(delta_t,na.rm = T),
-            var_u925 = var(u925,na.rm = T),
-            var_v925 = var(v925,na.rm = T),
-            var_ws = var(wind_support, na.rm = T),
-            var_cw = var(abs(cross_wind),na.rm = T)) %>% 
-  full_join(ann, by = "row_id")
+  summarise(avg_delta_t_40 = mean(delta_t,na.rm = T), 
+            avg_ws_40 = mean(wind_support, na.rm = T),
+            avg_cw_40 = mean(abs(cross_wind), na.rm = T),
+            avg_u925_40 = mean(u925,na.rm = T),
+            avg_v925_40 = mean(v925,na.rm = T),
+            var_delta_t_40 = var(delta_t,na.rm = T),
+            var_u925_40 = var(u925,na.rm = T),
+            var_v925_40 = var(v925,na.rm = T),
+            var_ws_40 = var(wind_support, na.rm = T),
+            var_cw_40 = var(abs(cross_wind),na.rm = T)) #%>% 
+  #full_join(ann, by = "row_id")
   
-
+#calculate 10 year averages
+ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>% 
+  reduce(full_join) %>% 
+  rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature ,
+         t2m = ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.,
+         u925 = ECMWF.Interim.Full.Daily.PL.U.Wind,
+         v925 = ECMWF.Interim.Full.Daily.PL.V.Wind) %>% 
+  mutate(delta_t = sst - t2m,
+         wind_support= wind_support(u=u925,v=v925,heading=heading),
+         cross_wind= cross_wind(u=u925,v=v925,heading=heading)) %>% 
+  filter(between(year,2009,2019)) %>% 
+  group_by(row_id) %>% 
+  summarise(avg_delta_t_10 = mean(delta_t,na.rm = T), 
+            avg_ws_10 = mean(wind_support, na.rm = T),
+            avg_cw_10 = mean(abs(cross_wind), na.rm = T),
+            avg_u925_10 = mean(u925,na.rm = T),
+            avg_v925_10 = mean(v925,na.rm = T),
+            var_delta_t_10 = var(delta_t,na.rm = T),
+            var_u925_10 = var(u925,na.rm = T),
+            var_v925_10 = var(v925,na.rm = T),
+            var_ws_10 = var(wind_support, na.rm = T),
+            var_cw_10 = var(abs(cross_wind),na.rm = T)) %>% 
+  full_join(ann, by = "row_id") %>% 
+  full_join(ann_40, by = "row_id") %>% 
+  full_join(dist, by = "row_id")
+  
 
 #assign unique step-ids and species
 ann_cmpl <- ann_cmpl %>% 
@@ -513,13 +548,17 @@ ann_cmpl <- ann_cmpl %>%
          lat_zone = ifelse(location.lat > 30, "tmpz","twz")) %>% 
   as.data.frame()
 
-save(ann_cmpl, file = "ssf_input_ann_2hrly.RData")
+ann_cmpl$species <- factor(ann_cmpl$species) #for the purpose of plotting
+
+save(ann_cmpl, file = "ssf_input_ann_1hr.RData")
 
 # STEP 6: data exploration#####
 
+
 #plot
+
 X11(width = 15, height = 10);par(mfrow= c(3,2), oma = c(0,0,3,0))
-for(i in c("avg_ws", "avg_cw","avg_delta_t")){
+for(i in c("avg_ws_40", "avg_cw_40","avg_delta_t_40")){
   for(j in c("tmpz", "twz")){ 
     
     boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = paste(i,"(",j,")",sep = " "), xlab = "", ylab = "")
@@ -554,8 +593,47 @@ for(i in c("var_ws", "var_cw","var_delta_t")){
 }
 mtext("40-yr variances at each point", side = 3, outer = T, cex = 1.3)
 
+## 10 yr values
+
 X11(width = 15, height = 10);par(mfrow= c(3,2), oma = c(0,0,3,0))
-for(i in c("wind_support", "cross_wind","delta_t")){
+for(i in c("avg_ws_10", "avg_cw_10","avg_delta_t_10")){
+  for(j in c("tmpz", "twz")){ 
+    
+    boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = paste(i,"(",j,")",sep = " "), xlab = "", ylab = "")
+    if(i == "avg_ws" & j == "tmpz"){
+      legend("bottomleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
+    }
+    boxplot(ann_cmpl[ann_cmpl$used == 1 & ann_cmpl$lat_zone == j,i] ~ ann_cmpl[ann_cmpl$used == 1 & ann_cmpl$lat_zone == j,"species"], 
+            xaxt = "n", add = T, boxfill = "orange",
+            boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) - 0.15)
+    boxplot(ann_cmpl[ann_cmpl$used == 0 & ann_cmpl$lat_zone == j,i] ~ ann_cmpl[ann_cmpl$used == 0 & ann_cmpl$lat_zone == j,"species"], 
+            xaxt = "n", add = T, boxfill = "grey",
+            boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) + 0.15)
+  } 
+}
+mtext("10-yr averages at each point", side = 3, outer = T, cex = 1.3)
+
+X11(width = 15, height = 10);par(mfrow= c(3,2), oma = c(0,0,3,0))
+for(i in c("var_ws_10", "var_cw_10","var_delta_t_10")){
+  for(j in c("tmpz", "twz")){ 
+    
+    boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = paste(i,"(",j,")",sep = " "), xlab = "", ylab = "")
+    if(i == "var_ws" & j == "tmpz"){
+      legend("bottomleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
+    }
+    boxplot(ann_cmpl[ann_cmpl$used == 1 & ann_cmpl$lat_zone == j,i] ~ ann_cmpl[ann_cmpl$used == 1 & ann_cmpl$lat_zone == j,"species"], 
+            xaxt = "n", add = T, boxfill = "orange",
+            boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) - 0.15)
+    boxplot(ann_cmpl[ann_cmpl$used == 0 & ann_cmpl$lat_zone == j,i] ~ ann_cmpl[ann_cmpl$used == 0 & ann_cmpl$lat_zone == j,"species"], 
+            xaxt = "n", add = T, boxfill = "grey",
+            boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) + 0.15)
+  } 
+}
+mtext("10-yr variances at each point", side = 3, outer = T, cex = 1.3)
+##
+
+X11(width = 15, height = 10);par(mfrow= c(4,2), oma = c(0,0,3,0))
+for(i in c("wind_support", "cross_wind","delta_t", "dist_coast")){
   for(j in c("tmpz", "twz")){ 
   
   boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = paste(i,"(",j,")",sep = " "), xlab = "", ylab = "")
@@ -572,7 +650,7 @@ for(i in c("wind_support", "cross_wind","delta_t")){
 }
 mtext("values at timestamp of each point", side = 3, outer = T, cex = 1.3)
 
-
+###conclusion: 
 #correlation
 ann_cmpl %>% 
   dplyr::select(c("var_ws","var_cw","var_delta_t","wind_support","cross_wind","delta_t","location.lat")) %>% 
