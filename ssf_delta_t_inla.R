@@ -4,7 +4,8 @@
 #April 2. 2020. Radolfzell, Germany. Elham Nourani, PhD
 #update APril 7. The ptt data (OHB and GFB) are too coarse and after thinning and burstification, no data point remains. So, processed OHB GPS data
 #separately and will add to the analysis instead of OHB ptt. for GFB, use data from Open Science paper.
-
+#update April 28. I tried the analysis with 2 hourly intervals, but much of the data was lost, and the boxplots did not show much difference. so, back to 
+#one-hour intervals, but with a tolerance of 30 min (instead of 15)
 
 library(tidyverse)
 library(move)
@@ -230,13 +231,13 @@ move_ls <- move_ls[-2] #remove GFB
 
 start_time <- Sys.time()
 
-used_av_ls_2hr <- lapply(move_ls,function(group){ #each group is a species/flyway combo
+used_av_ls_1hr <- lapply(move_ls,function(group){ #each group is a species/flyway combo
   #group <- mv_OHB #use this as group
   sp_obj_ls<-lapply(split(group),function(seg){ #sp_obj_ls will have the filtered and bursted segments
     
     #--STEP 1: thin the data to 1-hourly intervals
     seg_th<-seg%>%
-      thinTrackTime(interval = as.difftime(2, units='hours'),
+      thinTrackTime(interval = as.difftime(1, units='hours'),
                     tolerance = as.difftime(30, units='mins')) #the unselected bursts are the large gaps between the selected ones
     #--STEP 2: assign burst IDs (each chunk of track with 1 hour intervals is one burst... longer gaps will divide the brusts) 
     seg_th$selected <- c(as.character(seg_th@burstId),NA) #assign selected as a variable
@@ -302,13 +303,14 @@ used_av_ls_2hr <- lapply(move_ls,function(group){ #each group is a species/flywa
   fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
   
   #plot
-  X11();par(mfrow=c(1,2))
-  hist(sl,freq=F,main="",xlab = "Step length (km)")
-  plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
-                          rate = fit.gamma1$estimate[[2]]), add = TRUE, from = 0.1, to = 150, col = "blue")
-  
-  hist(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]),freq=F,main="",xlab="Turning angles (radians)")
-  plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
+  # X11();par(mfrow=c(1,2))
+  # hist(sl,freq=F,main="",xlab = "Step length (km)")
+  # plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
+  #                         rate = fit.gamma1$estimate[[2]]), add = TRUE, from = 0.1, to = 150, col = "blue")
+  # 
+  # hist(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]),freq=F,main="",xlab="Turning angles (radians)")
+  # plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
+  # 
   
   #--STEP 5: produce alternative steps
   used_av_seg <- lapply(sp_obj_ls, function(seg){ #for each segment
@@ -365,25 +367,22 @@ used_av_ls_2hr <- lapply(move_ls,function(group){ #each group is a species/flywa
     reduce(rbind)
   used_av_seg
 })
-Sys.time() - start_time
+  Sys.time() - start_time
 
-#save(used_av_ls_1hr, file = "ssf_input_all_plus_EF_1hr.RData")
-save(used_av_ls_2hr, file = "ssf_input_all_plus_EF_2hr.RData")
+save(used_av_ls_1hr, file = "ssf_input_all_plus_EF_1hr.RData")
 
-#get rid of alt. points that fall over land (do this later for all alternative poinst together :p)... actually, dont do this now. after track annotation, those with NA for
-#sst can be easily removed :p
 
-X11()
-maps::map("world",xlim = c(-75,-70), ylim = c(15,25),fil = TRUE,col = "ivory") #flyway
-points(burst,col = "grey", pch = 16, cex = 0.5)
-points(previous_point,col = "green", pch = 16, cex = 1)
-points(current_point,col = "red", pch = 16, cex = 1)
-points(rnd_sp, col = "orange", pch = 16, cex = 0.5)
-points(used_point, col = "purple", pch = 16, cex = 1)
-
-plot(current_point)
-text(y~x, labels=row.names(df),data=df, cex=0.5, font=2)
-points(y~x, data = df)
+# X11()
+# maps::map("world",xlim = c(-75,-70), ylim = c(15,25),fil = TRUE,col = "ivory") #flyway
+# points(burst,col = "grey", pch = 16, cex = 0.5)
+# points(previous_point,col = "green", pch = 16, cex = 1)
+# points(current_point,col = "red", pch = 16, cex = 1)
+# points(rnd_sp, col = "orange", pch = 16, cex = 0.5)
+# points(used_point, col = "purple", pch = 16, cex = 1)
+# 
+# plot(current_point)
+# text(y~x, labels=row.names(df),data=df, cex=0.5, font=2)
+# points(y~x, data = df)
 
 #plotting
 #r <- mapview(burst)
@@ -399,42 +398,38 @@ points(y~x, data = df)
 # }) %>% 
 #   reduce(rbind)
 
-used_av_all_2hr <- lapply(used_av_ls_2hr, function(x){
+used_av_all_1hr <- lapply(used_av_ls_1hr, function(x){
   x %>% 
     dplyr::select(c("date_time", "x", "y", "burst_id", "track", "group", "seg_id", "step_id", "used", "heading")) %>% #later, add a unique step id: paste track, seg_id, burst_id and step_id. lol
     mutate(timestamp = paste(as.character(date_time),"000",sep = ".")) %>% 
     as.data.frame()
 }) %>% 
   reduce(rbind)
+# 
+# #have a look
+# X11();par(mfrow= c(2,1), mar = c(0,0,0,0), oma = c(0,0,0,0))
+# maps::map("world",fil = TRUE,col = "grey85", border=NA) 
+# points(used_av_all_1hr[used_av_all_1hr$used == 0,c("x","y")], pch = 16, cex = 0.2, col = "gray55")
+# points(used_av_all_1hr[used_av_all_1hr$used == 1,c("x","y")], pch = 16, cex = 0.2, col = "orange")
+# 
+# maps::map("world",fil = TRUE,col = "grey85", border=NA) 
+# points(used_av_all_1hr2[used_av_all_1hr2$used == 0,c("x","y")], pch = 16, cex = 0.2, col = "gray55")
+# points(used_av_all_1hr2[used_av_all_1hr2$used == 1,c("x","y")], pch = 16, cex = 0.2, col = "orange")
+# 
+# 
+# maps::map("world",fil = TRUE,col = "grey85", border=NA) 
+# points(used_av_all_2hr[used_av_all_2hr$used == 0,c("x","y")], pch = 16, cex = 0.4, col = "gray55")
+# points(used_av_all_2hr[used_av_all_2hr$used == 1,c("x","y")], pch = 16, cex = 0.4, col = "orange")
 
-#have a look
-X11();par(mfrow= c(2,1), mar = c(0,0,0,0), oma = c(0,0,0,0))
-maps::map("world",fil = TRUE,col = "grey85", border=NA) 
-points(used_av_all_1hr[used_av_all_1hr$used == 0,c("x","y")], pch = 16, cex = 0.2, col = "gray55")
-points(used_av_all_1hr[used_av_all_1hr$used == 1,c("x","y")], pch = 16, cex = 0.2, col = "orange")
-
-maps::map("world",fil = TRUE,col = "grey85", border=NA) 
-points(used_av_all_1hr2[used_av_all_1hr2$used == 0,c("x","y")], pch = 16, cex = 0.2, col = "gray55")
-points(used_av_all_1hr2[used_av_all_1hr2$used == 1,c("x","y")], pch = 16, cex = 0.2, col = "orange")
-
-
-maps::map("world",fil = TRUE,col = "grey85", border=NA) 
-points(used_av_all_2hr[used_av_all_2hr$used == 0,c("x","y")], pch = 16, cex = 0.4, col = "gray55")
-points(used_av_all_2hr[used_av_all_2hr$used == 1,c("x","y")], pch = 16, cex = 0.4, col = "orange")
-
-#investigate amount of data
-nrow(used_av_all_1hr)/70
-nrow(used_av_all_2hr)/70
-table(used_av_all_2hr$group)/70
 
 # STEP 4: annotate data (movebank)#####
 #rename columns
-colnames(used_av_all_2hr)[c(2,3)] <- c("location-long","location-lat")
+colnames(used_av_all_1hr)[c(2,3)] <- c("location-long","location-lat")
 
-write.csv(used_av_all_2hr, "ssf_input_all_2hr.csv")
+write.csv(used_av_all_1hr, "ssf_input_all_1hr.csv")
 
 #open annotated data and add wind support and crosswind
-ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/ssf_input_all_2hr.csv-5490771699756627470/ssf_input_all_2hr.csv-5490771699756627470.csv",
+ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/ssf_input_all_1hr.csv-5721307433824845494/ssf_input_all_1hr.csv-5721307433824845494.csv",
                 stringsAsFactors = F) %>%
   drop_na() %>%
   mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
@@ -463,16 +458,25 @@ colnames(df_40)[c(3,4)] <- c("location-long","location-lat") #rename columns to 
 
 #break up into two parts. over 1 million rows
 df_40_1 <- df_40 %>% 
-  slice(1:999999)
-write.csv(df_40_1, "ssf_40_all_spp_2hr_1.csv")
+  slice(1:900000)
+write.csv(df_40_1, "ssf_40_all_spp_1hr_1.csv")
 
 df_40_2 <- df_40 %>% 
-  slice(1000000:nrow(.))
-write.csv(df_40_2, "ssf_40_all_spp_2hr_2.csv")
+  slice(900001:1800000)
+write.csv(df_40_2, "ssf_40_all_spp_1hr_2.csv")
 
-#df_40_3 <- df_40 %>% 
-#  slice(1400001:nrow(.))
-#write.csv(df_40_3, "ssf_40_all_spp_3.csv")
+df_40_3 <- df_40 %>% 
+  slice(1800001:2700000)
+write.csv(df_40_3, "ssf_40_all_spp_1hr_3.csv")
+
+df_40_4 <- df_40 %>% 
+  slice(2700001:3600000)
+write.csv(df_40_4, "ssf_40_all_spp_1hr_4.csv")
+
+df_40_5 <- df_40 %>% 
+  slice(3600001:nrow(.))
+write.csv(df_40_5, "ssf_40_all_spp_1hr_5.csv")
+
 
 #calculate variance delta-t for each point and merge with previously annotated data
 ann_40_ls <- list.files("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/all_ssf_40yrs_2hrly/",pattern = ".csv", full.names = T) 
