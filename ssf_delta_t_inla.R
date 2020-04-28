@@ -33,7 +33,9 @@ setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/")
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
-maps::map("world",fil=TRUE,col="ivory") #flyway
+par(mar(c(0,0,0,0)), oma = c(0,0,0,0))
+maps::map("world",fil = TRUE,col = "grey85", border=NA) 
+maps::map("world", ylim = c(5,35), xlim= c(120,140), fil = TRUE,col = "grey85", border=NA) # east asia
 
 NCEP.loxodrome.na <- function (lat1, lat2, lon1, lon2) {
   deg2rad <- pi/180
@@ -78,8 +80,6 @@ NCEP.loxodrome.na <- function (lat1, lat2, lon1, lon2) {
   return(head)
 }
 
-
-setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/")
 source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 
 
@@ -91,13 +91,13 @@ load("segs_EF_dt.RData") #segs_ann_EF; annotated Greek EF data for autumn (0-60 
 
 segs_OHB_df <- segs_ann_OHB %>% 
   dplyr::select(intersect(colnames(segs_ann),colnames(segs_ann_OHB))) %>% 
-  mutate(group = "OHB_GPS") %>% 
+  mutate(group = "OHB") %>% 
   as("Spatial") %>% 
   as.data.frame()
 
 segs_EF_df <- segs_ann_EF %>% 
   dplyr::select(intersect(colnames(segs_ann),colnames(segs_ann_EF))) %>% 
-  mutate(group = "EF_GR") %>% 
+  mutate(group = "EF") %>% 
   as("Spatial") %>%
   as.data.frame()
 
@@ -117,12 +117,38 @@ segs <- segs_ann %>%
   mutate(unique_seg_id = paste(track, seg_id, sep = "_")) %>% 
   dplyr::arrange(group,seg_id,date_time)
 
+#remove duplicate points
+rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(segs$seg_id),timestamps = segs$date_time,sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
+segs <- segs[-rows_to_delete,]
 
 # STEP 2: interpolation#####
 
-#conver to lines
+##decided not to do it. GFB points are days apart
+#convert to lines
 coordinates(segs) <- ~ x + y 
 proj4string(segs) <- wgs
+
+
+#for each consecutive points, calculate the distance between each set of points
+#interpolate only for GFB
+
+segs_GFB <- segs[segs$species == "GFB",]
+segs_GFB <- spTransform(segs_GFB, meters_proj) %>% 
+  st_as_sf()%>% 
+  group_by(seg_id) %>% 
+  mutate(elapsed_time = (lead(date_time) - date_time)/3600,
+    distance_to_next = sf::st_distance(geometry,lead(geometry, default = empty), by_element = TRUE)) %>% 
+  as.data.frame()
+  
+empty <- st_as_sfc("POINT(EMPTY)")
+lapply(split(segs_GFB, segs_GFB$seg_id), function(x){
+    x %>% 
+    mutate(distance_to_next = sf::st_distance(
+      geometry, 
+      lead(geometry, default = empty), 
+      by_element = TRUE))
+})
+
 
 segs_lines <- lapply(split(segs,segs$unique_seg_id), function(x){  #use segment ID :p
   line <- coords2Lines(x@coords, ID = x$unique_seg_id[1])
@@ -142,10 +168,9 @@ interp_pts_ls<-lapply(segs_lines,function(x){ # add a condition to only interpol
 lapply(interp_pts_ls, points,cex=0.051,pch=16,col="orange")
 
 #add time data
-coordinates(data_f)<-~long+lat
+coordinates(data_f) <-~long+lat
 sea_region<-extent(-7,52,29,46) #only the northern shore
 data_sea_region<-crop(data_f,sea_region) #extract points within the sea area, to save time
-
 
 interp_pts_dt_ls<-rep(list(NA),length(interp_pts_ls)) #create empty list
 names(interp_pts_dt_ls)<-names(interp_pts_ls) #assign names
@@ -190,35 +215,29 @@ for(i in 1:length(interp_pts_ls)){ #for each set of interpolated points, find ov
   
 }
 
-
-
-
-
-#create a move list
-rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(segs$seg_id),timestamps = segs$date_time,sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
-segs <- segs[-rows_to_delete,]
-
-#maybe, unique seg_id needs to be track_id*seg_id? but it seems that seg_id within each species are unique
-
-move_ls<-lapply(split(segs,segs$group),function(x){
-  x<-as.data.frame(x)
-  mv<-move(x = x$x,y = x$y,time = x$date_time,data = x,animal = x$seg_id,proj = wgs)
-  mv
-})
+# STEP 3: prepare alternative steps#####
 
 
 #for each species/flyway, thin the data, burstify, and produce alternative steps
+#create a move list
 
-# STEP 3: prepare alternative steps#####
+move_ls<-lapply(split(segs,segs$group),function(x){
+  x<-as.data.frame(x)
+  mv<-move(x = x$x,y = x$y,time = x$date_time,data = x,animal = x$unique_seg_id,proj = wgs)
+  mv
+})
+move_ls <- move_ls[-2] #remove GFB
+
 start_time <- Sys.time()
-used_av_ls <- lapply(move_ls[-c(1,4)],function(group){ #each group is a species/flyway combo
+
+used_av_ls_2hr <- lapply(move_ls,function(group){ #each group is a species/flyway combo
   #group <- mv_OHB #use this as group
   sp_obj_ls<-lapply(split(group),function(seg){ #sp_obj_ls will have the filtered and bursted segments
     
     #--STEP 1: thin the data to 1-hourly intervals
     seg_th<-seg%>%
-      thinTrackTime(interval = as.difftime(1, units='hours'),
-                    tolerance = as.difftime(15, units='mins')) #the unselected bursts are the large gaps between the selected ones
+      thinTrackTime(interval = as.difftime(2, units='hours'),
+                    tolerance = as.difftime(30, units='mins')) #the unselected bursts are the large gaps between the selected ones
     #--STEP 2: assign burst IDs (each chunk of track with 1 hour intervals is one burst... longer gaps will divide the brusts) 
     seg_th$selected <- c(as.character(seg_th@burstId),NA) #assign selected as a variable
     seg_th$burst_id <-c(1,rep(NA,nrow(seg_th)-1)) #define value for first row
@@ -275,7 +294,7 @@ used_av_ls <- lapply(move_ls[-c(1,4)],function(group){ #each group is a species/
   
   #estimate von Mises parameters for turning angles
   #calculate the averages (mu).steps: 1)convert to radians. step 2) calc mean of the cosines and sines. step 3) take the arctan.OR use circular::mean.circular
-  mu<-mean.circular(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]))
+  mu <- mean.circular(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]))
   kappa <- est.kappa(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]))
   
   #estimate gamma distribution for step lengths and CONVERT TO KM!!! :p
@@ -283,13 +302,13 @@ used_av_ls <- lapply(move_ls[-c(1,4)],function(group){ #each group is a species/
   fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
   
   #plot
-  #X11();par(mfrow=c(1,2))
-  #hist(sl,freq=F,main="",xlab = "Step length (m)")
-  #plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
-  #                        rate = fit.gamma1$estimate[[2]]), add = TRUE, from = 0.1, to = 150, col = "blue")
+  X11();par(mfrow=c(1,2))
+  hist(sl,freq=F,main="",xlab = "Step length (km)")
+  plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
+                          rate = fit.gamma1$estimate[[2]]), add = TRUE, from = 0.1, to = 150, col = "blue")
   
-  #hist(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]),freq=F,main="",xlab="Turning angles (radians)")
-  #plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
+  hist(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]),freq=F,main="",xlab="Turning angles (radians)")
+  plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
   
   #--STEP 5: produce alternative steps
   used_av_seg <- lapply(sp_obj_ls, function(seg){ #for each segment
@@ -305,9 +324,9 @@ used_av_ls <- lapply(move_ls[-c(1,4)],function(group){ #each group is a species/
         previous_point<-burst[this_point-1,] #this is the previous point, for calculating turning angle.
         used_point <- burst[this_point+1,] #this is the next point. the observed end-point of the step starting from the current_point
         
-        #randomly generate 49 step lengths and turning angles
-        rta <- as.vector(rvonmises(n = 49, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
-        rsl<-rgamma(n= 49, shape=fit.gamma1$estimate[[1]], rate= fit.gamma1$estimate[[2]])*1000  #generate random step lengths from the gamma distribution. make sure unit is meters
+        #randomly generate 69 step lengths and turning angles
+        rta <- as.vector(rvonmises(n = 69, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
+        rsl<-rgamma(n= 69, shape=fit.gamma1$estimate[[1]], rate= fit.gamma1$estimate[[2]])*1000  #generate random step lengths from the gamma distribution. make sure unit is meters
         
         #calculate bearing of previous point
         #prev_bearing<-bearing(previous_point,current_point) #am I allowing negatives?... no, right? then use NCEP.loxodrome
@@ -326,10 +345,10 @@ used_av_ls <- lapply(move_ls[-c(1,4)],function(group){ #each group is a species/
         
         #put used and available points together
         df <- used_point@data %>%  
-          slice(rep(row_number(),50)) %>% #paste each row 49 times for the used and alternative steps
+          slice(rep(row_number(),70)) %>% #paste each row 69 times for the used and alternative steps
           mutate(x = c(head(x,1),rnd_sp@coords[,1]),
                  y = c(head(y,1),rnd_sp@coords[,2]),
-                 used = c(1,rep(0,49)))  %>% #one hour after the start point of the step
+                 used = c(1,rep(0,69)))  %>% #one hour after the start point of the step
           rowwise() %>% 
           mutate(heading = NCEP.loxodrome.na(lat1=current_point$y,lat2=y,lon1=current_point$x,lon2= x)) %>% 
           as.data.frame()
@@ -348,8 +367,8 @@ used_av_ls <- lapply(move_ls[-c(1,4)],function(group){ #each group is a species/
 })
 Sys.time() - start_time
 
-save(used_av_ls, file = "ssf_input_all.RData")
-
+#save(used_av_ls_1hr, file = "ssf_input_all_plus_EF_1hr.RData")
+save(used_av_ls_2hr, file = "ssf_input_all_plus_EF_2hr.RData")
 
 #get rid of alt. points that fall over land (do this later for all alternative poinst together :p)... actually, dont do this now. after track annotation, those with NA for
 #sst can be easily removed :p
@@ -370,9 +389,17 @@ points(y~x, data = df)
 #r <- mapview(burst)
 #r + mapview(current_point,color = "red") + mapview(previous_point, color = "green")
 
-# STEP 4: annotate data (movebank)#####
+## investigate whether to use 1 hourly or 2 hourly data: based on spread, amount of data lost
 
-used_av_all <- lapply(used_av_ls, function(x){
+# used_av_all_1hr <- lapply(used_av_ls_1hr, function(x){
+#   x %>% 
+#     dplyr::select(c("date_time", "x", "y", "burst_id", "track", "group", "seg_id", "step_id", "used", "heading")) %>% #later, add a unique step id: paste track, seg_id, burst_id and step_id. lol
+#     mutate(timestamp = paste(as.character(date_time),"000",sep = ".")) %>% 
+#     as.data.frame()
+# }) %>% 
+#   reduce(rbind)
+
+used_av_all_2hr <- lapply(used_av_ls_2hr, function(x){
   x %>% 
     dplyr::select(c("date_time", "x", "y", "burst_id", "track", "group", "seg_id", "step_id", "used", "heading")) %>% #later, add a unique step id: paste track, seg_id, burst_id and step_id. lol
     mutate(timestamp = paste(as.character(date_time),"000",sep = ".")) %>% 
@@ -380,13 +407,34 @@ used_av_all <- lapply(used_av_ls, function(x){
 }) %>% 
   reduce(rbind)
 
-#rename columns
-colnames(used_av_all)[c(2,3)] <- c("location-long","location-lat")
+#have a look
+X11();par(mfrow= c(2,1), mar = c(0,0,0,0), oma = c(0,0,0,0))
+maps::map("world",fil = TRUE,col = "grey85", border=NA) 
+points(used_av_all_1hr[used_av_all_1hr$used == 0,c("x","y")], pch = 16, cex = 0.2, col = "gray55")
+points(used_av_all_1hr[used_av_all_1hr$used == 1,c("x","y")], pch = 16, cex = 0.2, col = "orange")
 
-write.csv(used_av_all, "ssf_input_all.csv")
+maps::map("world",fil = TRUE,col = "grey85", border=NA) 
+points(used_av_all_1hr2[used_av_all_1hr2$used == 0,c("x","y")], pch = 16, cex = 0.2, col = "gray55")
+points(used_av_all_1hr2[used_av_all_1hr2$used == 1,c("x","y")], pch = 16, cex = 0.2, col = "orange")
+
+
+maps::map("world",fil = TRUE,col = "grey85", border=NA) 
+points(used_av_all_2hr[used_av_all_2hr$used == 0,c("x","y")], pch = 16, cex = 0.4, col = "gray55")
+points(used_av_all_2hr[used_av_all_2hr$used == 1,c("x","y")], pch = 16, cex = 0.4, col = "orange")
+
+#investigate amount of data
+nrow(used_av_all_1hr)/70
+nrow(used_av_all_2hr)/70
+table(used_av_all_2hr$group)/70
+
+# STEP 4: annotate data (movebank)#####
+#rename columns
+colnames(used_av_all_2hr)[c(2,3)] <- c("location-long","location-lat")
+
+write.csv(used_av_all_2hr, "ssf_input_all_2hr.csv")
 
 #open annotated data and add wind support and crosswind
-ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/ssf_input_all.csv-6333944159911063870/ssf_input_all.csv-6333944159911063870.csv",
+ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/ssf_input_all_2hr.csv-5490771699756627470/ssf_input_all_2hr.csv-5490771699756627470.csv",
                 stringsAsFactors = F) %>%
   drop_na() %>%
   mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
@@ -415,19 +463,19 @@ colnames(df_40)[c(3,4)] <- c("location-long","location-lat") #rename columns to 
 
 #break up into two parts. over 1 million rows
 df_40_1 <- df_40 %>% 
-  slice(1:700000)
-write.csv(df_40_1, "ssf_40_all_spp_1.csv")
+  slice(1:999999)
+write.csv(df_40_1, "ssf_40_all_spp_2hr_1.csv")
 
 df_40_2 <- df_40 %>% 
-  slice(700001:1400000)
-write.csv(df_40_2, "ssf_40_all_spp_2.csv")
+  slice(1000000:nrow(.))
+write.csv(df_40_2, "ssf_40_all_spp_2hr_2.csv")
 
-df_40_3 <- df_40 %>% 
-  slice(1400001:nrow(.))
-write.csv(df_40_3, "ssf_40_all_spp_3.csv")
+#df_40_3 <- df_40 %>% 
+#  slice(1400001:nrow(.))
+#write.csv(df_40_3, "ssf_40_all_spp_3.csv")
 
 #calculate variance delta-t for each point and merge with previously annotated data
-ann_40_ls <- list.files("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/all_ssf_40yrs",pattern = ".csv", full.names = T) 
+ann_40_ls <- list.files("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/all_ssf_40yrs_2hrly/",pattern = ".csv", full.names = T) 
 
 ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>% 
   reduce(full_join) %>% 
@@ -451,17 +499,17 @@ ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>%
             var_cw = var(abs(cross_wind),na.rm = T)) %>% 
   full_join(ann, by = "row_id")
   
-save(ann_cmpl, file = "ssf_input_ann.RData")
+
 
 #assign unique step-ids and species
-load("ssf_input_ann.RData")
-
 ann_cmpl <- ann_cmpl %>% 
   mutate(stratum = paste(track, seg_id, burst_id, step_id, sep = "_")) %>% 
   rowwise() %>% 
   mutate(species = strsplit(group, "_")[[1]][1],
          lat_zone = ifelse(location.lat > 30, "tmpz","twz")) %>% 
   as.data.frame()
+
+save(ann_cmpl, file = "ssf_input_ann_2hrly.RData")
 
 # STEP 6: data exploration#####
 
