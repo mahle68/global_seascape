@@ -28,6 +28,7 @@ library(survival)
 library(INLA)
 library(ggregplot) #devtools::install_github("gfalbery/ggregplot")
 library(maptools)
+library(brinla)
 
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/")
@@ -1035,6 +1036,11 @@ Efxplot(list(m1,mf,m4,m8)) + theme_bw()
 
 
 ######
+# Set mean and precision for the priors of slope coefficients
+mean.beta <- 0
+prec.beta <- 1e-4 
+
+
 # include random effect of species, nested for individual, and interaction term for wind support and delta t
 formula9 <- used ~ -1 + delta_t_z * wind_support_z + cross_wind_z + var_ws_40_z +
   f(stratum, model = "iid", 
