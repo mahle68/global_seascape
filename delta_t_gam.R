@@ -15,180 +15,43 @@ library(maps)
 library(lubridate)
 library(lutz)
 library(maptools)
-library(multidplyr)
-
+#library(multidplyr)
+library(mapview)
 
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files")
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
 
 
+### STEP 1: open data, spatio-termporal filters #####
+load("processed_era_interim_data/samples_with_local_time_hour.RData") #called df_lt
+X11(); plot(df_lt$lon, df_lt$lat, pch = 16, cex = 0.3, col = "blue")
 
-### STEP 1: open data #####
-load("processed_era_interim_data/samples_with_local_time_hour_no_lakes_ls.RData")
+#ocean layer with no lakes
+ocean <- st_read("/home/enourani/ownCloud/Work/GIS_files/ne_110m_ocean/ne_110m_ocean.shp") %>% 
+  slice(2) %>% #remove the caspian sea
+  st_crop(xmin = -180, ymin = 0, xmax = 180, ymax = 60)
 
-
-###step 1: open data ####
-file_ls<-list.files("ERA_INTERIM_data_global_sampled",".RData",full.names= TRUE) #data processed and sampled in ecmwf_in_R.R
-data_df<-data.frame()
-for(i in file_ls){
-  load(i)
-  data_df<-rbind(data_df,sample)
-  data_df
-}
-
-data_df$year<-year(data_df$date_time)
-
-save(data_df,file="R_files/processed_era_interim_data/samples_df.RData")
-
-
-###step 2: convert hour of day to local time #####
-load("R_files/processed_era_interim_data/samples_df.RData") #called data_df
-
-df_lt<-data_df%>%
-  mutate(tz=tz_lookup_coords(lat,lon))%>%
-  rowwise()%>%
-  mutate(local_date_time= as.character(as.POSIXlt(x=date_time, tz = tz)))%>% #has to be character. otherwise I get an error for POSIXlt format not being supported
-  mutate(local_hour=strsplit(strsplit(local_date_time,split=" ")[[1]][2],split=":")[[1]][1])%>%
-  as.data.frame()#local hour is NA when it should be 00
-
-#conver NA local_hours to 00
-df_lt[is.na(df_lt$local_hour),"local_hour"]<-"00"
-
-save(df_lt,file="R_files/processed_era_interim_data/samples_with_local_time_hour.RData")
-
-
-###step 3: remove lakes! #####
-
-load("R_files/processed_era_interim_data/samples_with_local_time_hour.RData") #called df_lt
-df_lt$group<-rep(1:3, length.out = nrow(df_lt), each = ceiling(nrow(df_lt)/3))
-
-land<-shapefile("C:/Users/mahle/ownCloud/Work/GIS_files/ne_10m_land/ne_10m_land.shp")
-land$land<-1
-land<-unionSpatialPolygons(land,IDs=land2$land)
-land_sf<-st_as_sf(land,crs=wgs)
-
-#start the cluster
-mycl<-makeCluster(detectCores()-1) #define workers :p
-
-clusterExport(mycl, list("land_sf","wgs")) #define the variable that will be used within the function
-
-clusterEvalQ(mycl, { #load packages for each node
-  library(sf)
-  #library(raster)
-  library(dplyr)
-})
-
-
-
-ls_lt_no_lake<-parLapply(cl=mycl,split(df_lt,df_lt$group),function(x){
+data <- df_lt %>% 
+  filter(between(lat,0,60)) %>% #filter for lat zone 0-60
+  as.data.frame() %>% 
+  st_as_sf(coords = c("lon","lat"), crs = wgs) %>% 
+  st_intersection(ocean)#filter out lakes
   
-  df_lt_no_lake<-x%>%
-    st_as_sf(coords = c("lon", "lat"), crs = wgs)%>%
-    mutate(lon=as.numeric(st_coordinates(.)[,"X"]),
-           lat=as.numeric(st_coordinates(.)[,"Y"]))%>%
-    st_difference(y=land_sf)%>%
-    st_drop_geometry()%>%
-    as.data.frame()
-  
-  df_lt_no_lake
-  
-})
+save(data, file = "t_data_0_60.RData")
 
-
-save(ls_lt_no_lake,file="R_files/processed_era_interim_data/samples_with_local_time_hour_no_lakes_ls.RData")
+#keep only daytime
 
 
 
-#remove points that overlap with the lakes
-df_lt_no_lake<-df_lt%>%
-  st_as_sf(coords = c("lon", "lat"), crs = wgs)%>%
-  mutate(lon=as.numeric(st_coordinates(.)[,"X"]),
-         lat=as.numeric(st_coordinates(.)[,"Y"]))%>%
-  st_difference(y=land_sf)%>%
-  st_drop_geometry()%>%
-  as.data.frame()
+#what about temporal filter? keep only daylight....
+
+### STEP 2: make the model #####
+
+#try INLA also :p ... is probably more appropriate
 
 
-#run in parallel
-cluster <- new_cluster(2)
-cluster_assign_each(cluster, filename = c("land", "df_lt"))
-cluster_send(cluster, my_data <- vroom::vroom(filename))
-
-
-sample2<-sample%>%
-  st_as_sf(coords = c("lon", "lat"), crs = wgs)%>%
-  mutate(lon=as.numeric(st_coordinates(.)[,"X"]),
-         lat=as.numeric(st_coordinates(.)[,"Y"]))%>%
-  st_difference(y=land_sf)%>%
-  st_drop_geometry()%>%
-  as.data.frame()
-
-
-
-
-#sample_sf<-sample%>%
-#  st_as_sf(coords = c("lon", "lat"), crs = wgs)%>%
-#  st_difference(y=land_sf)
-
-#land3<-st_read("C:/Users/mahle/ownCloud/Work/GIS_files/ne_10m_land/ne_10m_land.shp")%>%
-#st_combine()
-
-sample_sf<-st_as_sf(coords = c("lon", "lat"), crs = wgs)
-
-sample_years<-sample%>%
-  group_by(year)%>%
-  partition(cluster)
-
-d<-Sys.time()
-sample2<-sample_years%>%
-  st_as_sf(coords = c("lon", "lat"), crs = wgs)%>%
-  mutate(lon=as.numeric(st_coordinates(.)[,"X"]),
-         lat=as.numeric(st_coordinates(.)[,"Y"]))%>%
-  st_difference(y=land_sf)%>%
-  st_drop_geometry()%>%
-  as.data.frame()%>%
-  collect()
-Sys.time()-d
-
-save(sample2,file="R_files/processed_era_interim_data/sample_of_samples_no_lakes.RData")
-
-
-land$land<-1
-land<-unionSpatialPolygons(land,IDs=land$land)
-land_sf<-st_as_sf(land,crs=wgs)
-
-load("R_files/processed_era_interim_data/samples_with_local_time_hour.RData") #called df_lt
-lakes<-shapefile("C:/Users/mahle/ownCloud/Work/GIS_files/world_lakes/ne_10m_lakes.shp")
-lakes2<-st_buffer(lakes, dist = 2)
-
-lakes$lake<-1
-lakes<-unionSpatialPolygons(lakes,IDs=lakes$lake)
-lakes_sf<-st_as_sf(lakes,crs=wgs)
-
-
-save(df_lt_no_lake,file="R_files/processed_era_interim_data/samples_with_local_time_hour_no_lakes.RData") #caspian sea is included :(
-
-
-land_l<-shapefile("C:/Users/mahle/ownCloud/Work/GIS_files/world_continents/continent_ln.shp") #this is a spatial lines file
-land_p<-SpatialLines2PolySet(land_l)%>%
-PolySet2SpatialPolygons()
-
-
-land_pol <- st_polygonize(land)
-land_pol <- as(land_pol, "Spatial") 
-
-land_pol$land<-1
-
-land<-unionSpatialPolygons(land_pol,IDs=land_pol$land)
-
-class(shp_airports)
 ###step 4: modeling-testing-subset testing and training set #####
-
-sample<-df_lt%>%
-  sample_n(3000)
-
-
 
 #include in the model: delta T ~ s(yday)+ s(lon+lat) + local hour of day (as a random effect or just a factor?)
 #perhaps an interaction term for local hour and latitude to take into account seasonality?
