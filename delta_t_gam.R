@@ -17,7 +17,8 @@ library(lutz)
 library(maptools)
 #library(multidplyr)
 library(mapview)
-
+library(parallel)
+library(ggregplot)
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files")
 wgs<-CRS("+proj=longlat +datum=WGS84 +no_defs")
@@ -103,24 +104,71 @@ model3 <- bam(delta_t ~ s(lon,lat, by = as.numeric(sun_elev == "night")) +
 AIC(model3)
 gam.check(model3)
 
+#model with whole dataset. model 3 had the lowest AIC and highest R2 when done on the sample. so let's use it for the entire dataset
 
-b <- Sys.time()
+
 mycl <- makeCluster(9) 
 
-clusterExport(mycl, "data") #define the variable that will be used within the function
+clusterExport(mycl, "data_df") 
 
 clusterEvalQ(mycl, {
   library(mgcv)
-  library(mapview)
 })
 
+b <- Sys.time()
 m1 <- bam(delta_t ~ s(lon,lat, by = as.numeric(sun_elev == "night")) +
                 s(lon,lat, by = as.numeric(sun_elev == "high")) +
                 s(lon,lat, by = as.numeric(sun_elev == "low")) + 
-                s(yday) + factor(sun_elev) , data = data, cluster = mycl)
+                s(yday) + factor(sun_elev) , data = data_df, cluster = mycl) #higher var explained compared to m2 and m3
 
 stopCluster(mycl)
 
+Sys.time() - b
+
+X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
+gam.check(m1)
+
+#scale delta_t
+b <- Sys.time()
+m1b <- bam(scale(delta_t) ~ s(lon,lat, by = as.numeric(sun_elev == "night")) +
+            s(lon,lat, by = as.numeric(sun_elev == "high")) +
+            s(lon,lat, by = as.numeric(sun_elev == "low")) + 
+            s(yday) + factor(sun_elev) , data = data_df, cluster = mycl) #AIC improved compared with m1. or are they even comparable!?
+
+stopCluster(mycl)
+
+Sys.time() - b
+
+
+#scale delta_t and add year
+b <- Sys.time()
+m1c <- gamm(scale(delta_t) ~ s(lon,lat, by = as.numeric(sun_elev == "night")) + #singularity error
+             s(lon,lat, by = as.numeric(sun_elev == "high")) +
+             s(lon,lat, by = as.numeric(sun_elev == "low")) + 
+             s(yday) + factor(sun_elev) , data = data_df, random = list(year = ~1))#cluster = mycl) #higher var explained compared to m2 and m3
+
+stopCluster(mycl)
+
+Sys.time() - b
+
+
+
+b <- Sys.time()
+m2 <- bam(delta_t ~ s(lon,lat) + s(yday,by = factor(sun_elev)) + factor(sun_elev), 
+          data = data_df, cluster = mycl)
+
+m3 <- bam(delta_t ~ s(lon,lat) + s(yday) + factor(sun_elev), 
+          data = data_df, cluster = mycl)
+
+stopCluster(mycl)
+
+Sys.time() - b
+
+X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
+gam.check(m2)
+
+X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
+gam.check(m3)
 
 model<-bam(delta_t ~ s(lon,lat) + s(yday) + factor(local_hour) , data = sample)
 AIC(model) 
@@ -148,7 +196,45 @@ model4 <- gamm(delta_t ~ s(lon,lat) + s(yday,by = factor(hour)) + factor(hour),
 #compare models with Wald test
 anova(model, model2)
 
-#save the best model
+
+
+#######spatial model with inla #####
+#convert lat and long to northing and easting
+#working through this book: https://becarioprecario.bitbucket.io/spde-gitbook/ch-INLA.html
+
+
+
+
+#use default priors (gamma)
+m.rw1 <- inla(delta_t ~ f(lat, model = "rw1",scale.model = TRUE) +
+                f(lon, model = "rw1",scale.model = TRUE) + #scale.model makes the model to be scaled to have an average variance of 1
+                f(yday, model = "rw1",scale.model = TRUE),
+              data = sample,
+              control.compute = list(dic = T, waic = T)) #the marginal likelihood cannot be used for the improper models, as the renormalization constant is not included. See inla.doc("rw1") for details.
+
+#use pc priors. assuming that the probability of the standard deviation being higher than 1 is quite small. so, set u=1 and alpha to 0.01
+pcprior <- list(prec = list(prior = "pc.prec", param = c(1,0.01)))
+
+m.rw2 <- inla(delta_t ~ f(lat, model = "rw1",scale.model = TRUE) +
+  f(lon, model = "rw1",scale.model = TRUE, hyper = pcprior) + 
+  f(yday, model = "ar1", hyper = pcprior), #autoregressive model... higher log likelihoood than rw1 (rw1 can overfit the data)
+  data = sample,
+  control.compute = list(dic = T, waic = T))
+
+Efxplot(m.rw2) + theme_bw() #not useful. only shows fixed effects
+
+#inspect the effect of the PC prior
+post.sigma.s1 <- inla.tmarginal(function (x) sqrt(1 / exp(x)),
+                                m.rw2$internal.marginals.hyperpar[[2]])
+
+post.sigma.s2 <- inla.tmarginal(function (x) sqrt(1 / exp(x)),
+                                m.rw2$internal.marginals.hyperpar[[3]])
+
+#ccompate cpos
+ sum(log(climate.ar1$cpo$cpo))
+## [1] -43.05
+# rw1
+ sum(log(climate.rw1$cpo$cpo))
 
 ##### from previous codes
 
