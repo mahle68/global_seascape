@@ -423,7 +423,7 @@ ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>%
 
 save(ann_cmpl, file = "ssf_input_ann_cmpl_1hr.RData")
 
-# STEP 6: data exploration#####
+# STEP 5: data exploration#####
 
 load("ssf_input_ann_cmpl_1hr.RData") #ann_cmpl
 
@@ -510,9 +510,9 @@ plot(delta_t ~ wind_support, data = all_data[all_data$used ==1,], col= all_data[
 plot(delta_t ~ wind_speed, data = all_data[all_data$used ==1,], col= all_data[all_data$used ==1,"species"], pch = 16, cex = 0.7)
 plot(delta_t ~ abs_cross_wind, data = all_data[all_data$used ==1,], col= all_data[all_data$used ==1,"species"], pch = 16, cex = 0.7)
 
-plot(delta_t ~ wind_support_var, data = all_data[all_data$used ==1,], col= all_data[all_data$used ==1,"species"], pch = 16, cex = 0.7)
-plot(delta_t ~ wind_speed_var, data = all_data[all_data$used ==1,], col= all_data[all_data$used ==1,"species"], pch = 16, cex = 0.7)
-plot(delta_t ~ abs_cross_wind_var, data = all_data[all_data$used ==1,], col= all_data[all_data$used ==1,"species"], pch = 16, cex = 0.7)
+plot(delta_t_var ~ wind_support_var, data = all_data[all_data$used ==1,], col= all_data[all_data$used ==1,"species"], pch = 16, cex = 0.7)
+plot(delta_t_var ~ wind_speed_var, data = all_data[all_data$used ==1,], col= all_data[all_data$used ==1,"species"], pch = 16, cex = 0.7)
+plot(delta_t_var ~ abs_cross_wind_var, data = all_data[all_data$used ==1,], col= all_data[all_data$used ==1,"species"], pch = 16, cex = 0.7)
 
 X11(); par(mfrow=c(3,1))
 plot(delta_t ~ wind_support, data = all_data, col= factor(all_data$used), pch = 16, cex = 0.7)
@@ -544,7 +544,7 @@ all_data <- ann_cmpl %>%
 
 save(all_data, file = "ssf_input_ann_1hr_z.RData")
 
-# STEP 7: modeling#####
+# STEP 6: modeling#####
 load("ssf_input_ann_1hr_z.RData") #all_data
 
 ############# inla
@@ -568,15 +568,17 @@ m3 <- clogit( used ~ delta_t_z * wind_support_z + delta_t_var_z * wind_support_v
                strata(stratum), data = all_data )
 m3 #higher AIC than m2
 
+#choose the osprey as the reference level and compare other vars to that
+all_data$species <- relevel(all_data$species, "O")
 
 #repeat variabels that will be used as random slopes
 all_data <- all_data %>% 
-  mutate(species1 = factor(species),
-         species2 = factor(species),
-         species3 = factor(species),
-         species4 = factor(species),
-         species5 = factor(species),
-         species6 = factor(species),
+  mutate(species1 = species,
+         species2 = species,
+         species3 = species,
+         species4 = species,
+         species5 = species,
+         species6 = species,
          stratum = factor(stratum))
 
 # include a nested random effect for individuals within species
@@ -597,6 +599,33 @@ all_data$indinsp5 <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]}))
 # Set mean and precision for the priors of slope coefficients
 mean.beta <- 0
 prec.beta <- 1e-4 
+
+### species as fixed effect
+formula0 <- used ~ -1 + delta_t_z * wind_support_z +  delta_t_z * cross_wind_z + delta_t_var_z * wind_support_var_z + species +
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T))) +
+  f(indinsp, delta_t_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  f(indinsp2, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(indinsp3, cross_wind_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(indinsp4, wind_support_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(indinsp5, delta_t_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
+
+m0 <- inla(formula0, family ="Poisson", 
+           control.fixed = list(
+             mean = mean.beta,
+             prec = list(default = prec.beta)),
+           data = all_data) #,
+#control.compute = list(mlik = T,dic = T))
+#high estimates of precision could indicate that these parameters are poorly identified and may require a more informative prior
+
+save(m0, file = "inla_models/m_0.RData")
+
+summary(m0)
 
 ###full model
 formula1 <- used ~ -1 + delta_t_z * wind_support_z +  delta_t_z * cross_wind_z + delta_t_var_z * wind_support_var_z +
@@ -1116,32 +1145,6 @@ m6 <- inla(formula6, family ="Poisson",
            data = all_data) #,
 
 Efxplot(list(m1,mf,m4,m6)) + theme_bw()
-
-
-#############
-#including species as a fixed effect. does it make sense though? lol. NO!!
-formula7 <- used ~ -1 + delta_t_z + wind_support_z + cross_wind_z + var_ws_z + species +
-  f(stratum, model = "iid", 
-    hyper = list(theta = list(initial = log(1e-6),fixed = T))) +
-  f(indinsp, delta_t_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
-  f(indinsp2, wind_support_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(indinsp3, cross_wind_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(indinsp4, var_ws_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
-
-m7 <- inla(formula7, family ="Poisson", 
-           control.fixed = list(
-             mean = mean.beta,
-             prec = list(default = prec.beta)),
-           data = all_data) #,
-#control.compute = list(mlik = T,dic = T))
-#high estimates of precision could indicate that these parameters are poorly identified and may require a more informative prior
-summary(m7)
-
-Efxplot(list(m1,mf,m4,m7)) + theme_bw()
 
 
 ######
