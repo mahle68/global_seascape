@@ -9,6 +9,7 @@
 #update April 28. tried 10-year avg and variances. very similar to 40 yr values. continue with 40 yr.
 #also distance to coast was added, but boxplots show littel variance
 #update May 4. tried to include a prior for delta t to show the expectation of postive coefficient. but failed. lol. seek advice!
+#update May 14. include deviation from long-term average as a variable. also, include coef of variation instead of variance... also calculate wind speed
 
 library(tidyverse)
 library(move)
@@ -86,7 +87,11 @@ NCEP.loxodrome.na <- function (lat1, lat2, lon1, lon2) {
 }
 
 source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
-
+rsd <- function(x){
+  cv <- sd(x, na.rm = T)/abs(mean(x, na.rm = T))
+  rsd <- cv*100
+  return(rsd)
+}
 
 # STEP 1: prepare the input data#####
 #open segments (not tracks, because tracks may be intersected by land)
@@ -126,101 +131,7 @@ segs <- segs_ann %>%
 rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(segs$seg_id),timestamps = segs$date_time,sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
 segs <- segs[-rows_to_delete,]
 
-# STEP 2: interpolation#####
-
-##decided not to do it. GFB points are days apart
-#convert to lines
-coordinates(segs) <- ~ x + y 
-proj4string(segs) <- wgs
-
-
-#for each consecutive points, calculate the distance between each set of points
-#interpolate only for GFB
-
-segs_GFB <- segs[segs$species == "GFB",]
-segs_GFB <- spTransform(segs_GFB, meters_proj) %>% 
-  st_as_sf()%>% 
-  group_by(seg_id) %>% 
-  mutate(elapsed_time = (lead(date_time) - date_time)/3600,
-    distance_to_next = sf::st_distance(geometry,lead(geometry, default = empty), by_element = TRUE)) %>% 
-  as.data.frame()
-  
-empty <- st_as_sfc("POINT(EMPTY)")
-lapply(split(segs_GFB, segs_GFB$seg_id), function(x){
-    x %>% 
-    mutate(distance_to_next = sf::st_distance(
-      geometry, 
-      lead(geometry, default = empty), 
-      by_element = TRUE))
-})
-
-
-segs_lines <- lapply(split(segs,segs$unique_seg_id), function(x){  #use segment ID :p
-  line <- coords2Lines(x@coords, ID = x$unique_seg_id[1])
-  proj4string(line) <- wgs
-  line
-})
-
-#interpolate points along sea-crossing sections of trajectories (codes taken from track_analysis12.R from honey buzzard sea-crossing)
-
-interp_pts_ls<-lapply(segs_lines,function(x){ # add a condition to only interpolate if there is a gap of certain amount....
-  n <- as.integer(SpatialLinesLengths(x)/100) #determine the number of points to be interpolated. every 10 km, so the hypotenuse of the 7 km cells
-  interp_pts <- spsample(x, n = n, type = "regular") #find the location of the new points
-  
-  interp_pts
-})
-
-lapply(interp_pts_ls, points,cex=0.051,pch=16,col="orange")
-
-#add time data
-coordinates(data_f) <-~long+lat
-sea_region<-extent(-7,52,29,46) #only the northern shore
-data_sea_region<-crop(data_f,sea_region) #extract points within the sea area, to save time
-
-interp_pts_dt_ls<-rep(list(NA),length(interp_pts_ls)) #create empty list
-names(interp_pts_dt_ls)<-names(interp_pts_ls) #assign names
-
-for(i in 1:length(interp_pts_ls)){ #for each set of interpolated points, find overlapping observed points and extract the datetime
-  pts<-interp_pts_ls[[i]]
-  name<-names(interp_pts_ls)[[i]]
-  observed_pts<-data_sea_region[data_sea_region$track == name,] #extract observation points from the track
-  intersections<-intersect(observed_pts,pts) #extract only points over the sea
-  
-  if(length(intersections) == 0){ #if there are no intersections between the interpolated and observed points, find the nearest neighbor and extract the time
-    pts_dt_ls<-apply(pts@coords,1,function(t){
-      coord<-data.frame(x=t[1],y=t[2])
-      t<-SpatialPoints(coord, proj4string=wgs)
-      proj4string(t)<-wgs
-      nearest_neighbor_indx <- pointDistance(t,observed_pts, lonlat=TRUE) %>%
-        order()%>%
-        head(1) #extract indices for the two points closest to the start point
-      
-      t$dt<-observed_pts@data[nearest_neighbor_indx,"dt"] #extract datetime of the nearest observed point and assign it to the interpolated point
-      t$track<-name
-      t
-    })
-  } else{
-    #for each interpolated point, find the nearest observed point and assing the datetime 
-    #assign the time of the closest point to the interpolated point
-    pts_dt_ls<-apply(pts@coords,1,function(t){
-      coord<-data.frame(x=t[1],y=t[2])
-      t<-SpatialPoints(coord, proj4string=wgs)
-      proj4string(t)<-wgs
-      nearest_neighbor_indx <- pointDistance(t,intersections, lonlat=TRUE) %>%
-        order()%>%
-        head(1) #extract indices for the two points closest to the start point
-      
-      t$dt<-intersections@data[nearest_neighbor_indx,"dt"] #extract datetime of the nearest observed point and assign it to the interpolated point
-      t$track<-name
-      t
-    })
-  }
-  pts_dt<-do.call(rbind, pts_dt_ls)
-  interp_pts_dt_ls[[i]]<-pts_dt
-  
-}
-
-# STEP 3: prepare alternative steps#####
+# STEP 2: prepare alternative steps#####
 
 
 #for each species/flyway, thin the data, burstify, and produce alternative steps
@@ -426,7 +337,7 @@ used_av_all_1hr <- lapply(used_av_ls_1hr, function(x){
 # points(used_av_all_2hr[used_av_all_2hr$used == 1,c("x","y")], pch = 16, cex = 0.4, col = "orange")
 
 
-# STEP 4: annotate data (movebank)#####
+# STEP 3: annotate data (observed time)#####
 #rename columns
 colnames(used_av_all_1hr)[c(2,3)] <- c("location-long","location-lat")
 
@@ -444,18 +355,17 @@ ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotati
   mutate(row_id = row_number(),
          delta_t = sst - t2m,
          wind_support= wind_support(u=u925,v=v925,heading=heading),
-         cross_wind= cross_wind(u=u925,v=v925,heading=heading))
-  
-#add distance to coast (annotate separately)
-ann2 <- ann %>% mutate(timestamp = paste(as.character(date_time),"000",sep = "."))
-colnames(ann2)[c(3,4)] <- c("location-long","location-lat")
-write.csv(ann2, "annotate_only_dist_coast.csv")
-dist <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/annotate_only_dist_coast.csv-4138218756109615066/annotate_only_dist_coast.csv-4138218756109615066.csv",
-                        stringsAsFactors = F) %>% 
-  rename(dist_coast = NASA.Distance.to.Coast..Signed.) %>% 
-  dplyr::select(c(row_id,dist_coast))
+         cross_wind= cross_wind(u=u925,v=v925,heading=heading),
+         wind_speed = sqrt(u925^2 + v925^2), # Pythagorean Theorem
+         stratum = paste(track, seg_id, burst_id, step_id, sep = "_"),
+         lat_zone = ifelse(location.lat > 30, "tmpz","twz")) %>% 
+  rowwise() %>% 
+  mutate(species = strsplit(group, "_")[[1]][1]) %>% 
+  ungroup() %>% 
+  as.data.frame()
+          
 
-# STEP 5: annotate data (prep variance layer)#####
+# STEP 4: annotate data (40 year data)#####
 #prep a dataframe with 41 rows corresponding to 41 years (1979-2019), for each point. then i can calculate variance of delta t over 41 years for each point
 df_40 <- ann %>% 
   dplyr::select(-c(v925,u925,t2m,sst,delta_t)) %>% 
@@ -491,82 +401,43 @@ df_40_5 <- df_40 %>%
 write.csv(df_40_5, "ssf_40_all_spp_1hr_5.csv")
 
 
-#calculate variance delta-t for each point and merge with previously annotated data
+#calculate long-term metrics and merge with previously annotated data
 ann_40_ls <- list.files("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/all_ssf_40yrs_1hr/",pattern = ".csv", full.names = T) 
 
-ann_40 <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>% 
-  reduce(full_join) %>% 
-  rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature ,
-         t2m = ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.,
-         u925 = ECMWF.Interim.Full.Daily.PL.U.Wind,
-         v925 = ECMWF.Interim.Full.Daily.PL.V.Wind) %>% 
-  mutate(delta_t = sst - t2m,
-         wind_support= wind_support(u=u925,v=v925,heading=heading),
-         cross_wind= cross_wind(u=u925,v=v925,heading=heading)) %>% 
-  group_by(row_id) %>%   
-  summarise(avg_delta_t_40 = mean(delta_t,na.rm = T), 
-            avg_ws_40 = mean(wind_support, na.rm = T),
-            avg_cw_40 = mean(abs(cross_wind), na.rm = T),
-            avg_u925_40 = mean(u925,na.rm = T),
-            avg_v925_40 = mean(v925,na.rm = T),
-            var_delta_t_40 = var(delta_t,na.rm = T),
-            var_u925_40 = var(u925,na.rm = T),
-            var_v925_40 = var(v925,na.rm = T),
-            var_ws_40 = var(wind_support, na.rm = T),
-            var_cw_40 = var(abs(cross_wind),na.rm = T)) #%>% 
-  #full_join(ann, by = "row_id")
-  
-#calculate 10 year averages
 ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>% 
   reduce(full_join) %>% 
-  rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature ,
+  rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature,
          t2m = ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.,
          u925 = ECMWF.Interim.Full.Daily.PL.U.Wind,
          v925 = ECMWF.Interim.Full.Daily.PL.V.Wind) %>% 
   mutate(delta_t = sst - t2m,
          wind_support= wind_support(u=u925,v=v925,heading=heading),
-         cross_wind= cross_wind(u=u925,v=v925,heading=heading)) %>% 
-  filter(between(year,2009,2019)) %>% 
+         cross_wind= cross_wind(u=u925,v=v925,heading=heading),
+         abs_cross_wind = abs(cross_wind(u=u925,v=v925,heading=heading)),
+         wind_speed = sqrt(u925^2 + v925^2)) %>% 
   group_by(row_id) %>% 
-  summarise(avg_delta_t_10 = mean(delta_t,na.rm = T), 
-            avg_ws_10 = mean(wind_support, na.rm = T),
-            avg_cw_10 = mean(abs(cross_wind), na.rm = T),
-            avg_u925_10 = mean(u925,na.rm = T),
-            avg_v925_10 = mean(v925,na.rm = T),
-            var_delta_t_10 = var(delta_t,na.rm = T),
-            var_u925_10 = var(u925,na.rm = T),
-            var_v925_10 = var(v925,na.rm = T),
-            var_ws_10 = var(wind_support, na.rm = T),
-            var_cw_10 = var(abs(cross_wind),na.rm = T)) %>% 
+  summarise_at(c("delta_t", "wind_speed", "wind_support", "abs_cross_wind", "u925", "v925"), #before calculating these, investigate why we have NAs??
+               list(avg = ~mean(., na.rm = T), var = ~var(., na.rm = T), rsd = ~rsd(.))) %>% 
   full_join(ann, by = "row_id") %>% 
-  full_join(ann_40, by = "row_id") %>% 
-  full_join(dist, by = "row_id")
-  
-
-#assign unique step-ids and species
-ann_cmpl <- ann_cmpl %>% 
-  mutate(stratum = paste(track, seg_id, burst_id, step_id, sep = "_")) %>% 
-  rowwise() %>% 
-  mutate(species = strsplit(group, "_")[[1]][1],
-         lat_zone = ifelse(location.lat > 30, "tmpz","twz")) %>% 
   as.data.frame()
 
-ann_cmpl$species <- factor(ann_cmpl$species) #for the purpose of plotting
-
-save(ann_cmpl, file = "ssf_input_ann_1hr_10yrly_dist_coast.RData")
+save(ann_cmpl, file = "ssf_input_ann_cmpl_1hr.RData")
 
 # STEP 6: data exploration#####
 
-load("ssf_input_ann_1hr_10yrly_dist_coast.RData") #ann_cmpl
+load("ssf_input_ann_cmpl_1hr.RData") #ann_cmpl
+
+#for plotting
+ann_cmpl$species <- factor(ann_cmpl$species)
+ann_cmpl$abs_cross_wind <- abs(ann_cmpl$cross_wind)
 
 #plot
-
-X11(width = 15, height = 10);par(mfrow= c(3,2), oma = c(0,0,3,0))
-for(i in c("avg_ws_40", "avg_cw_40","avg_delta_t_40")){
+X11(width = 15, height = 10);par(mfrow= c(4,2), oma = c(0,0,3,0))
+for(i in c("wind_speed_avg", "abs_cross_wind_avg","delta_t_avg", "wind_support_avg")){
   for(j in c("tmpz", "twz")){ 
     
     boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = paste(i,"(",j,")",sep = " "), xlab = "", ylab = "")
-    if(i == "avg_ws" & j == "tmpz"){
+    if(i == "wind_speed_avg" & j == "tmpz"){
       legend("bottomleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
     }
     boxplot(ann_cmpl[ann_cmpl$used == 1 & ann_cmpl$lat_zone == j,i] ~ ann_cmpl[ann_cmpl$used == 1 & ann_cmpl$lat_zone == j,"species"], 
@@ -579,12 +450,12 @@ for(i in c("avg_ws_40", "avg_cw_40","avg_delta_t_40")){
 }
 mtext("40-yr averages at each point", side = 3, outer = T, cex = 1.3)
 
-X11(width = 15, height = 10);par(mfrow= c(3,2), oma = c(0,0,3,0))
-for(i in c("var_ws", "var_cw","var_delta_t")){
+X11(width = 15, height = 10);par(mfrow= c(4,2), oma = c(0,0,3,0))
+for(i in c("wind_speed_var", "abs_cross_wind_var","delta_t_var", "wind_support_var")){
   for(j in c("tmpz", "twz")){ 
     
     boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = paste(i,"(",j,")",sep = " "), xlab = "", ylab = "")
-    if(i == "var_ws" & j == "tmpz"){
+    if(i == "wind_speed_var" & j == "tmpz"){
       legend("bottomleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
     }
     boxplot(ann_cmpl[ann_cmpl$used == 1 & ann_cmpl$lat_zone == j,i] ~ ann_cmpl[ann_cmpl$used == 1 & ann_cmpl$lat_zone == j,"species"], 
@@ -597,14 +468,12 @@ for(i in c("var_ws", "var_cw","var_delta_t")){
 }
 mtext("40-yr variances at each point", side = 3, outer = T, cex = 1.3)
 
-## 10 yr values
-
-X11(width = 15, height = 10);par(mfrow= c(3,2), oma = c(0,0,3,0))
-for(i in c("avg_ws_10", "avg_cw_10","avg_delta_t_10")){
+X11(width = 15, height = 10);par(mfrow= c(4,2), oma = c(0,0,3,0))
+for(i in c("wind_speed_rsd", "abs_cross_wind_rsd","delta_t_rsd", "wind_support_rsd")){
   for(j in c("tmpz", "twz")){ 
     
     boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = paste(i,"(",j,")",sep = " "), xlab = "", ylab = "")
-    if(i == "avg_ws" & j == "tmpz"){
+    if(i == "wind_speed_rsd" & j == "tmpz"){
       legend("bottomleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
     }
     boxplot(ann_cmpl[ann_cmpl$used == 1 & ann_cmpl$lat_zone == j,i] ~ ann_cmpl[ann_cmpl$used == 1 & ann_cmpl$lat_zone == j,"species"], 
@@ -615,33 +484,14 @@ for(i in c("avg_ws_10", "avg_cw_10","avg_delta_t_10")){
             boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) + 0.15)
   } 
 }
-mtext("10-yr averages at each point", side = 3, outer = T, cex = 1.3)
-
-X11(width = 15, height = 10);par(mfrow= c(3,2), oma = c(0,0,3,0))
-for(i in c("var_ws_10", "var_cw_10","var_delta_t_10")){
-  for(j in c("tmpz", "twz")){ 
-    
-    boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = paste(i,"(",j,")",sep = " "), xlab = "", ylab = "")
-    if(i == "var_ws" & j == "tmpz"){
-      legend("bottomleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
-    }
-    boxplot(ann_cmpl[ann_cmpl$used == 1 & ann_cmpl$lat_zone == j,i] ~ ann_cmpl[ann_cmpl$used == 1 & ann_cmpl$lat_zone == j,"species"], 
-            xaxt = "n", add = T, boxfill = "orange",
-            boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) - 0.15)
-    boxplot(ann_cmpl[ann_cmpl$used == 0 & ann_cmpl$lat_zone == j,i] ~ ann_cmpl[ann_cmpl$used == 0 & ann_cmpl$lat_zone == j,"species"], 
-            xaxt = "n", add = T, boxfill = "grey",
-            boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) + 0.15)
-  } 
-}
-mtext("10-yr variances at each point", side = 3, outer = T, cex = 1.3)
-##
+mtext("40-yr relative standard deviation (%) at each point", side = 3, outer = T, cex = 1.3)
 
 X11(width = 15, height = 10);par(mfrow= c(4,2), oma = c(0,0,3,0))
-for(i in c("wind_support", "cross_wind","delta_t", "dist_coast")){
+for(i in c("wind_speed", "abs_cross_wind","delta_t", "wind_support")){
   for(j in c("tmpz", "twz")){ 
   
   boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = paste(i,"(",j,")",sep = " "), xlab = "", ylab = "")
-  if(i == "wind_support" & j == "tmpz"){
+  if(i == "wind_speed" & j == "tmpz"){
     legend("bottomleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
   }
     boxplot(ann_cmpl[ann_cmpl$used == 1 & ann_cmpl$lat_zone == j,i] ~ ann_cmpl[ann_cmpl$used == 1 & ann_cmpl$lat_zone == j,"species"], 
@@ -654,21 +504,43 @@ for(i in c("wind_support", "cross_wind","delta_t", "dist_coast")){
 }
 mtext("values at timestamp of each point", side = 3, outer = T, cex = 1.3)
 
+#plot relationship between wind and delta t
+X11(); par(mfrow=c(3,2))
+plot(delta_t ~ wind_support, data = all_data[all_data$used ==1,], col= all_data[all_data$used ==1,"species"], pch = 16, cex = 0.7)
+plot(delta_t ~ wind_speed, data = all_data[all_data$used ==1,], col= all_data[all_data$used ==1,"species"], pch = 16, cex = 0.7)
+plot(delta_t ~ abs_cross_wind, data = all_data[all_data$used ==1,], col= all_data[all_data$used ==1,"species"], pch = 16, cex = 0.7)
+
+plot(delta_t ~ wind_support_var, data = all_data[all_data$used ==1,], col= all_data[all_data$used ==1,"species"], pch = 16, cex = 0.7)
+plot(delta_t ~ wind_speed_var, data = all_data[all_data$used ==1,], col= all_data[all_data$used ==1,"species"], pch = 16, cex = 0.7)
+plot(delta_t ~ abs_cross_wind_var, data = all_data[all_data$used ==1,], col= all_data[all_data$used ==1,"species"], pch = 16, cex = 0.7)
+
+X11(); par(mfrow=c(3,1))
+plot(delta_t ~ wind_support, data = all_data, col= factor(all_data$used), pch = 16, cex = 0.7)
+plot(delta_t ~ wind_speed, data = all_data, col= factor(all_data$used), pch = 16, cex = 0.7)
+plot(delta_t ~ abs_cross_wind, data = all_data, col = factor(all_data$used), pch = 16, cex = 0.7)
+
+X11(); par(mfrow=c(3,1))
+plot(delta_t ~ wind_support_var, data = all_data, col=factor(all_data$used), pch = 16, cex = 0.7)
+plot(delta_t ~ wind_speed_var, data = all_data, col= factor(all_data$used), pch = 16, cex = 0.7)
+plot(delta_t ~ abs_cross_wind_var, data = all_data, col= factor(all_data$used), pch = 16, cex = 0.7)
+
+
+
 ###conclusion: 
 #correlation
 ann_cmpl %>% 
-  dplyr::select(c("var_ws_40","var_cw_40","var_delta_t_40","avg_ws_40","avg_cw_40","avg_delta_t_40", 
-                  "wind_support","cross_wind","delta_t","location.lat")) %>% 
+  dplyr::select(c(2:5,8:11,36:39)) %>% 
   correlate() %>% 
   stretch() %>% 
   filter(abs(r) > 0.6) #correlated: var_cw with location.lat and var_delta_t with location.lat. avg delta_t and delta_t. avg_ws and var_delta_t
+#correlated: wind support var & wind speed var and cross wind var, crosswind var and wind speed var.  
 
 #z-transform
 all_data <- ann_cmpl %>% 
-  #group_by(species) # z_transform for each species separately. or not? ... huh!
-  mutate_at(c("avg_ws_40","avg_cw_40","avg_delta_t_40", "var_ws_40","var_cw_40","var_delta_t_40","wind_support","cross_wind","delta_t"),
+  #group_by(species) 
+  mutate_at(c(2:5,8:11,36:39),
             list(z = ~scale(.))) %>%
-  as.data.frame()
+  as.data.frame() 
 
 save(all_data, file = "ssf_input_ann_1hr_z.RData")
 
@@ -682,6 +554,19 @@ load("ssf_input_ann_1hr_z.RData") #all_data
 #priors are set using hyper. theta is name assigned to the hyperparametr; initial: initial values of the hyperparameter in the interla scale; fixed: whether to keep the hyperparameter fixed
 #prior: name of prior distribution; param: parameter values of prior distribution (mean, precision)
 #lat zone is correlated with other variables. dont inlcude
+
+#quick and dirty clogit
+m1 <- clogit(used ~ delta_t_z * wind_support_z + cross_wind_z + delta_t_z * wind_speed_z + 
+                        strata(stratum), data = all_data )
+m1
+
+m2 <- clogit(used ~ delta_t_z * wind_support_z + delta_t_z * cross_wind_z + delta_t_var_z * wind_support_var_z + 
+               strata(stratum), data = all_data )
+m2 #lower AIC
+
+m3 <- clogit( used ~ delta_t_z * wind_support_z + delta_t_var_z * wind_support_var_z +
+               strata(stratum), data = all_data )
+m3 #higher AIC than m2
 
 
 #repeat variabels that will be used as random slopes
@@ -707,13 +592,14 @@ all_data$indinsp <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]})) #c
 all_data$indinsp2 <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]}))
 all_data$indinsp3 <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]}))
 all_data$indinsp4 <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]}))
+all_data$indinsp5 <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]}))
 
 # Set mean and precision for the priors of slope coefficients
 mean.beta <- 0
 prec.beta <- 1e-4 
 
 ###full model
-formula1 <- used ~ -1 + delta_t_z * wind_support_z + cross_wind_z + var_delta_t_40_z * var_ws_40_z +
+formula1 <- used ~ -1 + delta_t_z * wind_support_z +  delta_t_z * cross_wind_z + delta_t_var_z * wind_support_var_z +
   f(stratum, model = "iid", 
     hyper = list(theta = list(initial = log(1e-6),fixed = T))) + # stratum-specific  intercepts  are  implicitly estimated by modelling them as a random intercept with a fixed variance log(1e-6)(why is it a log?)
   f(species1, delta_t_z, model = "iid",  # what are values? i thought they correspond to the number of alternative steps, but I get an error when setting it to 1:49
@@ -722,7 +608,9 @@ formula1 <- used ~ -1 + delta_t_z * wind_support_z + cross_wind_z + var_delta_t_
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(species3, cross_wind_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species4, var_ws_40_z, model = "iid",
+  f(species4, wind_support_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species5, delta_t_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(indinsp, delta_t_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
@@ -730,7 +618,9 @@ formula1 <- used ~ -1 + delta_t_z * wind_support_z + cross_wind_z + var_delta_t_
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(indinsp3, cross_wind_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(indinsp4, var_ws_40_z, model = "iid",
+  f(indinsp4, wind_support_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(indinsp5, delta_t_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
 
 m1 <- inla(formula1, family ="Poisson", 
@@ -750,7 +640,7 @@ bri.hyperpar.plot(m1) #summary of hyperparameters in SD scale (converts precisio
 Efxplot(m1) + theme_bw()
 
 
-##remove crosswind. add interaction with lat zone.... results look weird
+  ##remove crosswind. add interaction with lat zone.... results look weird
 formula2b <- used ~ -1 + delta_t_z * lat_zone + wind_support_z + var_delta_t_40_z * lat_zone + var_ws_40_z +
   f(stratum, model = "iid", 
     hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
