@@ -10,6 +10,7 @@
 #also distance to coast was added, but boxplots show littel variance
 #update May 4. tried to include a prior for delta t to show the expectation of postive coefficient. but failed. lol. seek advice!
 #update May 14. include deviation from long-term average as a variable. also, include coef of variation instead of variance... also calculate wind speed
+#update May 20: I don't need to nest individuals within species, because all individuals have unique IDs and IDs are not repeated across species
 
 library(tidyverse)
 library(move)
@@ -571,6 +572,12 @@ m3 #higher AIC than m2
 #choose the osprey as the reference level and compare other vars to that
 all_data$species <- relevel(all_data$species, "O")
 
+#create a var for individual id
+all_data <- all_data %>% 
+  rowwise() %>% 
+  mutate(ind = strsplit(track, "_")[[1]][1]) %>% 
+  as.data.frame()
+
 #repeat variabels that will be used as random slopes
 all_data <- all_data %>% 
   mutate(species1 = species,
@@ -579,28 +586,34 @@ all_data <- all_data %>%
          species4 = species,
          species5 = species,
          species6 = species,
+         ind1 = factor(ind),
+         ind2 = factor(ind),
+         ind3 = factor(ind),
+         ind4 = factor(ind),
+         ind5 = factor(ind),
+         ind6 = factor(ind),
+         lat_zone1 = factor(lat_zone),
+         lat_zone2 = factor(lat_zone),
+         lat_zone3 = factor(lat_zone),
+         lat_zone4 = factor(lat_zone),
+         lat_zone5 = factor(lat_zone),
+         lat_zone6 = factor(lat_zone),
          stratum = factor(stratum))
 
 # include a nested random effect for individuals within species
-#create a var for individual id
-all_data <- all_data %>% 
-  rowwise() %>% 
-  mutate(ind = strsplit(track, "_")[[1]][1]) %>% 
-  as.data.frame()
-
 #create a model matrix for the nested effect
-Z_ind <- as(model.matrix(~ 0 + species:ind, data = all_data), "Matrix") #this notation means that ind is nested in species
-all_data$indinsp <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]})) #create an index variable
-all_data$indinsp2 <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]}))
-all_data$indinsp3 <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]}))
-all_data$indinsp4 <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]}))
-all_data$indinsp5 <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]}))
+# Z_ind <- as(model.matrix(~ 0 + species:ind, data = all_data), "Matrix") #this notation means that ind is nested in species
+# all_data$indinsp <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]})) #create an index variable
+# all_data$indinsp2 <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]}))
+# all_data$indinsp3 <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]}))
+# all_data$indinsp4 <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]}))
+# all_data$indinsp5 <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]}))
 
 # Set mean and precision for the priors of slope coefficients
 mean.beta <- 0
 prec.beta <- 1e-4 
 
-### species as fixed effect
+### species as fixed effect. seems pointless and unnecessary
 formula0 <- used ~ -1 + delta_t_z * wind_support_z +  delta_t_z * cross_wind_z + delta_t_var_z * wind_support_var_z + species +
   f(stratum, model = "iid", 
     hyper = list(theta = list(initial = log(1e-6),fixed = T))) +
@@ -656,12 +669,16 @@ m1 <- inla(formula1, family ="Poisson",
            control.fixed = list(
              mean = mean.beta,
              prec = list(default = prec.beta)),
-           data = all_data) #,
-#control.compute = list(mlik = T,dic = T))
+           data = all_data,
+           control.compute = list(openmp.strategy="huge"),
+           num.threads = 10,
+           control.compute = list(mlik = T,dic = T, waic = T)) #,
+
 #high estimates of precision could indicate that these parameters are poorly identified and may require a more informative prior
 
 save(m1, file = "inla_models/full_m.RData")
 
+load("inla_models/full_m.RData")
 summary(m1)
 
 #plot the posterior densities
@@ -669,55 +686,85 @@ bri.hyperpar.plot(m1) #summary of hyperparameters in SD scale (converts precisio
 Efxplot(m1) + theme_bw()
 
 
-  ##remove crosswind. add interaction with lat zone.... results look weird
-formula2b <- used ~ -1 + delta_t_z * lat_zone + wind_support_z + var_delta_t_40_z * lat_zone + var_ws_40_z +
+###full modelb. mlik does not improve. plotting (inla_plots.R) show no sig difference between the two lat zones.
+formula1b <- used ~ -1 + delta_t_z * wind_support_z +  delta_t_z * cross_wind_z + delta_t_var_z * wind_support_var_z +
   f(stratum, model = "iid", 
     hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
   f(species1, delta_t_z, model = "iid", 
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(species2, wind_support_z,  model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species4, var_ws_40_z, model = "iid",
+  f(species3, cross_wind_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(indinsp, delta_t_z, model = "iid",
+  f(species4, wind_support_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species5, delta_t_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(ind1, delta_t_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
-  f(indinsp2, wind_support_z,  model = "iid",
+  f(ind2, wind_support_z,  model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(indinsp4, var_ws_40_z, model = "iid",
+  f(ind3, cross_wind_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(ind4, wind_support_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(ind5, delta_t_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))+
+  f(lat_zone1, delta_t_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  f(lat_zone2, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(lat_zone3, cross_wind_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(lat_zone4, wind_support_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(lat_zone5, delta_t_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
 
-m2b <- inla(formula2b, family ="Poisson", 
+m1b <- inla(formula1b, family ="Poisson", 
            control.fixed = list(
              mean = mean.beta,
              prec = list(default = prec.beta)),
-           data = all_data)
+           data = all_data,
+           control.compute = list(openmp.strategy="huge"),
+           num.threads = 10, 
+           control.compute = list(mlik = T,dic = T, waic = T))
 
-save(m2b, file = "inla_models/m2b.RData")
+save(m1b, file = "inla_models/full_mb.RData")
 
-Efxplot(list(m1,m2,m2b)) + theme_bw()
+Efxplot(list(m1,m1b)) + theme_bw()
 
 ##remove crosswind. improves compared to m1
-formula2b <- used ~ -1 + delta_t_z *  wind_support_z + var_delta_t_40_z * var_ws_40_z +
+formula2 <- used ~ -1 + delta_t_z * wind_support_z + delta_t_var_z * wind_support_var_z +
   f(stratum, model = "iid", 
     hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
   f(species1, delta_t_z, model = "iid", 
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(species2, wind_support_z,  model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species4, var_ws_40_z, model = "iid",
+  f(species4, wind_support_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(indinsp, delta_t_z, model = "iid",
+  f(species5, delta_t_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(ind1, delta_t_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
-  f(indinsp2, wind_support_z,  model = "iid",
+  f(ind2, wind_support_z,  model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(indinsp4, var_ws_40_z, model = "iid",
+  f(ind4, wind_support_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(ind5, delta_t_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
 
+b <- Sys.time()
 m2 <- inla(formula2, family ="Poisson", 
            control.fixed = list(
              mean = mean.beta,
              prec = list(default = prec.beta)),
-           data = all_data)
+           data = all_data,
+           num.threads = 10, 
+           control.compute = list(mlik = T, dic = T, waic = T, openmp.strategy="huge"))
+
+Sys.time() - b
 
 save(m2, file = "inla_models/m2.RData")
 
@@ -1011,102 +1058,8 @@ summary(mf)
 Efxplot(mf) + theme_bw()
 
 
-###### include a nested random effect for individuals within species
-#create a model matrix for the nested effect
-#create a var for individual id
-all_data <- all_data %>% 
-  rowwise() %>% 
-  mutate(ind = strsplit(track, "_")[[1]][1]) %>% 
-  as.data.frame()
-
-Z_ind <- as(model.matrix(~ 0 + species:ind, data = all_data), "Matrix") #this notation means that ind is nested in species
-all_data$indinsp <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]})) #create an index variable
-all_data$indinsp2 <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]}))
-all_data$indinsp3 <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]}))
-all_data$indinsp4 <- as.factor(apply(Z_ind, 1, function(x){names(x)[x == 1]}))
-
-formula4 <- used ~ -1 + delta_t_z + wind_support_z + cross_wind_z + var_ws_40_z +
-  f(stratum, model = "iid", 
-    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + # stratum-specific  intercepts  are  implicitly estimated by modelling them as a random intercept with a fixed variance log(1e-6)(why is it a log?)
-  f(species1, delta_t_z, model = "iid",  # what are values? i thought they correspond to the number of alternative steps, but I get an error when setting it to 1:49
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + #param corresponds to the precision priors assinged to the random slopes. see text
-  f(species2, wind_support_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species3, cross_wind_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species4, var_ws_40_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(indinsp, delta_t_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
-  f(indinsp2, wind_support_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(indinsp3, cross_wind_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(indinsp4, var_ws_40_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
-
-m4 <- inla(formula4, family ="Poisson", 
-           control.fixed = list(
-             mean = mean.beta,
-             prec = list(default = prec.beta)),
-           data = all_data) #,
-           #control.compute = list(mlik = T,dic = T))
-#high estimates of precision could indicate that these parameters are poorly identified and may require a more informative prior
-summary(m4) #smalle rmarginal log-likelihood than m1
-
-Efxplot(list(m1,m4)) + theme_bw()
 
 
-#extracting point estimates of the random effects
-m4$summary.random$species1 #species-specific for delta_t
-m4$summary.random$species2 #species-specific for wind support
-m4$summary.random$species3 #species-specific for cross_wind
-m4$summary.random$species4 #species-specific for variance of wind support
-
-
-#### non-scaled vars... leads to many warnings
-#*** WARNING *** Eigenvalue 0 of the Hessian is -19306.1 < 0
-#*** WARNING *** Set this eigenvalue to 16840.4
-#*** WARNING *** This have consequence for the accurancy of
-#*** WARNING *** the approximations; please check!!!
-#*** WARNING *** R-inla: Use option inla(..., control.inla = list(h = h.value), ...) 
-#*** WARNING *** R-inla: to chose a different  `h.value'.
-formula5 <- used ~ -1 + delta_t + wind_support + cross_wind + var_ws +
-  f(stratum, model = "iid", 
-    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + # stratum-specific  intercepts  are  implicitly estimated by modelling them as a random intercept with a fixed variance log(1e-6)(why is it a log?)
-  f(species1, delta_t, model = "iid",  # what are values? i thought they correspond to the number of alternative steps, but I get an error when setting it to 1:49
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + #param corresponds to the precision priors assinged to the random slopes. see text
-  f(species2, wind_support,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species3, cross_wind, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species4, var_ws, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(indinsp, delta_t, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
-  f(indinsp2, wind_support,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(indinsp3, cross_wind, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(indinsp4, var_ws, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
-
-m5 <- inla(formula5, family ="Poisson", 
-           control.fixed = list(
-             mean = mean.beta,
-             prec = list(default = prec.beta)),
-           data = all_data) 
-
-summary(m5)
-
-Efxplot(list(m1,mf,m4,m5)) + theme_bw()
-
-
-#extracting point estimates of the random effects
-m5$summary.random$species1 #species-specific for delta_t
-m5$summary.random$species2 #species-specific for wind support
-m5$summary.random$species3 #species-specific for cross_wind
-m5$summary.random$species4 #species-specific for variance of wind support
 
 
 ####model with smooth terms for latitude. alteratively, use the spde method. will produce narrower CI. also many warnings!!!!!!! also, latitude is correlated with some atm vars
