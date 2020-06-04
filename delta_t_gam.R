@@ -202,7 +202,14 @@ anova(model, model2)
 #convert lat and long to northing and easting
 #working through this book: https://becarioprecario.bitbucket.io/spde-gitbook/ch-INLA.html
 
-
+#global mesh: (https://groups.google.com/forum/#!topic/r-inla-discussion-group/dcrajXPn-eo)
+# To build a spherical mesh, you just need to convert the
+# longitude-latitude cutoff&max.edge parameters to radians (multiply by
+#                                                           pi/180), and supply
+# crs = inla.CRS("sphere")
+# to inla.mesh.2d(), which will automatically transform inputs with
+# proper crs info (so you'll need to specify a crs=inla.CRS("longlat")
+# when you construct the nonconvex hull).
 
 
 #use default priors (gamma)
