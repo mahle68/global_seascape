@@ -2,6 +2,7 @@
 #data processed in R_files/global_seascape.R
 #May 6, 2020. Radolfzell, DE. Elham Nourani, PhD
 #update May 7, 2020: calculate solar position to add a meaningful proxy for time of the day to the model (so, basically, the local time calculation was not necessary)
+#update Jun 8, 2020: scale lat, lon, and yday.... or not.... lol
 
 #tutorials
 #https://www.r-bloggers.com/advanced-sab-r-metrics-parallelization-with-the-mgcv-package/
@@ -45,10 +46,19 @@ data <- df_lt %>%
  
 save(data, file = "t_data_0_60.RData")
 
-### STEP 2: data exploration #####
-#check to see if there are any monthly, hourly, latitudinal differences
+### STEP 2: data exploration and prep #####
+
+load("t_data_0_60.RData")
 
 #running this on the entire dataset gives ram errors! so, just visualize the sample! lol
+sample <- data %>% 
+  st_crop(xmin = 120, xmax = 130, ymin = 25, ymax = 35) %>% 
+  as("Spatial") %>% 
+  as.data.frame() %>% 
+  rename(lon = coords.x1,
+         lat = coords.x2) %>% 
+  mutate(sun_elev_f = factor(sun_elev)) %>% 
+  as.data.frame()
 
 X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
 #for(i in c("sun_elev", "month","local_hour")){
@@ -58,53 +68,55 @@ X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
   boxplot(sample$delta_t ~ sample$local_hour, boxfill = "mediumblue", ylab = "delta_t")
   plot(sample$delta_t ~ sample$lat , pch = 16, col = factor(sample$month), ylab = "delta_t")
   
-
 mtext("40-yr averages at each point", side = 3, outer = T, cex = 1.3)
-
-
-### STEP 3: make the model #####
 
 #prep data
 data_df <- data %>% 
   as("Spatial") %>% 
   as.data.frame() %>% 
   rename(lon = coords.x1,
-         lat = coords.x2)
+         lat = coords.x2) %>% 
+  mutate_at(c("lat","lon","yday"),
+            list(z = ~scale(.))) %>% #scale lat, long, and yday
+  mutate(sun_elev_f = factor(sun_elev)) %>% 
+  as.data.frame() 
+
+  
 
 save(data_df, file = "t_data_df_0_60.RData")
 
-#try INLA also :p ... is probably more appropriate
+### STEP 3: build the model #####
+load ("t_data_df_0_60.RData")
 
-#include in the model: delta T ~ s(yday)+ s(lon,lat) + sun_elevation + random(year)
 
-#for modleing, use bam() instead of gam(), it breaks the data into chunks and has a lower memory footprint. also has the option to parallelize
-
-#work on a sample first
-sample <- data %>% 
-  st_crop(xmin = 120, xmax = 130, ymin = 25, ymax = 35) %>% 
-  as("Spatial") %>% 
-  as.data.frame() %>% 
-  rename(lon = coords.x1,
-         lat = coords.x2)
-
-model<-bam(delta_t ~ s(lon,lat) + s(yday) + factor(sun_elev) , data = sample)
-AIC(model)
+#####use the sample 
+model<-bam(delta_t ~ s(lon,lat) + s(yday, bs ="cc") + factor(sun_elev) , data = sample)
+AIC(model) #24905.22
 gam.check(model)
 
 #separate smooths for time of day
-model2 <- bam(delta_t ~ s(lon,lat) + s(yday,by = factor(sun_elev)) + factor(sun_elev) , data = sample)
-AIC(model2) 
+model2 <- bam(delta_t ~ s(lon,lat) + s(yday,by = factor(sun_elev), bs = "cc") + factor(sun_elev) , data = sample)
+AIC(model2) #24897.93
 plot(model2)
+gam.check(model2)
 
 #separate smooths for time of day
 model3 <- bam(delta_t ~ s(lon,lat, by = as.numeric(sun_elev == "night")) +
                 s(lon,lat, by = as.numeric(sun_elev == "high")) +
                 s(lon,lat, by = as.numeric(sun_elev == "low")) + 
-                s(yday) + factor(sun_elev) , data = sample)
-AIC(model3)
+                s(yday,bs="cc") + factor(sun_elev) , data = sample)
+AIC(model3) #24826.79
 gam.check(model3)
 
-#model with whole dataset. model 3 had the lowest AIC and highest R2 when done on the sample. so let's use it for the entire dataset
+#random eff for elev
+model4 <- gamm(delta_t ~ s(lon,lat) + 
+                s(yday, bs = "cc"), method = "REML", random = list(sun_elev_f = ~1) , data = sample)
+AIC(model4$lme) #24977.86
+
+X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
+gam.check(model4)
+
+#model with whole dataset.
 
 
 mycl <- makeCluster(9) 
@@ -115,25 +127,215 @@ clusterEvalQ(mycl, {
   library(mgcv)
 })
 
-b <- Sys.time()
-m1 <- bam(delta_t ~ s(lon,lat, by = as.numeric(sun_elev == "night")) +
-                s(lon,lat, by = as.numeric(sun_elev == "high")) +
-                s(lon,lat, by = as.numeric(sun_elev == "low")) + 
-                s(yday) + factor(sun_elev) , data = data_df, cluster = mycl) #higher var explained compared to m2 and m3
+(b <- Sys.time())
+
+m1 <- bam(delta_t ~ s(lon,lat, by = sun_elev_f) +
+            s(yday, by = sun_elev_f, bs = "cc") + 
+            sun_elev_f , data = data_df, cluster = mycl)
+
+m2 <- bam(delta_t ~ s(lon,lat) +
+            s(yday, by = sun_elev_f, bs = "cc") + 
+            sun_elev_f , data = data_df, cluster = mycl) 
+
+m3 <- bam(delta_t ~ s(lon,lat, by = sun_elev_f) +
+            s(yday, bs = "cc") + 
+            sun_elev_f , data = data_df, cluster = mycl) 
+
+m4 <- bam(delta_t ~ s(lon,lat, by = as.numeric(sun_elev_f == "night")) +
+                s(lon,lat, by = as.numeric(sun_elev_f == "high")) +
+                s(lon,lat, by = as.numeric(sun_elev_f == "low")) + 
+                s(yday, bs = "cc") + sun_elev_f , data = data_df, cluster = mycl) 
+
+m5 <- bam(delta_t ~ s(lon,lat) +
+            s(yday, bs = "cc", by = as.numeric(sun_elev_f == "night")) +
+            s(yday, bs = "cc", by = as.numeric(sun_elev_f == "high")) +
+            s(yday, bs = "cc", by = as.numeric(sun_elev_f == "low")) + 
+            sun_elev_f , data = data_df, cluster = mycl) 
+
+stopCluster(mycl)
+
+Sys.time() - b
+
+AIC(m1,m2,m3,m4,m5) #m1 has the lowest AIC, and highest df
+
+X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
+gam.check(m1) #higher variation at higher values....
+X11(width = 15, height = 10);par(mfrow= c(3,2), oma = c(0,0,3,0))
+plot(m1)
+
+
+#add a random effect for the year to m1
+mycl <- makeCluster(9) 
+clusterExport(mycl, "data_df") 
+clusterEvalQ(mycl, {
+  library(mgcv)
+})
+
+(b <- Sys.time())
+m1b <- gamm(delta_t ~ s(lon,lat, by = sun_elev_f) + #R crashes
+            s(yday, by = sun_elev_f, bs = "cc") + 
+            sun_elev_f, random = list(year = ~1)
+            , data = data_df, cluster = mycl)
+
+stopCluster(mycl)
+Sys.time() - b
+
+AIC(m1b) #3389866
+X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
+gam.check(m1b)
+
+
+#try model 1 with scaled variables
+mycl <- makeCluster(9) 
+clusterExport(mycl, "data_df") 
+clusterEvalQ(mycl, {
+  library(mgcv)
+})
+
+(b <- Sys.time())
+m1c <- bam(delta_t ~ s(lon_z,lat_z, by = sun_elev_f) +
+              s(yday_z, by = sun_elev_f, bs = "cc") + 
+              sun_elev_f, data = data_df, cluster = mycl)
+
+stopCluster(mycl)
+Sys.time() - b
+
+AIC(m1c) #3389866
+X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
+gam.check(m1c)
+
+
+
+AIC(m3) #3385093
+plot(m3)
+gam.check(m3)
+
+#add year
+mycl <- makeCluster(9) 
+
+clusterExport(mycl, "data_df") 
+
+clusterEvalQ(mycl, {
+  library(mgcv)
+})
+
+#add year;
+(b <- Sys.time())
+m4 <- gamm(delta_t ~ s(lon,lat, by = as.numeric(sun_elev == "night")) +
+            s(lon,lat, by = as.numeric(sun_elev == "high")) +
+            s(lon,lat, by = as.numeric(sun_elev == "low")) + 
+            s(yday) + factor(sun_elev) , random = list(year = ~1),
+          data = data_df, cluster = mycl) #singularity error
+
+stopCluster(mycl)
+
+Sys.time() - b
+
+#add sun_elev as random effect
+mycl <- makeCluster(9) 
+
+clusterExport(mycl, "data_df") 
+
+clusterEvalQ(mycl, {
+  library(mgcv)
+})
+
+# include sun_elev as random
+(b <- Sys.time())
+m5 <- gamm(delta_t ~ s(lon,lat) + s(yday, bs = "cc"), 
+           random = list(sun_elev_f = ~1),
+           data = data_df, cluster = mycl)
+
+stopCluster(mycl)
+
+Sys.time() - b
+
+#model using scaled variables
+mycl <- makeCluster(9) 
+
+clusterExport(mycl, "data_df") 
+
+clusterEvalQ(mycl, {
+  library(mgcv)
+})
+
+(b <- Sys.time())
+m1z <- bam(delta_t ~ s(lon_z,lat_z, by = as.numeric(sun_elev == "night")) +
+            s(lon_z,lat_z, by = as.numeric(sun_elev == "high")) +
+            s(lon_z,lat_z, by = as.numeric(sun_elev == "low")) + 
+            s(yday_z, bs = "cc") + sun_elev_f , method = "REML",
+           weights = varIdent(form = ~1 | sun_elev_f)
+           , data = data_df, cluster = mycl) #higher var explained compared to m2 and m3
 
 stopCluster(mycl)
 
 Sys.time() - b
 
 X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
-gam.check(m1)
+gam.check(m1z)
+AIC(m1z) #3366801 #larger than m1
 
+##########################
+#following zuur et al p. 412 to deal with heterogeneity of the residuals
+#f1 <- formula(delta_t ~ s(lon,lat) + s(yday) + sun_elev_f)
+
+lmc <- lmeControl(niterEM = 5000, msMaxIter =  1000)
+
+f1<-formula(delta_t ~ s(lon,lat, by = as.numeric(sun_elev == "night")) +
+                  s(lon,lat, by = as.numeric(sun_elev == "high")) +
+                  s(lon,lat, by = as.numeric(sun_elev == "low")) + 
+                  s(yday, bs = "cc") + #apply cyclic smoother for yday. the ends meet
+              sun_elev_f) 
+            
+            
+
+m2A <- gamm(f1, random = list(year = ~1),
+            method = "REML", control = lmc, data = sample) #singularity
+m2B <- gamm(f1, random = list(year = ~1),
+            method = "REML", control = lmc, data = sample,
+            weights = varIdent(form = ~1 | sun_elev_f))
+
+
+mycl <- makeCluster(9) 
+
+clusterExport(mycl, list("data_df", "f1", "lmc")) 
+
+clusterEvalQ(mycl, {
+  library(mgcv)
+})
+
+
+
+(b <- Sys.time())
+m1A <- gamm(f1,random = list(sun_elev_f = ~1),
+            method = "REML", control = lmc, data = data_df) #assumes homogeneity (added as a point of reference)
+m1B <- gamm(f1,random = list(sun_elev_f = ~1),
+            method = "REML", control = lmc, data = data_df,
+            weights = varIdent(form = ~1 | sun_elev_f)) #assumes heterogeneity per sun_elev_f, but homogeneity within a sun_elev_f along lat and lon
+
+m1C<- gamm(f1, random=list(sun_elev_f = ~ 1), 
+           method="REML", control = lmc, data = data_df, weights = varPower(form = ~lat)) #assumes homogeneity between sun elevs but heteorgeneity within a sun elev along lat
+
+m1D<- gamm(f1, random=list(sun_elev_f=~1),
+           method="REML", control = lmc, data=data_df, weights = varComb(varIdent(form = ~1 | sun_elev_f),varPower(form = ~ lat))) #allows for heterogeneity between stations and within stations along lat
+
+m1E <- gamm(f1, random=list(sun_elev_f=~1),
+            method="REML",control = lmc, data=data_df, weights = varComb(varIdent(form = ~1 | sun_elev_f),varPower(form = ~ lat | sun_elev_f))) #heterogeneity within sun elevs along lat is allowed to differ between sun elevs
+
+stopCluster(mycl)
+
+Sys.time() - b
+
+AIC(m1A$lme, m1B$lme, m1C$lme, m1D$lme,m1E$lme)
+
+###############################################
 #scale delta_t
 b <- Sys.time()
-m1b <- bam(scale(delta_t) ~ s(lon,lat, by = as.numeric(sun_elev == "night")) +
-            s(lon,lat, by = as.numeric(sun_elev == "high")) +
-            s(lon,lat, by = as.numeric(sun_elev == "low")) + 
-            s(yday) + factor(sun_elev) , data = data_df, cluster = mycl) #AIC improved compared with m1. or are they even comparable!?
+m1b <- bam(scale(delta_t) ~ s(lon_z,lat_z, by = as.numeric(sun_elev == "night")) +
+            s(lon_z,lat_z, by = as.numeric(sun_elev == "high")) +
+            s(lon_z,lat_z, by = as.numeric(sun_elev == "low")) + 
+            s(yday_z) + factor(sun_elev) ,
+           data = data_df, cluster = mycl) #AIC improved compared with m1. or are they even comparable!?
 
 stopCluster(mycl)
 
