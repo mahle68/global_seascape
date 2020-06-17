@@ -6,7 +6,7 @@
 
 #tutorials
 #https://www.r-bloggers.com/advanced-sab-r-metrics-parallelization-with-the-mgcv-package/
-  
+#df equals the number of parameters needed to produce the curve: df = number of kntos -1. effective degrees of freedom, edf >= 8 means that curve is non-linear, edf= 1 is a straight line
 library(mgcv)
 library(parallel)
 library(dplyr)
@@ -88,11 +88,34 @@ save(data_df, file = "t_data_df_0_60.RData")
 ### STEP 3: build the model #####
 load ("t_data_df_0_60.RData")
 
+#keep only rows that I need (for copying to the cluster)
+data_c <- data_df %>% 
+  dplyr::select(c(1,4,5,7,15,17:22))
+
+data_c$lat_z <- as.numeric(data_c$lat_z)
+data_c$lon_z <- as.numeric(data_c$lon_z)
+data_c$yday_z <- as.numeric(data_c$yday_z)
+
+write.csv(data_c, "//home/enourani/ownCloud/Work/cluster_computing/global_seascape_proj/delta_t_gam/data_c.csv")
+
 
 #####use the sample 
-model<-bam(delta_t ~ s(lon,lat) + s(yday, bs ="cc") + factor(sun_elev) , data = sample)
-AIC(model) #24905.22
-gam.check(model)
+m0s <- bam(delta_t ~ s(lat, lon) + s(yday, bs ="cc") + sun_elev_f, data = sample)
+AIC(m0s) #24905.22
+
+m1s <- bam(delta_t ~ s(lat, lon, by = sun_elev_f) + s(yday, bs ="cc", by = sun_elev_f) + sun_elev_f, data = sample)
+AIC(m1s) #24818.1
+
+X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
+gam.check(m1s)
+
+m2s <- gamm(delta_t ~ s(lon,lat, by = sun_elev_f) + s(yday, bs ="cc", by = sun_elev_f) + sun_elev_f,
+            random = list(year = ~1), data = sample)
+AIC(m2s$lme) #24911.63
+
+X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
+gam.check(m2s$gam)
+
 
 #separate smooths for time of day
 model2 <- bam(delta_t ~ s(lon,lat) + s(yday,by = factor(sun_elev), bs = "cc") + factor(sun_elev) , data = sample)
@@ -118,7 +141,6 @@ gam.check(model4)
 
 #model with whole dataset.
 
-
 mycl <- makeCluster(9) 
 
 clusterExport(mycl, "data_df") 
@@ -129,39 +151,147 @@ clusterEvalQ(mycl, {
 
 (b <- Sys.time())
 
-m1 <- bam(delta_t ~ s(lon,lat, by = sun_elev_f) +
-            s(yday, by = sun_elev_f, bs = "cc") + 
-            sun_elev_f , data = data_df, cluster = mycl)
+#sun_elev as random effect
+m1 <- bam(delta_t ~ s(lat,lon, bs = "sos") + s(yday, bs ="cc") + ##spherical spline for lat and lon
+            s(sun_elev_f, bs = "re") + 
+            s(year, bs = "re"), #re means random effect
+          method = "REML", data = data_df, cluster = mycl) 
 
-m2 <- bam(delta_t ~ s(lon,lat) +
-            s(yday, by = sun_elev_f, bs = "cc") + 
-            sun_elev_f , data = data_df, cluster = mycl) 
+m2 <- bam(delta_t ~ s(lat,lon, bs = "sos", by = sun_elev_f) +
+            s(yday, by = sun_elev_f, bs = "cc") +
+            s(year, bs = "re") +
+            sun_elev_f , method = "REML", data = data_df, cluster = mycl)
 
-m3 <- bam(delta_t ~ s(lon,lat, by = sun_elev_f) +
+m3 <- bam(delta_t ~ s(lat,lon, bs = "sos") +
+            s(yday, by = sun_elev_f, bs = "cc") +
+            s(year, bs = "re") + sun_elev_f , 
+          method = "REML", data = data_df, cluster = mycl)
+
+m4 <- bam(delta_t ~ s(lat,lon, bs = "sos", by = sun_elev_f) +
+            s(yday, bs = "cc") +
+            s(year, bs = "re") + sun_elev_f , 
+          method = "REML", data = data_df, cluster = mycl)
+
+m5 <- bam(delta_t ~ s(lat,lon, bs = "sos", by = as.numeric(sun_elev_f == "night")) +
+            s(lat,lon, bs = "sos",by = as.numeric(sun_elev_f == "high")) +
+            s(lat,lon, bs = "sos",by = as.numeric(sun_elev_f == "low")) +
             s(yday, bs = "cc") + 
-            sun_elev_f , data = data_df, cluster = mycl) 
+            s(year, bs = "re") + sun_elev_f , 
+          method = "REML", data = data_df, cluster = mycl)
 
-m4 <- bam(delta_t ~ s(lon,lat, by = as.numeric(sun_elev_f == "night")) +
-                s(lon,lat, by = as.numeric(sun_elev_f == "high")) +
-                s(lon,lat, by = as.numeric(sun_elev_f == "low")) + 
-                s(yday, bs = "cc") + sun_elev_f , data = data_df, cluster = mycl) 
-
-m5 <- bam(delta_t ~ s(lon,lat) +
+m6 <- bam(delta_t ~ s(lon,lat) +
             s(yday, bs = "cc", by = as.numeric(sun_elev_f == "night")) +
             s(yday, bs = "cc", by = as.numeric(sun_elev_f == "high")) +
-            s(yday, bs = "cc", by = as.numeric(sun_elev_f == "low")) + 
-            sun_elev_f , data = data_df, cluster = mycl) 
+            s(yday, bs = "cc", by = as.numeric(sun_elev_f == "low")) +
+            s(year, bs = "re") +
+            sun_elev_f , 
+          method = "REML", data = data_df, cluster = mycl)
+
+m7 <- bam(delta_t ~ s(lat, bs = "cr", by = sun_elev_f) + #lat and lon separately. Kami's suggestion
+            s(lon, bs = "cr", by = sun_elev_f) +
+            s(yday, by = sun_elev_f, bs = "cc") +
+            s(year, bs = "re") +
+            sun_elev_f , method = "REML", data = data_df, cluster = mycl) #didnt solve the problem of heteroscedasticity
+
+m8 <- bam(delta_t ~ s(lat,lon, bs = "sos", by = sun_elev_f) + #try a poisson distr
+            s(yday, by = sun_elev_f, bs = "cc") +
+            s(year, bs = "re") +
+            sun_elev_f , method = "REML", family = "poisson", data = data_df, cluster = mycl) #error: negative values not allowed for poisson. lol
 
 stopCluster(mycl)
 
 Sys.time() - b
 
-AIC(m1,m2,m3,m4,m5) #m1 has the lowest AIC, and highest df
+models <- list(m1,m2,m3,m4,m5, m6)
+save(models, file = "gam_models.RData")
+
+AIC(m1,m2,m3,m4,m5, m6) #m2 has the lowest AIC and highest df
 
 X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
-gam.check(m1) #higher variation at higher values....
-X11(width = 15, height = 10);par(mfrow= c(3,2), oma = c(0,0,3,0))
-plot(m1)
+gam.check(m2) #higher variation at higher values....
+X11(width = 15, height = 10);par(mfrow= c(3,3), oma = c(0,0,3,0))
+plot(m2)
+
+#plot resids against variables
+X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
+plot(data_df$yday, resid(m2), xlab = "yday", ylab = "residuals")
+plot(data_df$lat, resid(m2), xlab = "lat", ylab = "residuals") #higher variance for higher values
+plot(data_df$lon, resid(m2), xlab = "lon", ylab = "residuals")
+plot(data_df$sun_elev_f, resid(m2), xlab = "sun elevation", ylab = "residuals")
+
+
+
+
+
+#try adding variance structures
+mycl <- makeCluster(9) 
+
+clusterExport(mycl, "data_df") 
+
+clusterEvalQ(mycl, {
+  library(mgcv)
+})
+
+m2_1 <- bam(delta_t ~ s(lat,lon, by = sun_elev_f, bs = "sos") + #try a spherical spline for lat and lon
+            s(yday, by = sun_elev_f, bs = "cc") +
+            s(year, bs = "re") +
+            sun_elev_f , method = "REML", data = data_df, cluster = mycl)
+
+m2_1 <- gamm(delta_t ~ s(lat,lon,bs = "sos") +
+              s(yday, bs = "cc") , data = data_df, 
+            weights = varPower(form = ~lat))#, cluster = mycl) #when using weights, use gamm instead of bam.
+
+m2_2 <- bam(delta_t ~ s(lon,lat, by = sun_elev_f) +
+              s(yday, by = sun_elev_f, bs = "cc") +
+              s(year, bs = "re") +
+              sun_elev_f  , data = data_df, 
+            weights = varFixed(form = ~1 | lat), cluster = mycl)
+
+m2_3 <- gamm(delta_t ~ s(lat,lon, bs = "sos", by = sun_elev_f) + #did not converge
+               s(yday, by = sun_elev_f, bs = "cc") +
+               s(year, bs = "re") + sun_elev_f, 
+             weights = varPower(), method = "REML", data = data_df) #if no arguments are specified, varPower uses the default which is ~fitted(.). source: Piheiro and Bates 2000
+
+#to solve the convergence issue, use scaled variables
+(b <- Sys.time())
+m2_4 <- gamm(delta_t ~ s(lat_z,lon_z, bs = "sos", by = sun_elev_f, k = 100) +
+               s(yday_z, by = sun_elev_f, bs = "cc") +
+               s(year, bs = "re") + sun_elev_f, 
+             weights = varPower(), method = "REML", data = data_df) 
+Sys.time()-b
+
+save(m2_3, file = "model_2_3.RData")
+
+load("model_2_3.RData")
+
+#try the model with higher k. default is 50
+#from ?choose.k: So, exact choice of k is not generally critical: it should be chosen to be large enough that you are reasonably 
+#sure of having enough degrees of freedom to represent the underlying ‘truth’ reasonably well, but small enough to maintain reasonable computational efficiency. 
+#Clearly ‘large’ and ‘small’ are dependent on the particular problem being addressed.
+
+m2_5 <- bam(delta_t ~ s(lat,lon, bs = "sos", by = sun_elev_f, k = 100) + #AIC decreases compared to AIC(m2), when k=70 (3307754). but gam.check indicated that it may still be too low
+              s(yday, by = sun_elev_f, bs = "cc") +
+              s(year, bs = "re") +
+              sun_elev_f , method = "REML", data = data_df, cluster = mycl)
+stopCluster(mycl)
+
+AIC(m2_5) #3297569 #AIC is improved compared to m2 and m2_5 with k=70. but heterescedasticity is still tehre
+X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
+gam.check(m2_5)
+
+
+rsd <- residuals(m2_5)
+gam(rsd~s(yday,k=40,bs="cc"),gamma=1.4,data=data_df) ## fine
+gam(rsd~s(lat,lon,k=100,bs="sos"),gamma=1.4,data=data_df) ## `k' too low
+gam(rsd~s(x3,k=40,bs="cs"),gamma=1.4,data=dat) ## fine
+
+
+f <- formula(delta_t ~ lat + lon + yday + sun_elev_f)
+d <- gls(f, data = data_df)
+d3 <- gls(delta_t ~ lat * lon + yday + sun_elev_f, data = data_df)
+d2 <- gls(f, data = data_df, weights = varFixed(~lat)) #didnt work. too big
+
+
 
 
 #add a random effect for the year to m1
@@ -177,7 +307,7 @@ m1b <- gamm(delta_t ~ s(lon,lat, by = sun_elev_f) + #R crashes
             sun_elev_f, random = list(year = ~1)
             , data = data_df, cluster = mycl)
 
-stopCluster(mycl)
+
 Sys.time() - b
 
 AIC(m1b) #3389866
@@ -200,9 +330,15 @@ m1c <- bam(delta_t ~ s(lon_z,lat_z, by = sun_elev_f) +
 stopCluster(mycl)
 Sys.time() - b
 
-AIC(m1c) #3389866
+AIC(m1c) #3357867 ...higher than m1 without scaling
 X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
 gam.check(m1c)
+
+#plots are the same for scaled vars
+plot(data_df$yday_z, resid(m1c), xlab = "yday", ylab = "residuals")
+plot(data_df$lat_z, resid(m1c), xlab = "lat", ylab = "residuals")
+plot(data_df$lon_z, resid(m1c), xlab = "lon", ylab = "residuals")
+plot(data_df$sun_elev_f, resid(m1c), xlab = "sun elevation", ylab = "residuals")
 
 
 
@@ -275,7 +411,7 @@ X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
 gam.check(m1z)
 AIC(m1z) #3366801 #larger than m1
 
-##########################
+####
 #following zuur et al p. 412 to deal with heterogeneity of the residuals
 #f1 <- formula(delta_t ~ s(lon,lat) + s(yday) + sun_elev_f)
 
@@ -328,7 +464,7 @@ Sys.time() - b
 
 AIC(m1A$lme, m1B$lme, m1C$lme, m1D$lme,m1E$lme)
 
-###############################################
+###
 #scale delta_t
 b <- Sys.time()
 m1b <- bam(scale(delta_t) ~ s(lon_z,lat_z, by = as.numeric(sun_elev == "night")) +
@@ -400,7 +536,7 @@ anova(model, model2)
 
 
 
-#######spatial model with inla #####
+#######spatial model with inla ###
 #convert lat and long to northing and easting
 #working through this book: https://becarioprecario.bitbucket.io/spde-gitbook/ch-INLA.html
 
@@ -445,12 +581,30 @@ post.sigma.s2 <- inla.tmarginal(function (x) sqrt(1 / exp(x)),
 # rw1
  sum(log(climate.rw1$cpo$cpo))
 
-##### from previous codes
+ 
+ 
+ 
+### STEP 4: effect plot #####
 
-#-----------------------------------------------------------
-#effect plots 
-#-----------------------------------------------------------
-#previous attempts are in the previous version ;)
+#extract range of yday of sea-crossing to use on the plot later (data from ssf_delta_t_inla2.R)
+load("ssf_input_ann_cmpl_1hr.RData") #ann_cmpl
+ann_cmpl$yday <- yday(ann_cmpl$timestamp)
+ 
+ 
+library(ggplot2)
+theme_set(theme_bw())
+library(dplyr)
+library(mgcv)
+library(tidymv)
+
+
+
+b <- getViz(m2_3$gam)
+
+plot_smooths(model = m2, series = yday, comparison = sun_elev_f) +
+  theme(legend.position = "top") # this looks good!
+
+
 
 pdf("delta_T_gam/yday_smoother_fig_model1_3.pdf", height=4, width=4)
 #x11()
@@ -463,7 +617,7 @@ par(mfrow=c(1,1), bty="n", #no box around the plot
 )
 
 
-plot(model2,select=2, xlab="Julian date",ylab="Delta T", ylim= c(-2,2), shade=T, shade.col= "grey75",
+plot(m2,select=4, xlab="Julian date",ylab="Delta T", ylim= c(-2,2), shade=T, shade.col= "grey75",
      scheme=0,se=12,bty="l",labels = FALSE, tck=0) #plot only the second smooth term
 
 #rect(xleft=268,ybottom=-2.3,xright=296,ytop=2.3, col="#96CDCD30",border=NA) #for juv...#last two digits are for transparency

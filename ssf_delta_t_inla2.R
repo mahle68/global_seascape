@@ -576,8 +576,11 @@ all_data <- all_data %>%
          lat_zone4 = factor(lat_zone),
          lat_zone5 = factor(lat_zone),
          lat_zone6 = factor(lat_zone),
-         stratum = factor(stratum)) %>% 
-  dplyr::select(c("used","delta_t_z","wind_speed_z","wind_support_z", "species1","species2", "species3", "ind1", "ind2", "ind3", "stratum"))
+         stratum = factor(stratum)) #%>% 
+  dplyr::select(c("used","delta_t_z","wind_speed_z","wind_support_z","wind_support_var_z","delta_t_var_z","species1","species2", "species3", "ind1", "ind2", "ind3", "stratum"))
+
+#save file for cluster computing
+save(all_data, file = "/home/enourani/ownCloud/Work/cluster_computing/global_seascape_proj/inla_ssf/inla_ssf.RData")
 
 ### trying out predicting with INLA (use model m1d)
 # Set mean and precision for the priors of slope coefficients
@@ -699,16 +702,16 @@ for ( wsp in -1:1 ) {
 
 #instead of making predictions, we can also sample from the posterior distribution. (following Virgilio's book)
 #make sure config = TRUE in the inla call
-samp1 <- inla.posterior.sample(100, m1d_sample, selection = list(wind_speed_z= 1, delta_t_z = 1)) #selection can be used to determine which variableswe want
+samp1 <- inla.posterior.sample(100, m1d_sample, selection = list(wind_speed_z= 1, delta_t_z = 1)) #selection can be used to determine which variables we want
 #1 in the above call means that we want to keep the first element in effect 
 samp2 <- inla.posterior.sample.eval(function(...) {wind_speed_z * delta_t_z}, samp1)
-
+summary(as.vector(samp2))
 
 
 ##try on complete dataset
 ########################
-#model with wind speed instead of ws and cw...... loads of warnings!
-formula1c <- used ~ -1 + delta_t_z * wind_speed_z + delta_t_var_z * wind_speed_var_z + wind_support_z + wind_support_var_z +
+#model with wind speed instead of ws and cw...... delta_t var * wspeed var produces loads of warnings!
+formula1c <- used ~ -1 + delta_t_z * wind_speed_z + delta_t_var_z + wind_support_z + wind_support_var_z +
   f(stratum, model = "iid", 
     hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
   f(species1, delta_t_z, model = "iid", 
@@ -717,9 +720,7 @@ formula1c <- used ~ -1 + delta_t_z * wind_speed_z + delta_t_var_z * wind_speed_v
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(species3, wind_support_z,  model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species4, wind_speed_var_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species5, delta_t_var_z, model = "iid",
+  f(species4, delta_t_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(species6, wind_support_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
@@ -728,8 +729,6 @@ formula1c <- used ~ -1 + delta_t_z * wind_speed_z + delta_t_var_z * wind_speed_v
   f(ind2, wind_speed_z,  model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(ind3, wind_support_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind4, wind_speed_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(ind5, delta_t_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
@@ -743,10 +742,10 @@ m1c <- inla(formula1c, family ="Poisson",
               prec = list(default = prec.beta)),
             data = all_data,
             num.threads = 10,
-            control.compute = list(openmp.strategy="huge"))#, mlik = T,dic = T, waic = T)) #,
+            control.compute = list(openmp.strategy="huge",config = TRUE))#, mlik = T,dic = T, waic = T)) #,
 Sys.time() - b
 
-save(m1c, file = "inla_models/full_mc.RData")
+save(m1c, file = "inla_models/m1c.RData")
 
 load("inla_models/full_mc.RData")
 summary(m1c)
@@ -754,6 +753,47 @@ summary(m1c)
 #plot the posterior densities
 bri.hyperpar.plot(m1c) #summary of hyperparameters in SD scale (converts precision to sd)
 Efxplot(m1c) + theme_bw()
+
+#remove var of delta t
+formula1e <- used ~ -1 + delta_t_z * wind_speed_z + wind_support_z + wind_support_var_z +
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
+  f(species1, delta_t_z, model = "iid", 
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  f(species2, wind_speed_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species3, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species6, wind_support_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(ind1, delta_t_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  f(ind2, wind_speed_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(ind3, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(ind6, wind_support_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
+
+(b <- Sys.time())
+m1e <- inla(formula1e, family ="Poisson", 
+            control.fixed = list(
+              mean = mean.beta,
+              prec = list(default = prec.beta)),
+            data = all_data,
+            num.threads = 10,
+            control.compute = list(openmp.strategy="huge",config = TRUE))#, mlik = T,dic = T, waic = T)) #,
+Sys.time() - b
+
+save(m1e, file = "inla_models/m1e.RData")
+
+load("inla_models/full_mc.RData")
+summary(m1c)
+
+#plot the posterior densities
+bri.hyperpar.plot(m1e) #summary of hyperparameters in SD scale (converts precision to sd)
+Efxplot(list(m1c,m1e,m1d)) + theme_bw()
+
 
 
 #######
@@ -792,10 +832,11 @@ Sys.time() - b
 save(m1d_pred, file = "inla_models/m1d_pred.RData")
 
 load("inla_models/m1d.RData")
-summary(m1c)
+summary(m1d)
 
 #plot the posterior densities 
 bri.hyperpar.plot(m1d) #summary of hyperparameters in SD scale (converts precision to sd)
+Efxplot(m1d) + theme_bw()
 Efxplot(list(m1c,m1d)) + theme_bw()
 
 #extract predicted values
