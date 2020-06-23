@@ -88,6 +88,10 @@ save(data_df, file = "t_data_df_0_60.RData")
 ### STEP 3: build the model #####
 load ("t_data_df_0_60.RData")
 
+data_df <- data_df %>% 
+  mutate(delta_t_b = ifelse(delta_t >= 0, 1,0)) %>% 
+  as.data.frame()
+  
 #keep only rows that I need (for copying to the cluster)
 data_c <- data_df %>% 
   dplyr::select(c(1,4,5,7,15,17:22))
@@ -157,10 +161,10 @@ m1 <- bam(delta_t ~ s(lat,lon, bs = "sos") + s(yday, bs ="cc") + ##spherical spl
             s(year, bs = "re"), #re means random effect
           method = "REML", data = data_df, cluster = mycl) 
 
-m2 <- bam(delta_t ~ s(lat,lon, bs = "sos", by = sun_elev_f) +
+m2_7 <- bam(delta_t_b ~ s(lat,lon, bs = "sos", by = sun_elev_f) +
             s(yday, by = sun_elev_f, bs = "cc") +
-            s(year, bs = "re") +
-            sun_elev_f , method = "REML", data = data_df, cluster = mycl)
+            #s(year, bs = "re") +
+            sun_elev_f , method = "REML", family = "binomial", data = data_df, cluster = mycl)
 
 m3 <- bam(delta_t ~ s(lat,lon, bs = "sos") +
             s(yday, by = sun_elev_f, bs = "cc") +
@@ -204,6 +208,9 @@ Sys.time() - b
 
 models <- list(m1,m2,m3,m4,m5, m6)
 save(models, file = "gam_models.RData")
+
+load("gam_models.RData")
+m2 <- models[[2]]
 
 AIC(m1,m2,m3,m4,m5, m6) #m2 has the lowest AIC and highest df
 
@@ -252,15 +259,16 @@ m2_3 <- gamm(delta_t ~ s(lat,lon, bs = "sos", by = sun_elev_f) + #did not conver
                s(year, bs = "re") + sun_elev_f, 
              weights = varPower(), method = "REML", data = data_df) #if no arguments are specified, varPower uses the default which is ~fitted(.). source: Piheiro and Bates 2000
 
-#to solve the convergence issue, use scaled variables
+#to solve the convergence issue, use scaled variables and make the model simpler
 (b <- Sys.time())
-m2_4 <- gamm(delta_t ~ s(lat_z,lon_z, bs = "sos", by = sun_elev_f, k = 100) +
-               s(yday_z, by = sun_elev_f, bs = "cc") +
-               s(year, bs = "re") + sun_elev_f, 
+m2_4 <- gamm(delta_t ~ s(lat_z,lon_z, bs = "sos", k = 100) +
+               s(yday_z, bs = "cc") +
+               #s(year, bs = "re") + 
+               sun_elev_f, 
              weights = varPower(), method = "REML", data = data_df) 
 Sys.time()-b
 
-save(m2_3, file = "model_2_3.RData")
+save(m2_4, file = "model_2_4.RData")
 
 load("model_2_3.RData")
 
@@ -575,7 +583,7 @@ post.sigma.s1 <- inla.tmarginal(function (x) sqrt(1 / exp(x)),
 post.sigma.s2 <- inla.tmarginal(function (x) sqrt(1 / exp(x)),
                                 m.rw2$internal.marginals.hyperpar[[3]])
 
-#ccompate cpos
+#compare cpos
  sum(log(climate.ar1$cpo$cpo))
 ## [1] -43.05
 # rw1
@@ -591,6 +599,11 @@ load("ssf_input_ann_cmpl_1hr.RData") #ann_cmpl
 ann_cmpl$yday <- yday(ann_cmpl$timestamp)
  
  
+#extract data for creating the plots
+plotdata <- plot(m2,pages = 1)
+
+plot(delta_t ~ )
+
 library(ggplot2)
 theme_set(theme_bw())
 library(dplyr)
@@ -601,6 +614,7 @@ library(tidymv)
 
 b <- getViz(m2_3$gam)
 
+X11()
 plot_smooths(model = m2, series = yday, comparison = sun_elev_f) +
   theme(legend.position = "top") # this looks good!
 
