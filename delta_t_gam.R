@@ -161,10 +161,15 @@ m1 <- bam(delta_t ~ s(lat,lon, bs = "sos") + s(yday, bs ="cc") + ##spherical spl
             s(year, bs = "re"), #re means random effect
           method = "REML", data = data_df, cluster = mycl) 
 
-m2_7 <- bam(delta_t_b ~ s(lat,lon, bs = "sos", by = sun_elev_f) +
+m2 <- bam(delta_t ~ s(lat,lon, bs = "sos", by = sun_elev_f) +
             s(yday, by = sun_elev_f, bs = "cc") +
-            #s(year, bs = "re") +
-            sun_elev_f , method = "REML", family = "binomial", data = data_df, cluster = mycl)
+            s(year, bs = "re") +
+            sun_elev_f , method = "REML", data = data_df, cluster = mycl)
+
+m2_7 <- bam(delta_t_b ~ s(lat,lon, bs = "sos", by = sun_elev_f) +
+              s(yday, by = sun_elev_f, bs = "cc") +
+              #s(year, bs = "re") +
+              sun_elev_f , method = "REML", family = "binomial", data = data_df, cluster = mycl)
 
 m3 <- bam(delta_t ~ s(lat,lon, bs = "sos") +
             s(yday, by = sun_elev_f, bs = "cc") +
@@ -602,7 +607,7 @@ ann_cmpl$yday <- yday(ann_cmpl$timestamp)
 #extract data for creating the plots
 plotdata <- plot(m2,pages = 1)
 
-plot(delta_t ~ )
+plot(delta_t  )
 
 library(ggplot2)
 theme_set(theme_bw())
