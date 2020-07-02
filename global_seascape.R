@@ -32,21 +32,12 @@ mycl <- makeCluster(detectCores() - 1)
 
 
 ###step 1: open data ####
-file_ls <- list.files("ERA_INTERIM_data_global_sampled",".RData",full.names = TRUE) #data processed and sampled in ecmwf_in_R.R
+file_ls <- list.files("ERA_INTERIM_data_global_sampled",".RData",full.names = TRUE) #data processed and sampled in ecmwf_in_R.R, actually, in t_data_download_&_process
 
 data_df <- file_ls %>%
   map(read_csv) %>% 
   reduce(rbind) %>%
   mutate(year = year(date_time))
-
-#data_df <- data.frame()
-#for (i in file_ls) {
-#  load(i)
-#  data_df <- rbind(data_df,sample)
-#  data_df
-#}
-
-#data_df$year <- year(data_df$date_time)
 
 save(data_df,file = "R_files/processed_era_interim_data/samples_df.RData")
 

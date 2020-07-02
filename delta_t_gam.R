@@ -11,7 +11,7 @@ library(mgcv)
 library(parallel)
 library(dplyr)
 library(sf)
-library(raster)
+library(raster)df
 library(maps)
 library(lubridate)
 library(lutz)
