@@ -16,7 +16,6 @@ library(parallel)
 
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
-setwd("/home/mahle68/ownCloud/Work/Projects/delta_t")
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
