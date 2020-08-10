@@ -122,8 +122,11 @@ segs <- segs_ann %>%
 rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(segs$seg_id),timestamps = segs$date_time,sensorType = "gps"),"[",-1)) #get all but the first row of each set of duplicate rows
 segs <- segs[-rows_to_delete,]
 
-# STEP 2: prepare alternative steps#####
 
+#number of segments that I have per species, before starting the step selection process
+segs %>%  group_by(group) %>% summarise(count = n_distinct(unique_seg_id))
+
+# STEP 2: prepare alternative steps#####
 
 #for each species/flyway, thin the data, burstify, and produce alternative steps
 #create a move list
