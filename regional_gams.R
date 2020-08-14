@@ -284,7 +284,7 @@ load("predictions_regional_gam_map.RData")
 load("models_ls_reg_GAMs.RData")
 
 # create a plotting function for effect plots
-names <- c("South-East Asia", "the Americas", "Indian Ocean", "Europe")
+names <- c("South-East Asia", "The Americas", "Indian Ocean", "Europe")
 
 reg_gam_plot <- function(x){
   m <- models_ls[[x]]
@@ -292,8 +292,9 @@ reg_gam_plot <- function(x){
   
   plot(0, type = "n", labels = FALSE, tck = 0, xlim =  c(1,366), ylim = c(-2.5,5), xlab = "", ylab = "")#, main = names[[x]]) #expression(paste(Delta,"T")), main = x
   rect(xleft = min(t),ybottom = -2.7,xright = max(t),ytop = 5, col="#99CC0060",border=NA) #water-crossing window
+  abline(h = 0, col = "gray60",lty = 1, lwd = 0.5)
   plot_smooth(m, view="yday", plot_all="sun_elev_f", rm.ranef=F, lwd = 1.5, #ylim=c(-2,5),
-              col = "grey60", hide.label = TRUE, 
+              col = "grey50", hide.label = TRUE, 
               legend_plot_all =  F, 
               h0 = NULL, add = T, lty = c(1,5,3))
   
@@ -365,6 +366,13 @@ abline(h = 30, col = "grey70",lty = 2)
 abline(h = 60, col = "grey70",lty = 2)
 text(x = -125, y = c(2,32,62), labels = c("0° ", "30° N", "60° N"), cex = 0.6, col = "grey65")
 
+#add a frame for the sub-plots
+rect(xleft = -85,
+     xright = 153,
+     ybottom =  -45,
+     ytop = -1,
+     col="grey",
+     border = NA)
 #add subplots...
 centers_x <- c(124,-56,64,4) #distance between centers = 60
 
@@ -412,6 +420,9 @@ legend(-126,-17.5, legend = c("Oriental honey buzzard", "Grey-faced buzzard", "A
                                   "Eleonora's falcon", "Peregrine falcon", "Osprey"),
        lty = c(4,1,6,2,3,5), cex = 0.55, bty = "n", seg.len = 3)
 text(x = -118.5,y = -39.5, "Sub-plots", cex = 0.7)
+legend(-126,-40, legend = c("High sun elevation", "Low sun elevation", "Night"),
+       lty = c(1,2,3), cex = 0.55, bty = "n", seg.len = 3)
+
 legend(-126,-40, legend = c("High sun elevation", "Low sun elevation", "Night"),
        lty = c(1,2,3), cex = 0.55, bty = "n", seg.len = 3)
 #dev.off()
