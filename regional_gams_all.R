@@ -139,9 +139,6 @@ stopCluster(mycl) #stop the cluster
 
 
 
-
-
-
 ## STEP 2: data preparation ####
 
 #2.1------------

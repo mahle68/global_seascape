@@ -291,8 +291,8 @@ reg_gam_plot <- function(x){
   t <- timing_areas[[x]]
   
   plot(0, type = "n", labels = FALSE, tck = 0, xlim =  c(1,366), ylim = c(-2.5,5), xlab = "", ylab = "")#, main = names[[x]]) #expression(paste(Delta,"T")), main = x
-  rect(xleft = min(t),ybottom = -2.7,xright = max(t),ytop = 5, col="#99CC0060",border=NA) #water-crossing window
   abline(h = 0, col = "gray60",lty = 1, lwd = 0.5)
+  rect(xleft = min(t),ybottom = -2.7,xright = max(t),ytop = 5, col="#99CC0060",border=NA) #water-crossing window
   plot_smooth(m, view="yday", plot_all="sun_elev_f", rm.ranef=F, lwd = 1.5, #ylim=c(-2,5),
               col = "grey50", hide.label = TRUE, 
               legend_plot_all =  F, 
@@ -326,7 +326,7 @@ cuts<-seq(-1,5,0.01) #set breaks
 pal <- colorRampPalette(c("dodgerblue","darkturquoise", "goldenrod1","coral","firebrick1","firebrick4"))
 colpal <- pal(570)
   
-#pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/global_plot_8.pdf", width = 11, height = 5.2)
+#pdf("/home/mahle68/ownCloud/Work/Projects/delta_t/paper_prep/figures/global_plot_scaled.pdf", width = 11, height = 5.2)
 
 X11(width = 11, height = 5.2) #make the window proportional to region
 
@@ -339,7 +339,8 @@ par(mfrow=c(1,1),
     cex.lab = 0.6,
     #cex = 0.5,
     oma = c(0,0,0,0),
-    mar = c(0, 0, 0, 0)
+    mar = c(0, 0, 0, 0),
+    lend = 1  #rectangular line endings (trick for adding the rectangle to the legend)
 )
 
 #maps::map("world",fill = TRUE, col = "grey30", border = F)
@@ -369,69 +370,86 @@ text(x = -125, y = c(2,32,62), labels = c("0° ", "30° N", "60° N"), cex = 0.6
 #add a frame for the sub-plots
 rect(xleft = -85,
      xright = 153,
-     ybottom =  -45,
-     ytop = -1,
-     col="grey",
+     ybottom =  -52,
+     ytop = -4,
+     col="white",
      border = NA)
+
 #add subplots...
 centers_x <- c(124,-56,64,4) #distance between centers = 60
 
 for(i in 1:length(centers_x)){
   rect(xleft = centers_x[i] - 27,
        xright = centers_x[i] + 27,
-       ybottom =  -38,
-       ytop = -2,
+       ybottom =  -42, #-38
+       ytop = -6, #-2
        col="white")
   
-  subplot(reg_gam_plot(i), x = centers_x[i]+4,y = -19, size = c(1.6,0.7),  
+  subplot(reg_gam_plot(i), x = centers_x[i] + 4,y = -23, size = c(1.6,0.7),  #-23 was -19
           pars = list(mar=c(0,0,0.6,0),cex = 0.6, bty = "l", mgp = c(0,0.2,0),tck = 0.015, cex.main = 0.8, font.main = 3))
 }
 
 
-#add birds
-rasterImage(AF, xleft = 85, xright = 110, ybottom = 20, ytop = 45, angle = +25) #make AF smaller than others
-rasterImage(OHB, xleft = 145, xright = 175, ybottom = 25, ytop = 55, angle = +40)
-rasterImage(GFB, xleft = 125, xright = 155, ybottom = 15, ytop = 45, angle = 0)
-#rasterImage(GFB, xleft = 150, xright = 180, ybottom = 10, ytop = 40, angle = +70)
-rasterImage(EF, xleft = 8, xright = 33, ybottom = 8, ytop = 33, angle = 0)
-#rasterImage(EFc, xleft = 33, xright = 63, ybottom = 20, ytop = 50, angle = +35)
-#rasterImage(EFc, xleft = 7, xright = 37, ybottom = 15, ytop = 45, angle = -50)
-rasterImage(PF_E, xleft = 30, xright = 60, ybottom = 45, ytop = 75, angle = 15) 
-rasterImage(PF_A, xleft = -65, xright = -35, ybottom = 40, ytop = 70, angle = 20) 
-#rasterImage(OSc, xleft = 5, xright = 35, ybottom = 30, ytop = 60)
+#add birds... try to scale them
+rasterImage(AF, xleft = 95, xright = 111, ybottom = 29, ytop = 45, angle = +25) #make AF smaller than others
+rasterImage(OHB, xleft = 145, xright = 180, ybottom = 20, ytop = 55, angle = +40)
+rasterImage(GFB, xleft = 130, xright = 155, ybottom = 20, ytop = 45, angle = 0)
+rasterImage(EF, xleft = 11, xright = 31, ybottom = 10, ytop = 30, angle = 0)
+rasterImage(PF_E, xleft = 28, xright = 48, ybottom = 50, ytop = 70, angle = 15) 
+rasterImage(PF_A, xleft = -65, xright = -45, ybottom = 40, ytop = 60, angle = 20) 
 rasterImage(OS_E, xleft = -10, xright = 20, ybottom = 30, ytop = 60, angle = 20)
 rasterImage(OS_A, xleft = -110, xright = -80, ybottom = 35, ytop = 65)
+
+
+
+# rasterImage(AF, xleft = 85, xright = 110, ybottom = 20, ytop = 45, angle = +25) #make AF smaller than others
+# rasterImage(OHB, xleft = 145, xright = 175, ybottom = 25, ytop = 55, angle = +40)
+# rasterImage(GFB, xleft = 130, xright = 155, ybottom = 20, ytop = 45, angle = 0)
+# rasterImage(EF, xleft = 8, xright = 33, ybottom = 8, ytop = 33, angle = 0)
+# rasterImage(PF_E, xleft = 30, xright = 60, ybottom = 45, ytop = 75, angle = 15) 
+# rasterImage(PF_A, xleft = -65, xright = -35, ybottom = 40, ytop = 70, angle = 20) 
+# rasterImage(OS_E, xleft = -10, xright = 20, ybottom = 30, ytop = 60, angle = 20)
+# rasterImage(OS_A, xleft = -110, xright = -80, ybottom = 35, ytop = 65)
 
 #add legend
 plot(imaginary_r, legend.only = TRUE, breaks = cuts, col = colpal, #create an imaginary raster that has the high values from juv and low values from adlt
      #legend.width = 0.3, legend.shrink = 0.3,
-     smallplot = c(0.06,0.17, 0.36,0.375), #c(min % from left, max % from left, min % from bottom, max % from bottom)
-     #smallplot = c(0.06,0.17, 0.25,0.265),
+     smallplot = c(0.059,0.169, 0.145,0.16), #c(min % from left, max % from left, min % from bottom, max % from bottom)
+     #smallplot = c(0.06,0.17, 0.28,0.295),#c(0.06,0.17, 0.36,0.375), 
      axis.args = list(at = c(-1,0,2,4), #same arguments as any axis, to determine the length of the bar and tick marks and labels
                     labels = c(-1,0,2,4), 
                     col = NA, #make sure box type in par is set to n, otherwise axes will be drawn on the legend :p
                     col.ticks = NA,
                     line = -1.3),
      horizontal = T,
-     legend.args = list(text = expression(italic(paste(Delta,"T", "(°C)"))), side = 3, font = 2, line = 0.1, cex = 0.7))
+     legend.args = list(text = expression(italic(paste(Delta,"T", "(°C)"))), side = 3, font = 2, line = 0.1, cex = 0.7)
+     )
 
-text(x = -121.5,y = -17, "Map", cex = 0.7)
-legend(-126,-17.5, legend = c("Oriental honey buzzard", "Grey-faced buzzard", "Amur falcon", 
+#text(x = -117,y = -35,  expression(italic(paste(Delta,"T", "(°C)"))), cex = 0.7)
+#text(x = -115,y = -8, "Map legend", cex = 0.8)
+text(x = -105,y = -8, "Map legend", cex = 0.8)
+legend(-126,-10, legend = c("Oriental honey buzzard", "Grey-faced buzzard", "Amur falcon", 
                                   "Eleonora's falcon", "Peregrine falcon", "Osprey"),
        lty = c(4,1,6,2,3,5), cex = 0.55, bty = "n", seg.len = 3)
-text(x = -118.5,y = -39.5, "Sub-plots", cex = 0.7)
-legend(-126,-40, legend = c("High sun elevation", "Low sun elevation", "Night"),
-       lty = c(1,2,3), cex = 0.55, bty = "n", seg.len = 3)
+#text(x = -118.5,y = -39.5, "Sub-plots legend", cex = 0.7)
 
-legend(-126,-40, legend = c("High sun elevation", "Low sun elevation", "Night"),
-       lty = c(1,2,3), cex = 0.55, bty = "n", seg.len = 3)
+legend(-30,-43, legend = c("sea-crossing period","High sun elevation", "Low sun elevation", "Night"),
+       lty = c(1,1,2,3), lwd = c(9,1,1,1), col = c("#99CC0060", rep("black",3)),cex = 0.55, bty = "n", seg.len = 3, horiz = T)
+
+#legend(-27,-43, legend = c("sea-crossing period","High sun elevation", "Low sun elevation", "Night"),
+#       lty = c(1,1,2,3), lwd = c(9,1,1,1), col = c("#99CC0060", rep("black",3)),cex = 0.55, bty = "n", seg.len = 3, ncol = 2)
+
+
+#legend(-126,-40, legend = c("High sun elevation", "Low sun elevation", "Night"),
+#       lty = c(1,2,3), cex = 0.55, bty = "n", seg.len = 3)
+
+#legend(-126,-49, legend = c("sea-crossing timing"),
+#       lty = 1, lwd = 9, col = "#99CC0060", cex = 0.55, bty = "n", seg.len = 2.9)
 #dev.off()
 
 
 ## add routes
 #choose one sample trajecotry for species with good data. unfiltered tracks in track_based_prep_analyze_daily.R
-load("all_spp_unfiltered_updated_lc_0_removed_new_track_id.RData") #dataset
-
 
 pf_ad <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/data/Osprey_Americas/Peregrines Ivan.csv", stringsAsFactors = F) %>% 
   filter(Age == "ad")
@@ -544,7 +562,18 @@ sp_samples <- list(AF_sample,EF_sample,OHB_sample,O_sample,PF_sample,GFB_sample)
 names(sp_samples) <- c("AF_sample","EF_sample","OHB_sample","O_sample","PF_sample","GFB_sample")
 
 save(sp_samples, file = "tracks_for_global_map.RData")
+load("tracks_for_global_map.RData")
 
+
+# add all tracks to map
+load("all_spp_unfiltered_updated_lc_0_removed_new_track_id.RData") #dataset
+
+all_tracks <- dataset %>% 
+  filter(season == "autumn") %>% 
+  st_as_sf(coords = c("location.long","location.lat"), crs = wgs) %>% 
+  group_by(track) %>% 
+  summarize(do_union = FALSE) %>% 
+  st_cast("LINESTRING")
 
 #read in bird art
 AF <- readPNG("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/from_james/AF_1.png")
