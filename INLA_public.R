@@ -5,8 +5,8 @@ library(tidyverse)
 library(INLA)
 
 #DATA PREP ####
-#load the annotated dataset prepared for step selection function estimation.
-load("INLA_input_public.RData") #dataset called annotated_data. 
+#load the annotated dataset prepared for step selection function estimation. Make sure to set your working directory correctly.
+load("INLA_input_public.RData") #data frame called annotated_data 
 
 #z-transform
 z_data <- annotated_data %>% 
@@ -32,7 +32,7 @@ z_data <- z_data %>%
 #MODELING ####
 #see Muff et al 2019 (Journal of Animal Ecology) for details of choice of priors and model fitting.
 
-# Set mean and precision for the priors of slope coefficients
+#set mean and precision for the priors of slope coefficients
 mean.beta <- 0
 prec.beta <- 1e-4 
 
@@ -66,8 +66,8 @@ M1 <- inla(formulaM1, family ="Poisson",
               mean = mean.beta,
               prec = list(default = prec.beta)),
             data = z_data,
-            num.threads = 10, #This depends on your computer
-            control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T, cpo = T))
+            num.threads = 10, #This depends on your computer how many threads you can let INLA use
+            control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T))
 
 
 summary(M1)
@@ -100,7 +100,7 @@ M2 <- inla(formulaM2, family ="Poisson",
               prec = list(default = prec.beta)),
             data = z_data,
             num.threads = 10,
-            control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T, cpo = T))
+            control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T))
 
 summary(M2)
 
@@ -126,13 +126,12 @@ M3 <- inla(formulaM3, family ="Poisson",
             control.fixed = list(
               mean = mean.beta,
               prec = list(default = prec.beta)),
-            data = all_data,
+            data = z_data,
             num.threads = 10,
-            control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = F, cpo = F))
+            control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = F))
 
 
 summary(M3)
-
 
 
 #FIGURE 2: posterior means of fixed effects ####
@@ -174,17 +173,14 @@ graph$Factor_n <- as.numeric(graph$Factor)
 
 X11(width = 3.5, height = 3)
 
-par(mfrow=c(1,1), bty="n", #no box around the plot
-    #cex.axis= 0.75, #x and y labels have 0.75% of the default size
-    #font.axis= 0.75, #3: axis labels are in italics
-    #cex.lab = 0.75,
+par(mfrow=c(1,1), bty="n",
     cex = 0.7,
     oma = c(0,3.5,0,0),
     mar = c(3, 3.5, 0.5, 1),
     bty = "l"
 )
 
-#plot(0, type = "n", bty = "l",labels = FALSE, tck = 0, ann = F, xlim = c(-6,8), ylim = c(0,6.3))
+
 plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(-6,8), ylim = c(0,6.3), xlab = "Estimate", ylab = "")
 
 #add vertical line for zero
@@ -208,21 +204,16 @@ arrows(graph[graph$Model == 3, "Lower"], graph[graph$Model == 3,"Factor_n"] + 0.
 axis(side= 1, at= c(-5,0,5), labels= c("-5", "0", "5"), 
      tick=T ,col = NA, col.ticks = 1, tck=-.015)
 
-axis(side= 2, at= c(1:6), #line=-4.8, 
+axis(side= 2, at= c(1:6), 
      labels= c( expression(paste(Delta,"t"," : wind speed")),
                 "wind support var","wind support",expression(paste(Delta,"t"," var")),"wind speed", expression(paste(Delta,"t"))),
-     tick=T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
-     tck=-.015 , #tick marks smaller than default by this proportion
-     las=2 ) # text perpendicular to axis label 
+     tick=T ,col = NA, col.ticks = 1, 
+     tck=-.015 ,
+     las=2 ) 
 
 #add legend
 legend(x = 5.3, y = 0.8, legend=c("model 3", "model 2", "model 1"), col = c("steelblue1","palegreen3","salmon2"), #coords indicate top-left
        pch = 19, bg="white",bty="n", cex = 0.75)
-
-
-
-
-
 
 
 #SUPPLEMENTARY FIGURE 1: species-specific coefficients ####
@@ -246,10 +237,7 @@ tab_wspt <- data.frame(ID = as.factor(M3$summary.random$species3$ID),
 
 X11(width = 3.5, height = 3)
 
-par(mfrow = c(1,1), bty="n", #no box around the plot
-    #cex.axis= 0.75, #x and y labels have 0.75% of the default size
-    #font.axis= 0.75, #3: axis labels are in italics
-    #cex.lab = 0.75,
+par(mfrow = c(1,1), bty="n"
     cex = 0.7,
     oma = c(0,3.5,0,0),
     mar = c(3, 3.5, 0.5, 1),
@@ -269,27 +257,26 @@ arrows(tab_dt$IClower, as.numeric(tab_dt$ID) - 0.2,
 points(tab_wspd$mean, as.numeric(tab_wspd$ID), col = "yellowgreen", pch = 19, cex = 1.3)
 arrows(tab_wspd$IClower, as.numeric(tab_wspd$ID),
        tab_wspd$ICupper, as.numeric(tab_wspd$ID),
-       col = "yellowgreen", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+       col = "yellowgreen", code = 3, length = 0.03, angle = 90) 
 
 points(tab_wspt$mean, as.numeric(tab_wspt$ID) + 0.2, col = "paleturquoise2", pch = 19, cex = 1.3)
 arrows(tab_wspt$IClower, as.numeric(tab_wspt$ID) + 0.2,
        tab_wspt$ICupper, as.numeric(tab_wspt$ID) + 0.2,
-       col = "paleturquoise2", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+       col = "paleturquoise2", code = 3, length = 0.03, angle = 90) 
 
 axis(side= 1, at= c(-2,0,2), labels= c("-2", "0", "2"), 
      tick=T ,col = NA, col.ticks = 1, tck=-.015)
 
-axis(side= 2, at= c(1:4), #line=-4.8, 
-     #labels= c("Falco eleonorae", "Pandion haliaetus", "Pernis ptilorhynchus", "Falco peregrinus"),
+axis(side= 2, at= c(1:4),
      labels= c(expression(italic("F. eleonorae")), expression(italic("P. haliaetus")),
                expression(italic("P. ptilorhynchus")),
                expression(italic("F. peregrinus"))),
-     tick=T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
-     tck=-.015 , #tick marks smaller than default by this proportion
-     las=2 ) # text perpendicular to axis label 
+     tick=T ,col = NA, col.ticks = 1, 
+     tck=-.015 , 
+     las=2 ) 
 
 #add legend
 legend(x = 1.8, y = 0.6, legend=c("wind support", "wind speed", expression(paste(Delta,"t"))), 
-       col = c("paleturquoise2","yellowgreen","lightcoral"), #coords indicate top-left
+       col = c("paleturquoise2","yellowgreen","lightcoral"),
        pch = 19, bg="white",bty="n", cex = 0.75)
 
