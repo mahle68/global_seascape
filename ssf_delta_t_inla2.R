@@ -135,8 +135,7 @@ rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(segs$seg_i
 segs <- segs[-rows_to_delete,]
 
 # STEP 2: prepare alternative steps#####
-
-
+    
 #for each species/flyway, thin the data, burstify, and produce alternative steps
 #create a move list
 
@@ -757,7 +756,7 @@ bri.hyperpar.plot(m1c) #summary of hyperparameters in SD scale (converts precisi
 Efxplot(m1c) + theme_bw()
 
 #remove var of delta t
-formula1e <- used ~ -1 + delta_t_z * wind_speed_z + wind_support_z + wind_support_var_z +
+  formula1e <- used ~ -1 + delta_t_z * wind_speed_z + wind_support_z + wind_support_var_z +
   f(stratum, model = "iid", 
     hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
   f(species1, delta_t_z, model = "iid", 

@@ -1,7 +1,8 @@
 #script for preparing all input data simultaneously. previously done separately for each species/region.
 #Elham Nourani,
 #Feb. 9 2021. Radolfzell, Germany.
-#no limit to northern hemisphere
+#no limit to northern hemisphere. in the current data, I will only have one point for the eleonora's falcon from E. Africa to Madagascar. 
+#only redo data for 2019 onwards and for the latitudinal zones that were not looked before.
 
 library(tidyverse)
 library(readxl) #read_excel()
@@ -16,7 +17,6 @@ library(parallel)
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
-
 
 
 ##### STEP 0: prep spatial layers #####
@@ -141,13 +141,14 @@ EF_aut <- read_excel("data/eleonoras_falcon.xlsx", sheet = 2) %>%
   mutate(track = paste(ID.individual, year,season,sep = "_")) %>% 
   filter(season == "autumn")
 
-##### STEP 2: merge all data, assign zone (only northern hemisphere) #####
+##### STEP 2: merge all data, assign zone #####
 
 dataset <- list(OHB,GFB, PF, OE, OA, EF_aut, OHB_GPS_aut) %>% 
   reduce(full_join, by = c("location.long", "location.lat", "date_time", "track", "month", "year" , "season", "species")) %>% 
   mutate(zone = ifelse(between(location.lat, 0, 30) | between(location.lat, 0, -30), "tradewind",
                        ifelse(between(location.lat, 30,60) | between(location.lat, -30,-60), "temperate",
-                              "arctic"))) %>% 
+                              ifelse(between(location.lat, -30,30), "tropical",
+                              "arctic")))) %>% 
   dplyr::select(c("location.long", "location.lat", "date_time", "track", "month", "year" , "season", "species", "zone")) %>% 
   as.data.frame()
 
@@ -162,25 +163,31 @@ dataset_sea <- dataset %>%
   st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
   st_difference(land_no_buffer)
 
-save(dataset_sea, file = "R_files/2021/all_spp_spatial_filtered_updated_no_buffer.RData")
+save(dataset_sea, file = "R_files/2021/all_spp_spatial_filtered_updated_no_buffer2.RData")
 
 ##### STEP 4: remove duplicated points #####
 
-load("R_files/2021/all_spp_spatial_filtered_updated_no_buffer.RData") #named dataset_sea
+load("R_files/2021/all_spp_spatial_filtered_updated_no_buffer2.RData") #named dataset_sea
 
 #check for duplicated time-stamps
 rows_to_delete <- sapply(getDuplicatedTimestamps(x = as.factor(dataset_sea$track),timestamps = dataset_sea$date_time,sensorType = "gps"),"[",2) #get the second row of each pair of duplicate rows
 dataset_sea <- dataset_sea[-rows_to_delete,]
 
 ##### STEP 5: convert tracks to spatial lines (to have sea-crossing segments) and remove portions over land #####
-track_ls <- split(dataset_sea,dataset_sea$track)
+          
+#keep only 2019 onwards
+new_data <- dataset_sea %>%
+  #filter(year >= 2019 & zone %in% unique(dataset_sea$zone) | year %in% unique(dataset_sea$year) & zone %in% c("arctic", "tropical")) #this is not a good idea. I need the track that has points in the arctic and the tropics, not only the points
+  filter(year >= 2013)
+
+track_ls <- split(new_data,new_data$track)
 track_ls <- track_ls[lapply(track_ls,nrow)>1] 
 
 
 load("R_files/2021/ocean.RData")
 load("R_files/2021/land_no_buffer.RData")
 
-(b <- Sys.time())
+
 mycl <- makeCluster(10) 
 
 clusterExport(mycl, c("track_ls", "land_no_buffer","ocean","wgs")) #define the variable that will be used within the function
@@ -191,6 +198,7 @@ clusterEvalQ(mycl, {
   library(tidyverse)
 })
 
+(b <- Sys.time())
 Lines_ls<-parLapply(mycl,track_ls,function(x){
   #find out if the track has any points over water
   over_sea <- st_intersection(x,ocean) #track_ls needs to be spatial for this to work
@@ -198,7 +206,7 @@ Lines_ls<-parLapply(mycl,track_ls,function(x){
   if(nrow(over_sea) != 0){
     line_sea <- x %>%
       arrange(date_time) %>% 
-      summarise_at(c("track", "species", "zone"), ~ head(.,1)) %>% 
+      summarise_at(c("track", "species", "zone"), ~ head(.,1), do_union=FALSE) %>% #do_union is important to prevent squiggly lines
       st_cast("LINESTRING") %>% 
       st_difference(land_no_buffer)
     
@@ -212,26 +220,24 @@ Lines_ls<-parLapply(mycl,track_ls,function(x){
 
 stopCluster(mycl)
 
-Sys.time() - b # 2 min
-#Error in checkForRemoteErrors(val) : 
-#one node produced an error: Evaluation error: IllegalArgumentException: point array must contain 0 or >1 elements.
+Sys.time() - b # 5.767824
 
 
-save(Lines_ls, file = "R_files/2021/Lines_ls.RData")
+save(Lines_ls, file = "R_files/2021/Lines_ls_2019_20_arctic_tropical.RData")
 
 ##### STEP 2: break up tracks into sea-crossing segments and filter #####
 
 #remove elements with 0 elements (tracks with no sea-crossing)
-Lines_ls_no_na <- Lines_ls[lapply(Lines_ls,is.na) == FALSE] 
+Lines_ls_no_na <- Lines_ls[lapply(Lines_ls,length) > 0]
 
 #only keep the track column (some objects have an ID column)
-Lines_ls_no_na <- lapply(Lines_ls_no_na,"[",,"track")
+#Lines_ls_no_na <- lapply(Lines_ls_no_na,"[",,"track")
 
 #convert to one object
 lines <- do.call(rbind,Lines_ls_no_na)
 
 #filter segments
-segs_filtered<- st_as_sf(lines) %>% #convert to sf object
+segs_filtered <- st_as_sf(lines) %>% #convert to sf object
   st_cast("LINESTRING") %>% #convert to linestring (separate the segments)
   mutate(length = as.numeric(st_length(.)),
          n = npts(.,by_feature = T)) %>% 
