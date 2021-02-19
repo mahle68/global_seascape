@@ -154,6 +154,45 @@ dataset <- list(OHB,GFB, PF, OE, OA, EF_aut, OHB_GPS_aut) %>%
 
 save(dataset, file = "R_files/2021/all_spp_unfiltered_updated_lc_0_removed_new_track_id.RData")
 
+##### STEP 3: convert tracks to lines ##### 
+
+load("R_files/2021/all_spp_unfiltered_updated_lc_0_removed_new_track_id.RData") #called dataset
+
+dataset_sea <- dataset %>%  
+  filter(year >= 2013 & season == "autumn") %>% 
+  drop_na(c("location.long", "location.lat")) %>% 
+  st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
+  group_by(track) %>% 
+  filter(n() > 1) %>%  #remove tracks with only one point
+  arrange(date_time) %>% 
+  summarise(track = head(track,1),
+            species = head(species,1),
+            zone = head(zone, 1), do_union = F) %>% 
+  st_cast("LINESTRING")
+
+save(dataset_sea, file = "R_files/2021/all_spp_2013_2020_complete_lines.RData")
+
+
+##### STEP 4: subset for tracks over the sea and assign segments ##### 
+
+
+segs_filtered <- dataset_sea %>% 
+  st_difference(land_no_buffer) %>% 
+  #st_as_sf(lines) %>% #convert to sf object
+  #st_cast("LINESTRING") %>% #convert to linestring (separate the segments)
+  mutate(length = as.numeric(st_length(.)),
+         n = npts(.,by_feature = T)) %>% 
+  filter(n > 2 & length >= 30000) #remove sea-crossing shorter than 30 km and segment with less than 2 points 
+
+save(segs_filtered, file = "R_files/2021/all_spp_2013_2020_all_segments.RData")
+
+segs <- segs_filtered %>% 
+  mutate(length = as.numeric(st_length(.)),
+         n = npts(.,by_feature = T)) %>% 
+  filter(n > 2 & length >= 30000)
+
+save(segs, file = "R_files/2021/all_spp_2013_2020_filtered_segments.RData")
+
 ##### STEP 3: filter out points over land ##### 
 
 load("R_files/2021/all_spp_unfiltered_updated_lc_0_removed_new_track_id.RData")
