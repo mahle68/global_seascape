@@ -175,17 +175,30 @@ dataset_sea <- dataset_sea[-rows_to_delete,]
 
 ##### STEP 5: convert tracks to spatial lines (to have sea-crossing segments) and remove portions over land #####
           
-#keep only 2019 onwards
+#redo all 2013 onwards. keep only autumn
 new_data <- dataset_sea %>%
   #filter(year >= 2019 & zone %in% unique(dataset_sea$zone) | year %in% unique(dataset_sea$year) & zone %in% c("arctic", "tropical")) #this is not a good idea. I need the track that has points in the arctic and the tropics, not only the points
-  filter(year >= 2013)
+  filter(year >= 2013 & season == "autumn")
 
 track_ls <- split(new_data,new_data$track)
-track_ls <- track_ls[lapply(track_ls,nrow)>1] 
+track_ls <- track_ls[lapply(track_ls,nrow) > 1] 
 
 
 load("R_files/2021/ocean.RData")
 load("R_files/2021/land_no_buffer.RData")
+
+
+#new way.
+lines <- new_data %>% 
+  group_by(track) %>% 
+  filter(n() > 1) %>%  #remove tracks with only one point
+  arrange(date_time) %>% 
+  summarise(track = head(track,1),
+            species = head(species,1),
+            zone = head(zone, 1), do_union = F) %>% 
+  st_cast("LINESTRING") %>% 
+  st_difference(land_no_buffer)
+  
 
 
 mycl <- makeCluster(10) 
@@ -199,20 +212,23 @@ clusterEvalQ(mycl, {
 })
 
 (b <- Sys.time())
-Lines_ls<-parLapply(mycl,track_ls,function(x){
+Lines_ls <- parLapply(mycl,track_ls,function(x){
   #find out if the track has any points over water
-  over_sea <- st_intersection(x,ocean) #track_ls needs to be spatial for this to work
+  #over_sea <- st_intersection(x,ocean) #track_ls needs to be spatial for this to work. update: track_ls is already subsetted for sea. this step seems redundant
   #if the track has any point over water, convert to spatial line and subset for sea
-  if(nrow(over_sea) != 0){
+  #if(nrow(over_sea) != 0){
     line_sea <- x %>%
       arrange(date_time) %>% 
-      summarise_at(c("track", "species", "zone"), ~ head(.,1), do_union=FALSE) %>% #do_union is important to prevent squiggly lines
+      summarise(track = head(track,1),
+                species = head(species,1),
+                zone = head(zone, 1), do_union = F) %>% 
+      #summarise_at(c("track", "species", "zone"), ~ head(.,1), do_union = FALSE) %>% #do_union is important to prevent squiggly lines. but with summarize_at, still order of points is messed up
       st_cast("LINESTRING") %>% 
       st_difference(land_no_buffer)
     
-  } else {
-    line_sea <- NA
-  }
+  #} else {
+   # line_sea <- NA
+  #}
   
   line_sea
 })
@@ -226,6 +242,8 @@ Sys.time() - b # 5.767824
 save(Lines_ls, file = "R_files/2021/Lines_ls_2019_20_arctic_tropical.RData")
 
 ##### STEP 2: break up tracks into sea-crossing segments and filter #####
+
+load("R_files/2021/Lines_ls_2019_20_arctic_tropical.RData")
 
 #remove elements with 0 elements (tracks with no sea-crossing)
 Lines_ls_no_na <- Lines_ls[lapply(Lines_ls,length) > 0]
@@ -243,9 +261,11 @@ segs_filtered <- st_as_sf(lines) %>% #convert to sf object
          n = npts(.,by_feature = T)) %>% 
   filter(n > 2 & length >= 30000) #remove sea-crossing shorter than 30 km and segment with less than 2 points 
 
+segs_filtered$season <- sapply(strsplit(segs_filtered$track, "_"), "[",3)
+
 segs_filtered$track <- as.character(segs_filtered$track)
 
-
+aut <- segs_filtered[segs_filtered$season == "autumn",]
 
 ##### OHB GPS DATA PREP #####
 
