@@ -264,4 +264,10 @@ all_oversea <- rbind(points_oversea, EF_spain)
 save(all_oversea, file = "R_files/2021/all_2013_2020_overwater_points.RData")
 
 
-#also make lines from the EF_spain. or not? I only used this for the figure. but the EF tracks are not complete, so what's the point?
+### some summary stats
+
+all_oversea %>% 
+  group_by(species) %>% 
+  summarize(n_tracks = n_distinct(track),
+            start_yr = min(year),
+            end_yr = max(year))
