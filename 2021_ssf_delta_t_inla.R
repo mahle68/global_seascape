@@ -218,7 +218,7 @@ used_av_ls_1hr <- parLapply(mycl, move_ls,function(species){ #each species
         previous_point <- burst[this_point-1,] #this is the previous point, for calculating turning angle.
         used_point <- burst[this_point+1,] #this is the next point. the observed end-point of the step starting from the current_point
         
-        #randomly generate 69 step lengths and turning angles
+        #randomly generate 50 step lengths and turning angles
         rta <- as.vector(rvonmises(n = 50, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
         rsl <- rgamma(n = 50, shape=fit.gamma1$estimate[[1]], rate = fit.gamma1$estimate[[2]]) * 1000  #generate random step lengths from the gamma distribution. make sure unit is meters
         
@@ -269,6 +269,8 @@ save(used_av_ls_1hr, file = "2021/ssf_input_all_1hr.RData")
 
 # ---------- STEP 2: annotate#####
 
+load("2021/ssf_input_all_1hr.RData") #used_av_ls_1hr
+
 #create one dataframe with movebank specs
 used_av_df_1hr <- lapply(c(1:length(used_av_ls_1hr)), function(i){
   
@@ -281,7 +283,16 @@ used_av_df_1hr <- lapply(c(1:length(used_av_ls_1hr)), function(i){
            stratum = paste(track, burst_id, step_id, sep = "_")) %>% 
     as.data.frame()
 }) %>% 
-  reduce(rbind)
+  reduce(rbind) %>%
+  mutate(group = ifelse(species == "OHB", "OHB",
+                        ifelse(species == "GFB", "GFB",
+                               ifelse(species == "EF", "EF",
+                                      ifelse(species == "O" & x < -30, "O_A",
+                                             ifelse(species == "O" & x > -30, "O_E",
+                                                    ifelse(species == "PF" & x < -30, "PF_A",
+                                                           "PF_E")))))))
+
+save(used_av_df_1hr, file = "2021/ssf_input_all_df_1hr.RData")
 
 
 # #have a look
@@ -309,12 +320,13 @@ write.csv(used_av_df_1hr, "2021/ssf_input_df_1hr.csv")
 # summary stats
 used_av_df_1hr %>% 
   group_by(species) %>% 
+  #group_by(group) %>% 
   summarise(yrs_min = min(year(date_time)),
             yrs_max = max(year(date_time)),
             n_ind = n_distinct(ind),
             n_tracks = n_distinct(track))
 
-
+#visual inspection
 data_sf <- used_av_df_1hr %>% 
   filter(used == 1) %>% 
   st_as_sf(coords = c(3,4), crs = wgs)
@@ -322,14 +334,16 @@ data_sf <- used_av_df_1hr %>%
 mapview(data_sf, zcol = "species", viewer.suppress = TRUE)
 
 #open annotated data and add wind support and crosswind
-ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/ssf_input_all_1hr.csv-5721307433824845494/ssf_input_all_1hr.csv-5721307433824845494.csv",
+ann <- read.csv("2021/annotations/ssf_input_df_1hr.csv-5377601907157905991.csv",
                 stringsAsFactors = F) %>%
+  mutate(ind = strsplit(track, "_")[[1]][1],
+stratum = paste(track, burst_id, step_id, sep = "_")) %>% 
   drop_na() %>%
   mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
-  rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature ,
-         t2m = ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.,
-         u925 = ECMWF.Interim.Full.Daily.PL.U.Wind,
-         v925 = ECMWF.Interim.Full.Daily.PL.V.Wind) %>%
+  rename(sst = ECMWF.ERA5.SL.Sea.Surface.Temperature ,
+         t2m = ECMWF.ERA5.SL.Temperature..2.m.above.Ground.,
+         u925 = ECMWF.ERA5.PL.U.wind,
+         v925 = ECMWF.ERA5.PL.V.wind) %>%
   mutate(row_id = row_number(),
          delta_t = sst - t2m,
          wind_support= wind_support(u=u925,v=v925,heading=heading),

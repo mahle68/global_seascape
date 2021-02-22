@@ -67,7 +67,9 @@ OHB <- lapply(OHB_files,read_excel,1,col_types = c("numeric","date","numeric","n
   mutate(yday = yday(date_time)) %>%
   mutate(season = ifelse(between(yday,253,294),"autumn",ifelse(month == 5,"spring","other"))) %>%  #11 Sep-20 Oct; spring between 1-5 May
   mutate(track = paste(ptt,year,season,sep = "_"),
-         species = "OHB") %>% 
+         species = "OHB",
+         ind = as.character(ptt),
+         sensor.type = "ptt") %>% 
   rename(location.long = lon,
          location.lat = lat) %>% 
   filter(season == "autumn" & #no sea-crossing in spring
@@ -80,7 +82,8 @@ OHB_GPS_aut <- read.csv("data/Tracking_of_the_migration_of_Oriental_Honey_Buzzar
          species = "OHB",
          yday = yday(date_time)) %>%
   mutate(season = ifelse(between(yday,253,294),"autumn",ifelse(month == 5,"spring","other")),  #11 Sep-20 Oct; spring between 1-5 May
-         track = paste(tag.local.identifier, year,season,sep = "_")) %>% 
+         track = paste(tag.local.identifier, year,season,sep = "_"),
+         ind = as.character(tag.local.identifier)) %>% 
   filter(season == "autumn")
 
 ###
@@ -92,7 +95,9 @@ GFB <- lapply(GFB_files,read.csv,stringsAsFactors = F) %>%
          year = year(date_time),
          season = ifelse(month %in% c(3,4),"spring",ifelse(month %in% c(10),"autumn","other"))) %>% 
   mutate(track = paste(platform,year,season,sep = "_"),
-         species = "GFB") %>% 
+         species = "GFB",
+         ind = as.character(platform),
+         sensor.type = "ptt") %>% 
   rename(location.long = lon,
          location.lat = lat) %>% 
   filter(season %in% c("spring","autumn") &
@@ -100,14 +105,15 @@ GFB <- lapply(GFB_files,read.csv,stringsAsFactors = F) %>%
 
 ###make sure migration season is correctly defined
 PF <- read.csv("data/LifeTrack Peregrine falcon_2021.csv", stringsAsFactors = F) %>% 
-  dplyr::select(1,3:5,16,38,39) %>% #remove columns that are not needed
+  dplyr::select(1,3:5,16,36,38,39) %>% #remove columns that are not needed
   filter(individual.local.identifier %in% pf_ad$animal.id) %>% 
   mutate(date_time = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>% 
   mutate(month = month(date_time),
          year = year(date_time),
          species = "PF",
          season = ifelse (month %in% c(9,10), "autumn", "other")) %>% 
-  mutate(track = paste(tag.local.identifier, year, season,sep = "_")) %>% 
+  mutate(track = paste(tag.local.identifier, year, season,sep = "_"),
+         ind = as.character(tag.local.identifier)) %>% 
   filter(season != "other")
 
 OE <- read.csv("data/Osprey in Mediterranean (Corsica, Italy, Balearics)_2021.csv", stringsAsFactors = F) %>% 
@@ -118,7 +124,8 @@ OE <- read.csv("data/Osprey in Mediterranean (Corsica, Italy, Balearics)_2021.cs
          year = year(date_time),
          species = "O",
          season = ifelse(month %in% c(2:4),"spring",ifelse (month %in% c(8:10), "autumn","other"))) %>% 
-  mutate(track = paste(tag.local.identifier, year,season, sep = "_")) %>% 
+  mutate(track = paste(tag.local.identifier, year,season, sep = "_"),
+         ind = as.character(tag.local.identifier)) %>% 
   filter(season != "other")
 
 OA <- read.csv("data/Osprey_Americas/Osprey Bierregaard North and South America.csv", stringsAsFactors = F) %>% 
@@ -130,7 +137,8 @@ OA <- read.csv("data/Osprey_Americas/Osprey Bierregaard North and South America.
          year = year(date_time),
          species = "O",
          season = ifelse(month %in% c(3,4),"spring",ifelse (month %in% c(9,10), "autumn", "other"))) %>% 
-  mutate(track = paste(tag.local.identifier, year,season,sep = "_")) %>% 
+  mutate(track = paste(tag.local.identifier, year,season,sep = "_"),
+         ind = as.character(tag.local.identifier)) %>% 
   filter(season != "other")
 
 EF_aut <- read_excel("data/eleonoras_falcon.xlsx", sheet = 2) %>% 
@@ -140,18 +148,20 @@ EF_aut <- read_excel("data/eleonoras_falcon.xlsx", sheet = 2) %>%
          year = year(date_time),
          species = "EF",
          season = ifelse(month %in% c(3,4),"spring",ifelse (month %in% c(9,10), "autumn", "other"))) %>% 
-  mutate(track = paste(ID.individual, year,season,sep = "_")) %>% 
+  mutate(track = paste(ID.individual, year,season,sep = "_"),
+         ind = as.character(ID.individual),
+         sensor.type = "gps") %>% 
   filter(season == "autumn")
 
 ##### STEP 2: merge all data, assign zone #####
 
 dataset <- list(OHB,GFB, PF, OE, OA, EF_aut, OHB_GPS_aut) %>% 
-  reduce(full_join, by = c("location.long", "location.lat", "date_time", "track", "month", "year" , "season", "species")) %>% 
+  reduce(full_join, by = c("location.long", "location.lat", "date_time", "track", "month", "year" , "season", "species", "ind", "sensor.type")) %>% 
   mutate(zone = ifelse(between(location.lat, 0, 30) | between(location.lat, 0, -30), "tradewind",
                        ifelse(between(location.lat, 30,60) | between(location.lat, -30,-60), "temperate",
                               ifelse(between(location.lat, -30,30), "tropical",
                               "arctic")))) %>% 
-  dplyr::select(c("location.long", "location.lat", "date_time", "track", "month", "year" , "season", "species", "zone")) %>% 
+  dplyr::select(c("location.long", "location.lat", "date_time", "track", "month", "year" , "season", "species", "zone", "ind", "sensor.type")) %>% 
   as.data.frame()
 
 save(dataset, file = "R_files/2021/all_spp_unfiltered_updated_lc_0_removed_new_track_id.RData")
