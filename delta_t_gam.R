@@ -1,6 +1,6 @@
 #scripts for building a global GAM for delta-t
 #data processed in R_files/global_seascape.R
-#May 6, 2020. Radolfzell, DE. Elham Nourani, PhD
+#May 6, 2020. Radolfzell, DE. Elham glNourani, PhD
 #update May 7, 2020: calculate solar position to add a meaningful proxy for time of the day to the model (so, basically, the local time calculation was not necessary)
 #update Jun 8, 2020: scale lat, lon, and yday.... or not.... lol
 

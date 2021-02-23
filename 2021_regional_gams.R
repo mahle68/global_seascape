@@ -1,5 +1,6 @@
-#code for running gams for each region separately
-#Jun 19. 2020
+#code for running gams for each region separately. mostly copied from regional_gams.R
+#Feb. 22, 2021
+
 library(mgcv)
 library(tidyverse)
 library(sp)
@@ -16,20 +17,65 @@ library(readxl)
 library(png)
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files")
-wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
+wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 
-### STEP 1: open data, spatio-termporal filters #####
+
+
+### -------- STEP 1: determine the extents for each region ####
+
+#spatial extent of ssf data
 load("2021/ssf_input_all_df_1hr.RData") #used_av_df_1hr
-
-y_extent <- used_av_df_1hr %>% 
+y_extent <- used_av_df_1hr %>%
+  filter(used == 1) %>% 
   summarise(max_lat = round(max(y)),
             min_lat = round(min(y)))
 
+#create a dummy layer
+dummy <- st_polygon(list(rbind(c(-180,-180), c(180,-180), c(180,180), c(-180,180),c(-180,-180)))) %>% 
+  st_sfc(crs = wgs)
 
+# --- East Asia
+East_asia <- dummy %>% 
+  st_crop(c(xmin = 99, xmax = 130, ymin = 1.7, ymax = 41))
+
+# --- Indian ocean
+Indian_ocean <- dummy %>% 
+  st_crop(xmin = 43, xmax = 78, ymin = 9, ymax = 26) #%>% 
+
+# --- American continent
+Americas <- dummy %>% 
+  st_crop(xmin = -98, xmax = -54, ymin = 5.7, ymax = 47) #%>% 
+  #st_difference(np_ocean)
+
+# --- Europe
+Europe <- dummy %>% 
+  st_crop(xmin = -11, xmax = 50.5, ymin = 30, ymax = 69)
+
+# --- Madagascar
+Madagascar <- dummy %>% 
+  st_crop(xmin = 33, xmax = 49, ymin = -26, ymax = -9)
+
+mapview(East_asia) + mapview(Indian_ocean) + mapview(Americas) + mapview(Europe) + mapview(Madagascar)
+
+#put all regional data in a list
+extent_ls <- list(East_asia = st_bbox(East_asia), Americas = st_bbox(Americas), Indian_ocean = st_bbox(Indian_ocean),
+                Europe = st_bbox(Europe), Madagascar = st_bbox(Madagascar))
+
+save(extent_ls, file = "2021/extent_ls_regional_gam.RData")
+
+
+
+#------------------------------------------------------------------------
+### STEP 1: open data, spatio-termporal filters #####
 
 #spatial extent of ssf data
+load("2021/ssf_input_all_df_1hr.RData") #used_av_df_1hr
+y_extent <- used_av_df_1hr %>%
+  filter(used == 1) %>% 
+  summarise(max_lat = round(max(y)),
+            min_lat = round(min(y)))
 
-load("processed_era_interim_data/samples_with_local_time_hour.RData") #called df_lt (from delta_t_gam.R)
+load("processed_era_interim_data/samples_with_local_time_hour.RData") #called df_lt (from delta_t_gam.R) max is 60!!!!!!!!!!!
 X11(); plot(df_lt$lon, df_lt$lat, pch = 16, cex = 0.3, col = "blue")
 
 #ocean layer with no lakes
@@ -47,14 +93,14 @@ data <- df_lt %>%
                            ifelse(s_elev_angle > 40, "high", "low")),
          month = month(date_time))
 
-save(data, file = "t_data_0_60.RData")
+save(data, file = "2021/t_data_lat_filter.RData")
 
 
 ### STEP 1: open and filter ####
-load("t_data_0_60.RData")
+load("2021/t_data_lat_filter.RData") #data
 
 East_asia <- data %>% 
-  st_crop(xmin = 99, xmax = 130, ymin = 2, ymax = 35) %>% 
+  st_crop(xmin = 99, xmax = 130, ymin = 1.7, ymax = 38) %>% 
   #st_difference(st_union(outliers)) %>%  #remove outliers
   as("Spatial") %>% 
   as.data.frame() %>% 
@@ -84,7 +130,7 @@ np_ocean <- st_read("/home/enourani/ownCloud/Work/GIS_files/World_Seas_IHO_v3/Wo
   st_crop(xmin = -118, xmax = -60, ymin = 0, ymax = 29) 
 
 Americas <- data %>% 
-  st_crop(xmin = -98, xmax = -54, ymin = 5.7, ymax = 45) %>% 
+  st_crop(xmin = -98, xmax = -54, ymin = 5.7, ymax = 47) %>% 
   st_difference(np_ocean) %>% 
   st_difference(outlier) %>%  #some points remain on the Pacific ocean. remove them. outlier: outlier <- Americas %>% filter(row_number() == which(Americas$yday == 74 & Americas$year == 2017 & Americas$local_hour == 13))
   #dplyr::select(names(data)) %>%
@@ -114,7 +160,7 @@ load("eur_sea.RData")
 
 #mask europe layer to keep only waterbodies of itnerest
 Europe <- data %>% 
-  st_crop(xmin = -11, xmax = 37, ymin = 30, ymax = 62) %>% 
+  st_crop(xmin = -11, xmax = 37, ymin = 30, ymax = 68.5) %>% 
   st_intersection(eur_sea) %>% 
   as("Spatial") %>% 
   as.data.frame() %>% 

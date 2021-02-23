@@ -84,6 +84,8 @@ rsd <- function(x){
 # ---------- STEP 1: prepare the input data#####
 #open over water points prepared in 2021_all_data_prep_analyze.R
 load("2021/all_2013_2020_overwater_points.RData") #all_oversea
+load("2021/ocean.RData") #ocean (prepared in 2021_all_data_prep_analyze.R)
+#load("2021/land_no_buffer.RData") #land_no_buffer
 
 # ---------- STEP 2: create move object#####
 
@@ -219,8 +221,8 @@ used_av_ls_1hr <- parLapply(mycl, move_ls,function(species){ #each species
         used_point <- burst[this_point+1,] #this is the next point. the observed end-point of the step starting from the current_point
         
         #randomly generate 50 step lengths and turning angles
-        rta <- as.vector(rvonmises(n = 50, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
-        rsl <- rgamma(n = 50, shape=fit.gamma1$estimate[[1]], rate = fit.gamma1$estimate[[2]]) * 1000  #generate random step lengths from the gamma distribution. make sure unit is meters
+        rta <- as.vector(rvonmises(n = 150, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
+        rsl <- rgamma(n = 150, shape=fit.gamma1$estimate[[1]], rate = fit.gamma1$estimate[[2]]) * 1000  #generate random step lengths from the gamma distribution. make sure unit is meters
         
         #calculate bearing of previous point
         #prev_bearing<-bearing(previous_point,current_point) #am I allowing negatives?... no, right? then use NCEP.loxodrome
@@ -239,10 +241,10 @@ used_av_ls_1hr <- parLapply(mycl, move_ls,function(species){ #each species
         
         #put used and available points together
         df <- used_point@data %>%  
-          slice(rep(row_number(),51)) %>% #paste each row 50 times for the used and alternative steps
+          slice(rep(row_number(),151)) %>% #paste each row 50 times for the used and alternative steps
           mutate(x = c(head(x,1),rnd_sp@coords[,1]),
                  y = c(head(y,1),rnd_sp@coords[,2]),
-                 used = c(1,rep(0,50)))  %>% #one hour after the start point of the step
+                 used = c(1,rep(0,150)))  %>% #one hour after the start point of the step
           rowwise() %>% 
           mutate(heading = NCEP.loxodrome.na(lat1=current_point$y,lat2=y,lon1=current_point$x,lon2= x)) %>% 
           as.data.frame()
@@ -260,16 +262,28 @@ used_av_ls_1hr <- parLapply(mycl, move_ls,function(species){ #each species
   used_av_track
 })
 
-Sys.time() - b
+Sys.time() - b #1.368372 mins
 
-stopCluster(mycl)
+stopCluster(mycl) 
   
   
-save(used_av_ls_1hr, file = "2021/ssf_input_all_1hr.RData")
+save(used_av_ls_1hr, file = "2021/ssf_input_all_1hr_150.RData")
+
+#remove alternative points over land, and randomly select 50 points from those that remain
+
+# points_water <- lapply(used_av_ls_1hr, function(x){
+#   
+#   pts <- x %>% 
+#     st_as_sf(coords = c("x","y"), crs = wgs) %>% 
+#     #st_intersection(ocean)
+#     st_difference(land_no_buffer)
+#   
+# })
+
 
 # ---------- STEP 2: annotate#####
 
-load("2021/ssf_input_all_1hr.RData") #used_av_ls_1hr
+load("2021/ssf_input_all_1hr_150.RData") #used_av_ls_1hr
 
 #create one dataframe with movebank specs
 used_av_df_1hr <- lapply(c(1:length(used_av_ls_1hr)), function(i){
@@ -292,7 +306,7 @@ used_av_df_1hr <- lapply(c(1:length(used_av_ls_1hr)), function(i){
                                                     ifelse(species == "PF" & x < -30, "PF_A",
                                                            "PF_E")))))))
 
-save(used_av_df_1hr, file = "2021/ssf_input_all_df_1hr.RData")
+save(used_av_df_1hr, file = "2021/ssf_input_all_df_1hr_150.RData")
 
 
 # #have a look
@@ -315,7 +329,7 @@ save(used_av_df_1hr, file = "2021/ssf_input_all_df_1hr.RData")
 #rename columns
 colnames(used_av_df_1hr)[c(3,4)] <- c("location-long","location-lat")
 
-write.csv(used_av_df_1hr, "2021/ssf_input_df_1hr.csv")
+write.csv(used_av_df_1hr, "2021/ssf_input_df_1hr_150.csv")
 
 # summary stats
 used_av_df_1hr %>% 
@@ -334,28 +348,31 @@ data_sf <- used_av_df_1hr %>%
 mapview(data_sf, zcol = "species", viewer.suppress = TRUE)
 
 #open annotated data and add wind support and crosswind
-ann <- read.csv("2021/annotations/ssf_input_df_1hr.csv-5377601907157905991.csv",
-                stringsAsFactors = F) %>%
-  mutate(ind = strsplit(track, "_")[[1]][1],
-stratum = paste(track, burst_id, step_id, sep = "_")) %>% 
+ann <- read.csv("2021/annotations/ssf_input_df_1hr_150.csv-3274246317228909215.csv",
+                stringsAsFactors = F) %>% 
   drop_na() %>%
   mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
   rename(sst = ECMWF.ERA5.SL.Sea.Surface.Temperature ,
          t2m = ECMWF.ERA5.SL.Temperature..2.m.above.Ground.,
-         u925 = ECMWF.ERA5.PL.U.wind,
+         u925 = ECMWF.ERA5.PL.U.Wind,
          v925 = ECMWF.ERA5.PL.V.wind) %>%
   mutate(row_id = row_number(),
          delta_t = sst - t2m,
-         wind_support= wind_support(u=u925,v=v925,heading=heading),
+         wind_support= wind_support(u = u925,v = v925,heading=heading),
          cross_wind= cross_wind(u=u925,v=v925,heading=heading),
-         wind_speed = sqrt(u925^2 + v925^2), # Pythagorean Theorem
-         stratum = paste(track, seg_id, burst_id, step_id, sep = "_"),
-         lat_zone = ifelse(location.lat > 30, "tmpz","twz")) %>% 
-  rowwise() %>% 
-  mutate(species = strsplit(group, "_")[[1]][1]) %>% 
-  ungroup() %>% 
+         wind_speed = sqrt(u925^2 + v925^2)) %>%  # Pythagorean Theorem
   as.data.frame()
           
+
+#extract startum IDs for those that have less than 50 alternative points over the sea
+ann %>% 
+  filter(used == 0) %>% 
+  group_by(stratum) %>% 
+  summarise(n = n()) %>% 
+  filter(n < 50)
+
+#add day vs night as a vairable
+
 
 # STEP 4: annotate data (40 year data)#####
 #prep a dataframe with 41 rows corresponding to 41 years (1979-2019), for each point. then i can calculate variance of delta t over 41 years for each point
