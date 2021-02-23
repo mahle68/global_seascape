@@ -84,7 +84,7 @@ rsd <- function(x){
 # ---------- STEP 1: prepare the input data#####
 #open over water points prepared in 2021_all_data_prep_analyze.R
 load("2021/all_2013_2020_overwater_points.RData") #all_oversea
-load("2021/ocean.RData") #ocean (prepared in 2021_all_data_prep_analyze.R)
+#load("2021/ocean.RData") #ocean (prepared in 2021_all_data_prep_analyze.R)
 #load("2021/land_no_buffer.RData") #land_no_buffer
 
 # ---------- STEP 2: create move object#####
@@ -124,7 +124,7 @@ clusterEvalQ(mycl, {
 
 (b <- Sys.time())
 
-used_av_ls_1hr <- parLapply(mycl, move_ls,function(species){ #each species
+used_av_ls_1hr <- parLapply(mycl, move_ls, function(species){ #each species
   
   sp_obj_ls <- lapply(split(species),function(track){ #sp_obj_ls will have the filtered and bursted segments
     
@@ -324,8 +324,6 @@ save(used_av_df_1hr, file = "2021/ssf_input_all_df_1hr_150.RData")
 # points(used_av_all_2hr[used_av_all_2hr$used == 0,c("x","y")], pch = 16, cex = 0.4, col = "gray55")
 # points(used_av_all_2hr[used_av_all_2hr$used == 1,c("x","y")], pch = 16, cex = 0.4, col = "orange")
 
-
-# STEP 3: annotate data (observed time)#####
 #rename columns
 colnames(used_av_df_1hr)[c(3,4)] <- c("location-long","location-lat")
 
@@ -347,12 +345,41 @@ data_sf <- used_av_df_1hr %>%
 
 mapview(data_sf, zcol = "species", viewer.suppress = TRUE)
 
+# --- after movebank
 #open annotated data and add wind support and crosswind
 ann <- read.csv("2021/annotations/ssf_input_df_1hr_150.csv-3274246317228909215.csv",
                 stringsAsFactors = F) %>% 
-  drop_na() %>%
+  drop_na() 
+          
+#extract startum IDs for those that have less than 50 alternative points over the sea
+less_than_50 <- ann %>% 
+  filter(used == 0) %>% 
+  group_by(stratum) %>% 
+  summarise(n = n()) %>% 
+  filter(n < 50) #7 strata have less than 50 points remaining. I can easily omit them, 6 of them are EF. It doesnt hurt to have less of that 
+
+# retain 50 alternative steps per stratum
+used <- ann %>% 
+  filter(!(stratum %in% less_than_50$stratum)) %>% 
+  filter(used == 1)
+
+used_avail_50 <- ann %>% 
+  filter(!(stratum %in% less_than_50$stratum)) %>% 
+  filter(used == 0) %>% 
+  group_by(stratum) %>% 
+  sample_n(50, replace = F) %>% 
+  ungroup() %>% 
+  full_join(used) #append the used levels
+
+#make sure all strata have 51 points
+no_used <- used_avail_50 %>% 
+  summarise(n = n()) %>% 
+  filter(n < 51) #5 strata dont have used points (it falls over land and is omitted in the annotation of sea surface temperature)
+
+ann_50 <- used_avail_50 %>%
+  filter(!(stratum %in% no_used$stratum)) %>% 
   mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
-  rename(sst = ECMWF.ERA5.SL.Sea.Surface.Temperature ,
+  rename(sst = ECMWF.ERA5.SL.Sea.Surface.Temperature,
          t2m = ECMWF.ERA5.SL.Temperature..2.m.above.Ground.,
          u925 = ECMWF.ERA5.PL.U.Wind,
          v925 = ECMWF.ERA5.PL.V.wind) %>%
@@ -360,56 +387,51 @@ ann <- read.csv("2021/annotations/ssf_input_df_1hr_150.csv-3274246317228909215.c
          delta_t = sst - t2m,
          wind_support= wind_support(u = u925,v = v925,heading=heading),
          cross_wind= cross_wind(u=u925,v=v925,heading=heading),
-         wind_speed = sqrt(u925^2 + v925^2)) %>%  # Pythagorean Theorem
+         wind_speed = sqrt(u925^2 + v925^2)) %>% 
+  st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
+  mutate(s_elev_angle = solarpos(st_coordinates(.), timestamp, proj4string=CRS("+proj=longlat +datum=WGS84"))[,2]) %>% #calculate solar elevation angle
+  mutate(sun_elev = ifelse(s_elev_angle < -6, "night", #create a categorical variable for teh position of the sun
+                           ifelse(s_elev_angle > 40, "high", "low"))) %>% 
+  as("Spatial") %>% 
   as.data.frame()
-          
-
-#extract startum IDs for those that have less than 50 alternative points over the sea
-ann %>% 
-  filter(used == 0) %>% 
-  group_by(stratum) %>% 
-  summarise(n = n()) %>% 
-  filter(n < 50)
-
-#add day vs night as a vairable
 
 
-# STEP 4: annotate data (40 year data)#####
-#prep a dataframe with 41 rows corresponding to 41 years (1979-2019), for each point. then i can calculate variance of delta t over 41 years for each point
-df_40 <- ann %>% 
+save(ann_50, file = "2021/ssf_input_annotated_1hr_50.RData")
+
+
+# long-term annotation data (40 year data)
+#prep a dataframe with 40 rows corresponding to 40 years (1981,2020), for each point. then i can calculate variance of delta t over 41 years for each point
+df_40 <- ann_50 %>% #make sure this is not grouped!
   dplyr::select(-c(v925,u925,t2m,sst,delta_t)) %>% 
-  slice(rep(row_number(),41)) %>% 
+  slice(rep(row_number(),40)) %>% 
   group_by(row_id) %>% 
-  mutate(year = c(1979:2019)) %>%
+  mutate(year = c(1981:2020)) %>%
   ungroup() %>%
   mutate(timestamp = paste(as.character(date_time),"000",sep = ".")) %>% 
   as.data.frame()
 
 str_sub(df_40$timestamp,1,4) <- df_40$year #replace original year with years from 1979-2019
-colnames(df_40)[c(3,4)] <- c("location-long","location-lat") #rename columns to match movebank format
+colnames(df_40)[c(23,24)] <- c("location-long","location-lat") #rename columns to match movebank format
 
 #break up into two parts. over 1 million rows
 df_40_1 <- df_40 %>% 
-  slice(1:900000)
-write.csv(df_40_1, "ssf_40_all_spp_1hr_1.csv")
+  slice(1:(nrow(df_40)/4))
+write.csv(df_40_1, "2021/ssf_40_all_spp_1hr_1.csv")
 
 df_40_2 <- df_40 %>% 
-  slice(900001:1800000)
-write.csv(df_40_2, "ssf_40_all_spp_1hr_2.csv")
+  slice(((nrow(df_40)/4) + 1 ):(nrow(df_40)/2))
+write.csv(df_40_2, "2021/ssf_40_all_spp_1hr_2.csv")
 
 df_40_3 <- df_40 %>% 
-  slice(1800001:2700000)
-write.csv(df_40_3, "ssf_40_all_spp_1hr_3.csv")
+  slice(((nrow(df_40)/2) + 1) : ((nrow(df_40)/2) + (nrow(df_40)/4)))
+write.csv(df_40_3, "2021/ssf_40_all_spp_1hr_3.csv")
 
 df_40_4 <- df_40 %>% 
-  slice(2700001:3600000)
-write.csv(df_40_4, "ssf_40_all_spp_1hr_4.csv")
-
-df_40_5 <- df_40 %>% 
-  slice(3600001:nrow(.))
-write.csv(df_40_5, "ssf_40_all_spp_1hr_5.csv")
+  slice(((nrow(df_40)/2) + (nrow(df_40)/4) + 1):nrow(df_40))
+write.csv(df_40_4, "2021/ssf_40_all_spp_1hr_4.csv")
 
 
+#---- after movebank
 #calculate long-term metrics and merge with previously annotated data
 ann_40_ls <- list.files("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/all_ssf_40yrs_1hr/",pattern = ".csv", full.names = T) 
 
@@ -432,7 +454,8 @@ ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>%
 
 save(ann_cmpl, file = "ssf_input_ann_cmpl_1hr.RData")
 
-# STEP 5: data exploration#####
+
+# ---------- STEP 4: data exploration#####
 
 load("ssf_input_ann_cmpl_1hr.RData") #ann_cmpl
 

@@ -63,8 +63,6 @@ extent_ls <- list(East_asia = st_bbox(East_asia), Americas = st_bbox(Americas), 
 
 save(extent_ls, file = "2021/extent_ls_regional_gam.RData")
 
-
-
 #------------------------------------------------------------------------
 ### STEP 1: open data, spatio-termporal filters #####
 

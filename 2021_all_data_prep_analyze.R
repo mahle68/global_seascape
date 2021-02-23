@@ -47,7 +47,7 @@ save(ocean, file = "R_files/2021/ocean.RData") #called ocean
 
 #ocean_sp <- as(ocean,"Spatial")
 #land_sp <- as(land_no_buffer,"Spatial")
-land_b<-buffer(land_sp,width=0.001)
+land_b <- buffer(land_sp,width=0.001)
 
 
 ##### STEP 1: read in the data and filter for adult birds and season and databse-specific filters #####
@@ -228,7 +228,10 @@ clusterEvalQ(mycl, {
 
 (b <- Sys.time())
 
-points_oversea <- parLapply(mycl, split(points_with_segs, points_with_segs$track), function(x){
+#points_oversea <- parLapply(mycl, split(points_with_segs, points_with_segs$track), function(x){
+  
+output_ls <- lapply(split(points_with_segs, points_with_segs$track), function(x){ 
+  
   seg <- segs[segs$track == x$track[1],]
   
   oversea <- x %>% 
@@ -237,7 +240,10 @@ points_oversea <- parLapply(mycl, split(points_with_segs, points_with_segs$track
     dplyr::select(-c(track.1, zone.1, species.1))
   
   oversea
-}) %>% 
+}) 
+
+
+%>% 
   reduce(rbind)
   
 Sys.time() - b
