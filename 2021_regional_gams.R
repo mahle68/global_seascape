@@ -879,3 +879,5 @@ subplot(reg_gam_plot(4), x = 10, y = -28, size = c(1,0.5),
 rect(-85,-17,-49,-39,col="white")       
 subplot(reg_gam_plot(2), x = -67, y = -28, size = c(1,0.5), 
         pars = list(mar=c(0,0,0.6,0),cex = 0.6, bty = "l", mgp = c(0,0.2,0),tck = 0.015, cex.main = 0.8, font.main = 3))
+
+#test
