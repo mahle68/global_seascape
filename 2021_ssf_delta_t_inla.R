@@ -433,18 +433,18 @@ write.csv(df_40_4, "2021/ssf_40_all_spp_1hr_4.csv")
 
 #---- after movebank
 #calculate long-term metrics and merge with previously annotated data
-ann_40_ls <- list.files("/home/enourani/ownCloud/Work/Projects/delta_t/movebank_annotation/all_ssf_40yrs_1hr/",pattern = ".csv", full.names = T) 
+ann_40_ls <- list.files("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/annotations/40_yrs_1hr",pattern = ".csv", full.names = T) 
 
 ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>% 
   reduce(full_join) %>% 
-  rename(sst = ECMWF.Interim.Full.Daily.SFC.Sea.Surface.Temperature,
-         t2m = ECMWF.Interim.Full.Daily.SFC.Temperature..2.m.above.Ground.,
-         u925 = ECMWF.Interim.Full.Daily.PL.U.Wind,
-         v925 = ECMWF.Interim.Full.Daily.PL.V.Wind) %>% 
+  rename(sst = ECMWF.ERA5.SL.Sea.Surface.Temperature,
+         t2m = ECMWF.ERA5.SL.Temperature..2.m.above.Ground.,
+         u925 = ECMWF.ERA5.PL.U.Wind,
+         v925 = ECMWF.ERA5.PL.V.wind) %>% 
   mutate(delta_t = sst - t2m,
-         wind_support= wind_support(u=u925,v=v925,heading=heading),
-         cross_wind= cross_wind(u=u925,v=v925,heading=heading),
-         abs_cross_wind = abs(cross_wind(u=u925,v=v925,heading=heading)),
+         wind_support= wind_support(u = u925, v = v925, heading = heading),
+         cross_wind= cross_wind(u = u925, v = v925, heading = heading),
+         abs_cross_wind = abs(cross_wind(u = u925, v = v925, heading = heading)),
          wind_speed = sqrt(u925^2 + v925^2)) %>% 
   group_by(row_id) %>% 
   summarise_at(c("delta_t", "wind_speed", "wind_support", "abs_cross_wind", "u925", "v925"), #before calculating these, investigate why we have NAs??
