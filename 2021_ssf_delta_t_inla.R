@@ -83,7 +83,7 @@ rsd <- function(x){
 
 # ---------- STEP 1: prepare the input data#####
 #open over water points prepared in 2021_all_data_prep_analyze.R
-load("2021/all_2013_2020_overwater_points.RData") #all_oversea
+load("2021/all_2009_2020_overwater_points.RData") #all_oversea
 #load("2021/ocean.RData") #ocean (prepared in 2021_all_data_prep_analyze.R)
 #load("2021/land_no_buffer.RData") #land_no_buffer
 
@@ -107,16 +107,16 @@ oversea_df <- all_oversea %>%
 rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(oversea_df$track),timestamps = oversea_df$date_time),"[",-1)) #get all but the first row of each set of duplicate rows
 oversea_df <- oversea_df[-rows_to_delete,]
 
-#create a mov object
-move_ls <- lapply(split(oversea_df,oversea_df$species),function(x){
-  x<-as.data.frame(x)
-  mv<-move(x = x$x,y = x$y,time = x$date_time,data = x,animal = x$track,proj = wgs)
+#create a mov object. one per group. this will lead to more accurrate estimation of step lengths and turning angles
+move_ls <- lapply(split(oversea_df,oversea_df$group),function(x){
+  x <- as.data.frame(x)
+  mv <- move(x = x$x, y = x$y, time = x$date_time, data = x, animal = x$track, proj = wgs)
   mv
 })
 
 # ---------- STEP 3: generate alternative steps#####
 
-mycl <- makeCluster(8) 
+mycl <- makeCluster(7) 
 clusterExport(mycl, c("move_ls", "wgs", "meters_proj", "NCEP.loxodrome.na")) #define the variable that will be used within the function
 
 clusterEvalQ(mycl, {
@@ -131,13 +131,13 @@ clusterEvalQ(mycl, {
 
 (b <- Sys.time())
 
-used_av_ls_1hr <- parLapply(mycl, move_ls, function(species){ #each species
+used_av_ls_90_60 <- parLapply(mycl, move_ls, function(group){ #each group
   
-  sp_obj_ls <- lapply(split(species),function(track){ #sp_obj_ls will have the filtered and bursted segments
-    
+  sp_obj_ls <- lapply(split(group), function(track){
+  
     #--STEP 1: thin the data to 1-hourly intervals
     track_th <- track %>%
-      thinTrackTime(interval = as.difftime(1, units='hours'),
+      thinTrackTime(interval = as.difftime(60, units='mins'),
                     tolerance = as.difftime(30, units='mins')) #the unselected bursts are the large gaps between the selected ones
     #--STEP 2: assign burst IDs (each chunk of track with 1 hour intervals is one burst... longer gaps will divide the brusts) 
     track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
@@ -204,14 +204,15 @@ used_av_ls_1hr <- parLapply(mycl, move_ls, function(species){ #each species
   fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
   
   #plot
-  # X11();par(mfrow=c(1,2))
-  # hist(sl,freq=F,main="",xlab = "Step length (km)")
-  # plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
-  #                         rate = fit.gamma1$estimate[[2]]), add = TRUE, from = 0.1, to = 150, col = "blue")
-  # 
-  # hist(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]),freq=F,main="",xlab="Turning angles (radians)")
-  # plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
-  # 
+  pdf(paste0("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/ssf_plots/",group@idData$group[1], ".pdf"))
+  par(mfrow=c(1,2))
+  hist(sl,freq=F,main="",xlab = "Step length (km)")
+  plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
+                          rate = fit.gamma1$estimate[[2]]), add = TRUE, from = 0.1, to = 150, col = "blue")
+  
+  hist(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]),freq=F,main="",xlab="Turning angles (radians)")
+  plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
+  dev.off()
   
   #--STEP 5: produce alternative steps
   used_av_track <- lapply(sp_obj_ls, function(track){ #for each trackment
@@ -244,14 +245,14 @@ used_av_ls_1hr <- parLapply(mycl, move_ls, function(species){ #each species
         rnd_sp <- rnd
         coordinates(rnd_sp) <- ~lon+lat
         proj4string(rnd_sp) <- meters_proj
-        rnd_sp <- spTransform(rnd_sp,wgs)
+        rnd_sp <- spTransform(rnd_sp, wgs)
         
         #put used and available points together
         df <- used_point@data %>%  
-          slice(rep(row_number(),151)) %>% #paste each row 50 times for the used and alternative steps
+          slice(rep(row_number(),151)) %>% #paste each row 150 times for the used and alternative steps
           mutate(x = c(head(x,1),rnd_sp@coords[,1]),
                  y = c(head(y,1),rnd_sp@coords[,2]),
-                 used = c(1,rep(0,150)))  %>% #one hour after the start point of the step
+                 used = c(1,rep(0,150)))  %>%
           rowwise() %>% 
           mutate(heading = NCEP.loxodrome.na(lat1 = current_point$y, lat2 = y, lon1 = current_point$x, lon2 = x)) %>% 
           as.data.frame()
@@ -274,7 +275,7 @@ Sys.time() - b #1.368372 mins
 stopCluster(mycl) 
   
   
-save(used_av_ls_1hr, file = "2021/ssf_input_all_1hr_150.RData")
+save(used_av_ls_90_60, file = "2021/ssf_input_all__90_60_150.RData")
 
 #remove alternative points over land, and randomly select 50 points from those that remain
 
@@ -290,30 +291,23 @@ save(used_av_ls_1hr, file = "2021/ssf_input_all_1hr_150.RData")
 
 # ---------- STEP 2: annotate#####
 
-load("2021/ssf_input_all_1hr_150.RData") #used_av_ls_1hr
+load("2021/ssf_input_all_1hr_150.RData") #used_av_ls_90_60
 
 #create one dataframe with movebank specs
-used_av_df_1hr <- lapply(c(1:length(used_av_ls_1hr)), function(i){
+used_av_df_90_60 <- lapply(c(1:length(used_av_ls_90_60)), function(i){
   
-  data <- used_av_ls_1hr[[i]] %>% 
-    dplyr::select(colnames(used_av_ls_1hr[[1]])) %>% #later, add a unique step id: paste track, burst_id and step_id. lol
+  data <- used_av_ls_90_60[[i]] %>% 
+    dplyr::select( c("date_time", "x", "y", "selected",  "burst_id", "step_length", "turning_angle", "track", "step_id", "used", "heading")) %>% #later, add a unique step id: paste track, burst_id and step_id. lol
     mutate(timestamp = paste(as.character(date_time),"000",sep = "."),
-           species = names(used_av_ls_1hr)[[i]]) %>% 
+           group = names(used_av_ls_90_60)[[i]]) %>% 
     rowwise() %>% 
     mutate(ind = strsplit(track, "_")[[1]][1],
            stratum = paste(track, burst_id, step_id, sep = "_")) %>% 
     as.data.frame()
 }) %>% 
-  reduce(rbind) %>%
-  mutate(group = ifelse(species == "OHB", "OHB",
-                        ifelse(species == "GFB", "GFB",
-                               ifelse(species == "EF", "EF",
-                                      ifelse(species == "O" & x < -30, "O_A",
-                                             ifelse(species == "O" & x > -30, "O_E",
-                                                    ifelse(species == "PF" & x < -30, "PF_A",
-                                                           "PF_E")))))))
+  reduce(rbind)
 
-save(used_av_df_1hr, file = "2021/ssf_input_all_df_1hr_150.RData")
+save(used_av_df_90_60, file = "2021/ssf_input_all_df_90_60_150.RData")
 
 
 # #have a look
@@ -332,9 +326,9 @@ save(used_av_df_1hr, file = "2021/ssf_input_all_df_1hr_150.RData")
 # points(used_av_all_2hr[used_av_all_2hr$used == 1,c("x","y")], pch = 16, cex = 0.4, col = "orange")
 
 #rename columns
-colnames(used_av_df_1hr)[c(3,4)] <- c("location-long","location-lat")
+colnames(used_av_df_90_60)[c(2,3)] <- c("location-long","location-lat")
 
-write.csv(used_av_df_1hr, "2021/ssf_input_df_1hr_150.csv")
+write.csv(used_av_df_90_60, "2021/ssf_input_df_90_60_150.csv")
 
 # summary stats
 used_av_df_1hr %>% 
@@ -354,7 +348,7 @@ mapview(data_sf, zcol = "species", viewer.suppress = TRUE)
 
 # --- after movebank
 #open annotated data and add wind support and crosswind
-ann <- read.csv("2021/annotations/ssf_input_df_1hr_150.csv-3274246317228909215.csv",
+ann <- read.csv("2021/annotations/ssf_input_df_90_60_150.csv-5816495146751889418/ssf_input_df_90_60_150.csv-5816495146751889418.csv",
                 stringsAsFactors = F) %>% 
   drop_na() 
           
@@ -363,7 +357,7 @@ less_than_50 <- ann %>%
   filter(used == 0) %>% 
   group_by(stratum) %>% 
   summarise(n = n()) %>% 
-  filter(n < 50) #7 strata have less than 50 points remaining. I can easily omit them, 6 of them are EF. It doesnt hurt to have less of that 
+  filter(n < 50) #all are EF from Spain. It doesnt hurt to have less of that 
 
 # retain 50 alternative steps per stratum
 used <- ann %>% 
@@ -381,7 +375,7 @@ used_avail_50 <- ann %>%
 #make sure all strata have 51 points
 no_used <- used_avail_50 %>% 
   summarise(n = n()) %>% 
-  filter(n < 51) #5 strata dont have used points (it falls over land and is omitted in the annotation of sea surface temperature)
+  filter(n < 51) # should be zero, and is! ;)
 
 ann_50 <- used_avail_50 %>%
   filter(!(stratum %in% no_used$stratum)) %>% 
@@ -403,8 +397,15 @@ ann_50 <- used_avail_50 %>%
   as.data.frame()
 
 
-save(ann_50, file = "2021/ssf_input_annotated_1hr_50.RData")
+save(ann_50, file = "2021/ssf_input_annotated_90_60_50.RData")
 
+#annotate with heat flux and blh, to calculate w*... could have been done with the previous annotation round.
+df_for_ann <- ann_50 %>% 
+  mutate(timestamp = paste(as.character(date_time),"000",sep = ".")) 
+
+colnames(df_for_ann)[c(26,27)] <- c("location-long","location-lat") #rename columns to match movebank format
+
+write.csv(df_for_ann, "2021/df_for_ann_all_spp_90_60.csv")
 
 # long-term annotation data (40 year data)
 #prep a dataframe with 40 rows corresponding to 40 years (1981,2020), for each point. then i can calculate variance of delta t over 41 years for each point
@@ -418,25 +419,20 @@ df_40 <- ann_50 %>% #make sure this is not grouped!
   as.data.frame()
 
 str_sub(df_40$timestamp,1,4) <- df_40$year #replace original year with years from 1979-2019
-colnames(df_40)[c(23,24)] <- c("location-long","location-lat") #rename columns to match movebank format
+colnames(df_40)[c(21,22)] <- c("location-long","location-lat") #rename columns to match movebank format
 
 #break up into two parts. over 1 million rows
 df_40_1 <- df_40 %>% 
-  slice(1:(nrow(df_40)/4))
-write.csv(df_40_1, "2021/ssf_40_all_spp_1hr_1.csv")
+  slice(1:800000)
+write.csv(df_40_1, "2021/ssf_40_all_spp_90_60_1.csv")
 
 df_40_2 <- df_40 %>% 
-  slice(((nrow(df_40)/4) + 1 ):(nrow(df_40)/2))
-write.csv(df_40_2, "2021/ssf_40_all_spp_1hr_2.csv")
+  slice(800001:1600000)
+write.csv(df_40_2, "2021/ssf_40_all_spp_90_60_2.csv")
 
 df_40_3 <- df_40 %>% 
-  slice(((nrow(df_40)/2) + 1) : ((nrow(df_40)/2) + (nrow(df_40)/4)))
-write.csv(df_40_3, "2021/ssf_40_all_spp_1hr_3.csv")
-
-df_40_4 <- df_40 %>% 
-  slice(((nrow(df_40)/2) + (nrow(df_40)/4) + 1):nrow(df_40))
-write.csv(df_40_4, "2021/ssf_40_all_spp_1hr_4.csv")
-
+  slice(1600001 : nrow(df_40))
+write.csv(df_40_3, "2021/ssf_40_all_spp_90_60_3.csv")
 
 #---- after movebank
 
@@ -546,6 +542,24 @@ for(i in c("wind_speed", "abs_cross_wind","delta_t", "wind_support")){
           xaxt = "n", add = T, boxfill = "grey",
           boxwex = 0.25, at = 1:length(unique(ann_cmpl[ann_cmpl$used == 1 & ann_cmpl$zone == j, "species"])) + 0.15)
 } 
+}
+mtext("values at timestamp of each point", side = 3, outer = T, cex = 1.3)
+
+
+X11(width = 15, height = 10);par(mfrow= c(3,1), oma = c(0,0,3,0))
+for(i in c("wind_speed","delta_t", "wind_support")){
+
+    boxplot(ann_50[,i] ~ ann_50[,"group"], data = ann_50, boxfill = NA, border = NA, main = i, xlab = "", ylab = "")
+    if(i == "wind_speed"){
+      legend("bottomleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
+    }
+    boxplot(ann_50[ann_50$used == 1, i] ~ ann_50[ann_50$used == 1,"group"], 
+            xaxt = "n", add = T, boxfill = "orange",
+            boxwex = 0.25, at = 1:length(unique(ann_50[ann_50$used == 1, "group"])) - 0.15)
+    boxplot(ann_50[ann_50$used == 0, i] ~ ann_50[ann_50$used == 0, "group"], 
+            xaxt = "n", add = T, boxfill = "grey",
+            boxwex = 0.25, at = 1:length(unique(ann_50[ann_50$used == 1 , "group"])) + 0.15)
+
 }
 mtext("values at timestamp of each point", side = 3, outer = T, cex = 1.3)
 
