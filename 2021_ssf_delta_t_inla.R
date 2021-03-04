@@ -291,7 +291,7 @@ save(used_av_ls_90_60, file = "2021/ssf_input_all__90_60_150.RData")
 
 # ---------- STEP 2: annotate#####
 
-load("2021/ssf_input_all_1hr_150.RData") #used_av_ls_90_60
+load("2021/ssf_input_all_90_60_150.RData") #used_av_ls_90_60
 
 #create one dataframe with movebank specs
 used_av_df_90_60 <- lapply(c(1:length(used_av_ls_90_60)), function(i){
@@ -388,7 +388,8 @@ ann_50 <- used_avail_50 %>%
          delta_t = sst - t2m,
          wind_support= wind_support(u = u925,v = v925,heading=heading),
          cross_wind= cross_wind(u=u925,v=v925,heading=heading),
-         wind_speed = sqrt(u925^2 + v925^2)) %>% 
+         wind_speed = sqrt(u925^2 + v925^2),
+         abs_cross_wind = abs(cross_wind(u = u925, v = v925, heading = heading))) %>% 
   st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
   mutate(s_elev_angle = solarpos(st_coordinates(.), timestamp, proj4string=CRS("+proj=longlat +datum=WGS84"))[,2]) %>% #calculate solar elevation angle
   mutate(sun_elev = ifelse(s_elev_angle < -6, "night", #create a categorical variable for teh position of the sun
@@ -436,10 +437,12 @@ write.csv(df_40_3, "2021/ssf_40_all_spp_90_60_3.csv")
 
 #---- after movebank
 
-load("2021/ssf_input_annotated_1hr_50.RData") #ann_50
+load("2021/ssf_input_annotated_90_60_50.RData") #ann_50
+ann_50 <- ann_50 %>% 
+  mutate(abs_cross_wind = abs(cross_wind(u = u925, v = v925, heading = heading)))
 
 #calculate long-term metrics and merge with previously annotated data
-ann_40_ls <- list.files("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/annotations/40_yrs_1hr",pattern = ".csv", full.names = T) 
+ann_40_ls <- list.files("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/annotations/40_yrs_90_60/",pattern = ".csv", full.names = T) 
 
 ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>% 
   reduce(full_join) %>% 
@@ -456,22 +459,56 @@ ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>%
   summarise_at(c("delta_t", "wind_speed", "wind_support", "abs_cross_wind", "u925", "v925"), #before calculating these, investigate why we have NAs??
                list(avg = ~mean(., na.rm = T), var = ~var(., na.rm = T), rsd = ~rsd(.))) %>% 
   full_join(ann_50, by = "row_id") %>% 
+  rename(location.long = coords.x1,
+         location.lat = coords.x2) %>% 
+  rowwise() %>% 
+  mutate(species = strsplit(group, "_")[[1]][1],
+         zone = ifelse(between(location.lat, 0, 30) | between(location.lat, 0, -30), "tradewind",
+                       ifelse(between(location.lat, 30,60) | between(location.lat, -30,-60), "temperate",
+                              ifelse(between(location.lat, -30,30), "tropical",
+                                     "arctic")))) %>% 
+  ungroup() %>% 
   as.data.frame()
 
-save(ann_cmpl, file = "2021/ssf_input_ann_cmpl_1hr.RData")
+save(ann_cmpl, file = "2021/ssf_input_ann_cmpl_90_60.RData")
 
 
 # ---------- STEP 4: data exploration#####
 
-load("ssf_input_ann_cmpl_1hr.RData") #ann_cmpl
-ann_old <- ann_cmpl
+# --- 4.1: plot variances against latitude
 
-load("2021/ssf_input_ann_cmpl_1hr.RData") #ann_cmpl
+#for each stratum, calculate variances and means across all points, not only the available points. then create a scatter plot of 
+var_data <- ann_cmpl %>% 
+  group_by(stratum) %>% 
+  arrange(desc(used), .by_group = T) %>% 
+  summarise(m_wspt = mean(wind_support),
+            var_wspt = var(wind_support),
+            m_delta_t = mean(delta_t),
+            var_delta_t = var(delta_t),
+            m_wspd = mean(wind_speed),
+            var_wspd = var(wind_speed),
+            used_lat = head(location.lat,1),
+            species = head(species,1),
+            zone = head(zone,1)) #the first row is the used point
+  
+#plot
+par(mfrow = c(3,1))
+plot(var_data$used_lat, var_data$var_wspt, main = "variation in wind support", col = as.factor(var_data$species))
+plot(var_data$used_lat, var_data$var_wspd, main = "variation in wind speed", col = as.factor(var_data$species))
+plot(var_data$used_lat, var_data$var_delta_t, main = "variation in delta t", col = as.factor(var_data$species))
+
+par(mfrow = c(3,1))
+plot(var_data$used_lat, var_data$m_wspt, main = "average wind support")
+plot(var_data$used_lat, var_data$m_wspd, main = "average wind speed")
+plot(var_data$used_lat, var_data$m_delta_t, main = "average delta t")
+
+
+# --- 4.2
+
+load("2021/ssf_input_ann_cmpl_90_60.RData") #ann_cmpl
 
 #for plotting
 ann_cmpl$species <- factor(ann_cmpl$species)
-ann_cmpl$abs_cross_wind <- abs(ann_cmpl$cross_wind)
-
 
 
 #plot
@@ -546,19 +583,19 @@ for(i in c("wind_speed", "abs_cross_wind","delta_t", "wind_support")){
 mtext("values at timestamp of each point", side = 3, outer = T, cex = 1.3)
 
 
-X11(width = 15, height = 10);par(mfrow= c(3,1), oma = c(0,0,3,0))
-for(i in c("wind_speed","delta_t", "wind_support")){
+X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
+for(i in c("wind_speed","delta_t", "wind_support", "abs_cross_wind")){
 
-    boxplot(ann_50[,i] ~ ann_50[,"group"], data = ann_50, boxfill = NA, border = NA, main = i, xlab = "", ylab = "")
+    boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = i, xlab = "", ylab = "")
     if(i == "wind_speed"){
       legend("bottomleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
     }
-    boxplot(ann_50[ann_50$used == 1, i] ~ ann_50[ann_50$used == 1,"group"], 
+    boxplot(ann_cmpl[ann_cmpl$used == 1, i] ~ ann_cmpl[ann_cmpl$used == 1,"species"], 
             xaxt = "n", add = T, boxfill = "orange",
-            boxwex = 0.25, at = 1:length(unique(ann_50[ann_50$used == 1, "group"])) - 0.15)
-    boxplot(ann_50[ann_50$used == 0, i] ~ ann_50[ann_50$used == 0, "group"], 
+            boxwex = 0.25, at = 1:length(unique(ann_cmpl[ann_cmpl$used == 1, "species"])) - 0.15)
+    boxplot(ann_cmpl[ann_cmpl$used == 0, i] ~ ann_cmpl[ann_cmpl$used == 0, "species"], 
             xaxt = "n", add = T, boxfill = "grey",
-            boxwex = 0.25, at = 1:length(unique(ann_50[ann_50$used == 1 , "group"])) + 0.15)
+            boxwex = 0.25, at = 1:length(unique(ann_cmpl[ann_cmpl$used == 1 , "species"])) + 0.15)
 
 }
 mtext("values at timestamp of each point", side = 3, outer = T, cex = 1.3)
