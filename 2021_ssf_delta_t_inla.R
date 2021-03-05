@@ -24,7 +24,7 @@ library(maptools)
 library(brinla)
 
 
-setwd("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files/")
+setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/")
 
 #meters_proj <- CRS("+proj=moll +ellps=WGS84")
 wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
@@ -503,7 +503,7 @@ plot(var_data$used_lat, var_data$m_wspd, main = "average wind speed")
 plot(var_data$used_lat, var_data$m_delta_t, main = "average delta t")
 
 
-# --- 4.2
+# --- 4.2: boxplots
 
 load("2021/ssf_input_ann_cmpl_90_60.RData") #ann_cmpl
 
@@ -601,31 +601,8 @@ for(i in c("wind_speed","delta_t", "wind_support", "abs_cross_wind")){
 mtext("values at timestamp of each point", side = 3, outer = T, cex = 1.3)
 
 
-######## just looking at the temperate and the tradewind zones
+# --- 4.3:plot relationship between wind and delta t
 
-old_zones <- ann_cmpl[ann_cmpl$zone %in% c("tradewind","temperate"),]
-
-
-X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
-for(i in c("wind_speed", "abs_cross_wind","delta_t", "wind_support")){
-  
-  boxplot(old_zones[,i] ~ old_zones[,"species"], data = old_zones, boxfill = NA, border = NA, main = i, xlab = "", ylab = "")
-  if(i == "wind_speed_rsd"){
-    legend("bottomleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
-  }
-  boxplot(old_zones[old_zones$used == 1,i] ~ old_zones[old_zones$used == 1,"species"], 
-          xaxt = "n", add = T, boxfill = "orange",
-          boxwex = 0.25, at = 1:length(unique(old_zones$species)) - 0.15)
-  boxplot(old_zones[old_zones$used == 0,i] ~ old_zones[old_zones$used == 0,"species"], 
-          xaxt = "n", add = T, boxfill = "grey",
-          boxwex = 0.25, at = 1:length(unique(old_zones$species)) + 0.15)
-} 
-
-mtext("values at timestamp of each point", side = 3, outer = T, cex = 1.3)
-
-##############################
-
-#plot relationship between wind and delta t
 X11(); par(mfrow=c(3,2))
 plot(delta_t ~ wind_support, data = ann_cmpl[ann_cmpl$used ==1,], col= factor(ann_cmpl[ann_cmpl$used ==1,"species"]), pch = 16, cex = 0.7)
 plot(delta_t ~ wind_speed, data = ann_cmpl[ann_cmpl$used ==1,], col= factor(ann_cmpl[ann_cmpl$used ==1,"species"]), pch = 16, cex = 0.7)
@@ -646,6 +623,8 @@ plot(delta_t ~ wind_speed_var, data = ann_cmpl, col= factor(ann_cmpl$used), pch 
 plot(delta_t ~ abs_cross_wind_var, data = ann_cmpl, col= factor(ann_cmpl$used), pch = 16, cex = 0.7)
 
 
+# ---------- STEP 5: clogit to get a feel for things #####
+
 #### exploration. run a quick clogit to see if the results are what I expect
 
 library(survival)
@@ -658,30 +637,21 @@ form_1 <- formula(used ~ zone * delta_t_z * wind_speed_z + zone * delta_t_z *  w
 form_2 <- formula(used ~ zone * delta_t_z +  zone * wind_support_z +
                     strata(stratum))
 
+form_3 <- formula(used ~  delta_t_z * wind_speed_z + delta_t_z * wind_support_z +
+                           strata(stratum))
+
+form_4 <- formula(used ~  delta_t_z * wind_support_z +
+                    strata(stratum))
+
+form_5 <- formula(used ~  delta_t_z * location.lat_z + location.lat_z * wind_support_z +
+                    strata(stratum))
 
 m1 <- clogit(form_1, data = all_data) #when zone is added, delta t coeff becomes positive. still not sig, but positive. but wind support is negative. but interaction of wind support with zones is positive. so, only negative in the arctic
-
-
-
-all_old <- ann_old %>% 
-  #group_by(species) 
-  mutate_at(c(2:5,8:11,36:39),
-            list(z = ~scale(.))) %>%
-  as.data.frame() 
-
-m2 <- clogit(form_1, data = all_old)
-
-
-#look at only the two old zones in new data
-all_2_zones <- old_zones %>% 
-  #group_by(species) 
-  mutate_at(c(2:5,8:11,40:43),
-            list(z = ~scale(.))) %>%
-  as.data.frame() 
-
-m3 <- clogit(form_1, data = all_2_zones)
-
-
+m1a <- clogit(form_original, data = all_data)
+m1b <- clogit(form_2, data = all_data)
+m1c <- clogit(form_3, data= all_data)
+m1d <- clogit(form_4, data= all_data)
+m1e <- clogit(form_5, data = all_data)
 
 #-------
 #extract number of strata per zone and consider removing the arctic
@@ -698,11 +668,11 @@ data_no_arctic <- all_data %>%
 m4 <- clogit(form_original, data = data_no_arctic) #coefficients are not too different from using all the data. 
 
 
-#----------------------------------------------------------------------
-###conclusion: 
+# ---------- STEP 6: INLA #####
+
 #correlation
 ann_cmpl %>% 
-  dplyr::select(c(2:5,8:11,36:39)) %>% 
+  dplyr::select(c(2:5,8:11,38:41,45,46)) %>% 
   correlate() %>% 
   stretch() %>% 
   filter(abs(r) > 0.6) #correlated: var_cw with location.lat and var_delta_t with location.lat. avg delta_t and delta_t. avg_ws and var_delta_t
@@ -711,20 +681,15 @@ ann_cmpl %>%
 #z-transform
 all_data <- ann_cmpl %>% 
   #group_by(species) 
-  mutate_at(c(2:5,8:11,40:43),
+  mutate_at(c(2:5,8:11,38:41,45,46),
             list(z = ~scale(.))) %>%
   as.data.frame() 
 
-save(all_data, file = "ssf_input_ann_1hr_z.RData")
+save(all_data, file = "2021/ssf_input_ann_90_60_z.RData")
 
-# STEP 6: modeling#####
-load("ssf_input_ann_1hr_z.RData") #all_data
 
-#create a var for individual id
-all_data <- all_data %>% 
-  rowwise() %>% 
-  mutate(ind = strsplit(track, "_")[[1]][1]) %>% 
-  as.data.frame()
+
+load("2021/ssf_input_ann_90_60_z.RData") #all_data
 
 #repeat variabels that will be used as random slopes
 all_data <- all_data %>% 
@@ -740,148 +705,16 @@ all_data <- all_data %>%
          ind4 = factor(ind),
          ind5 = factor(ind),
          ind6 = factor(ind),
-         lat_zone1 = factor(lat_zone),
-         lat_zone2 = factor(lat_zone),
-         lat_zone3 = factor(lat_zone),
-         lat_zone4 = factor(lat_zone),
-         lat_zone5 = factor(lat_zone),
-         lat_zone6 = factor(lat_zone),
-         stratum = factor(stratum)) #%>% 
-  dplyr::select(c("used","delta_t_z","wind_speed_z","wind_support_z","wind_support_var_z","delta_t_var_z","species1","species2", "species3", "ind1", "ind2", "ind3", "stratum"))
+         stratum = factor(stratum)) %>% 
+  dplyr::select(c("used","stratum","delta_t_z","wind_speed_z","wind_support_z","wind_support_var_z", "abs_cross_wind_z","delta_t_var_z",
+                  "species1","species2", "species3", "species4","species5","ind1", "ind2", "ind3", "ind4", "ind5", "location.lat"))
 
-#save file for cluster computing
-save(all_data, file = "/home/enourani/ownCloud/Work/cluster_computing/global_seascape_proj/inla_ssf/inla_ssf.RData")
 
-### trying out predicting with INLA (use model m1d)
 # Set mean and precision for the priors of slope coefficients
 mean.beta <- 0
 prec.beta <- 1e-4 
 
-#create a sample for testing model formulas in short time
-str_to_keep <- sample(unique(all_data$stratum),150)
-sample <- all_data[all_data$stratum %in% str_to_keep,] %>% 
-  dplyr::select(c("used","delta_t_z","wind_speed_z","wind_support_z", "species1","species2", "species3", "ind1", "ind2", "ind3", "stratum"))
-
-#add missing data to the sample for prediction (purpose is to make interaction plots. also see inla_plots.R)
-
-n <- 200
-new <- data.frame(used = rep(NA,n),
-                       delta_t_z = as.numeric(sample(c(-3:3), n, replace = T)),
-                       wind_speed_z = as.numeric(sample(c(-3:3), n, replace = T)), #keep wind speed values at -2,0 and 2
-                       wind_support_z = rep(0,n), #keep wind support values at 0
-                       stratum = factor(sample(c(1:3), n, replace = T)),
-                       species1 = sample(all_data$species1, n, replace =T),
-                       ind1 = sample(all_data$ind1, n, replace = T)) %>% 
-  mutate(species2 = species1,
-         species3 = species1,
-         ind2 = ind1,
-         ind3 = ind1) 
-new_data <- new %>% 
-  full_join(sample)
-
-formula1d <- used ~ -1 + wind_speed_z * delta_t_z + wind_support_z +
-  f(stratum, model = "iid", 
-    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
-  f(species1, delta_t_z, model = "iid", 
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species2, wind_speed_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species3, wind_support_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind1, delta_t_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
-  f(ind2, wind_speed_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind3, wind_support_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
-
-(b <- Sys.time())
-m1d_sample <- inla(formula1d, family = "Poisson", 
-            control.fixed = list(
-              mean = mean.beta,
-              prec = list(default = prec.beta)),
-            data = new_data, #use the sample dataset 
-            num.threads = 10,
-            #control.family = list(link='test1'), 
-            control.predictor = list(link = 1,compute=TRUE), #this means that NA values will be predicted. link can also be set. but will make the predictions Inf (response is binary but family is poisson.. what is the correct link!!??) # “apply the first link function to everything”.
-            control.compute = list(openmp.strategy="huge", config = TRUE))#, mlik = T, waic = T)) 
-Sys.time() - b
-#setting the link to 1 produces NaNs and not setting it leads to numbers of a strange range (negatives)..hmmm
-
-#extract predicted values
-used_na <- which(is.na(new_data$used))
-m1d_sample$summary.fitted.values[used_na,]
-
-#plot interaction effects
-ws_low <- which(is.na(new_data$used) & new_data$wind_speed_z == -1)
-ws_high <- which(is.na(new_data$used) & new_data$wind_speed_z == 1)
-ws_zero <- which(is.na(new_data$used) & new_data$wind_speed_z == 0)
-
-X11();par(mfrow = c(1,3))
-plot( new_data[which(is.na(new_data$used)),"delta_t_z"], m1d_sample$summary.fitted.values[used_na,"mean"],
-      type="n",
-      main="wind speed = -1" ,
-      xlab="delta_t" )
-points(new_data[ws_low,"delta_t_z"], m1d_sample$summary.fitted.values[ws_low,"mean"])
-
-plot( new_data[which(is.na(new_data$used)),"delta_t_z"], m1d_sample$summary.fitted.values[used_na,"mean"],
-      type="n",
-      main="wind speed = 0" ,
-      xlab="delta_t" )
-points(new_data[ws_zero,"delta_t_z"], m1d_sample$summary.fitted.values[ws_zero,"mean"])
-
-plot( new_data[which(is.na(new_data$used)),"delta_t_z"], m1d_sample$summary.fitted.values[used_na,"mean"],
-      type="n",
-      main="wind speed = 1" ,
-      xlab="delta_t" )
-points(new_data[ws_high,"delta_t_z"], m1d_sample$summary.fitted.values[ws_high,"mean"])
-
-
-#create a raster of predictions
-preds <- data.frame(delta_t = new_data[is.na(new_data$used) ,"delta_t_z"],
-                    wind_speed = new_data[is.na(new_data$used) ,"wind_speed_z"],
-                    pres = m1d_sample$summary.fitted.values[used_na,"mean"])
-
-avg_preds <- preds %>% 
-  group_by(delta_t,wind_speed) %>% 
-  summarise(avg_pres = mean(pres)) %>% 
-  as.data.frame()
-  
-coordinates(avg_preds) <-~ delta_t + wind_speed
-gridded(avg_preds) <- TRUE
-plot(raster(avg_preds),ylab = "wind speed (z)", xlab = "delta_t (z)")
-
-#try a 2-D plot with plotly
-fig <-plot_ly(x = new_data[is.na(new_data$used) ,"delta_t_z"], 
-              y = new_data[is.na(new_data$used) ,"wind_speed_z"])
-
-
-dt.seq <- -1:1
-for ( wsp in -1:1 ) {
-  dt <- all_data[all_data$wind_speed_z == wsp,]
-  plot( used ~ delta_t_z , data=dt , col=rangi2 ,
-        main=paste("wspeed =",w) , xaxp=c(-1,1,2) , ylim=c(0,362) ,
-        xlab="delta_t (centered)" )
-  mu <- link( mc1 , data=data.frame(water.c=w,shade.c=shade.seq) ) #dont know the equivalent of this in inla
-  mu.mean <- apply( mu , 2 , mean )
-  mu.PI <- apply( mu , 2 , PI , prob=0.97 )
-  lines( -3:3 , m1d_sample$summary.fitted.values[used_na,"mean"] )
-  lines( shade.seq , mu.PI[1,] , lty=2 )
-  lines( shade.seq , mu.PI[2,] , lty=2 )
-}
-
-#instead of making predictions, we can also sample from the posterior distribution. (following Virgilio's book)
-#make sure config = TRUE in the inla call
-samp1 <- inla.posterior.sample(100, m1d_sample, selection = list(wind_speed_z= 1, delta_t_z = 1)) #selection can be used to determine which variables we want
-#1 in the above call means that we want to keep the first element in effect 
-samp2 <- inla.posterior.sample.eval(function(...) {wind_speed_z * delta_t_z}, samp1)
-summary(as.vector(samp2))
-
-
-##try on complete dataset
-########################
-#model with wind speed instead of ws and cw...... delta_t var * wspeed var produces loads of warnings!
-formula1c <- used ~ -1 + delta_t_z * wind_speed_z + delta_t_var_z + wind_support_z + wind_support_var_z +
+formulaM1 <- used ~ -1 + delta_t_z * wind_speed_z + delta_t_var_z + wind_support_z + wind_support_var_z +
   f(stratum, model = "iid", 
     hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
   f(species1, delta_t_z, model = "iid", 
@@ -892,7 +725,7 @@ formula1c <- used ~ -1 + delta_t_z * wind_speed_z + delta_t_var_z + wind_support
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(species4, delta_t_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species6, wind_support_var_z, model = "iid",
+  f(species5, wind_support_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(ind1, delta_t_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
@@ -900,34 +733,30 @@ formula1c <- used ~ -1 + delta_t_z * wind_speed_z + delta_t_var_z + wind_support
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(ind3, wind_support_z,  model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind5, delta_t_var_z, model = "iid",
+  f(ind4, delta_t_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind6, wind_support_var_z, model = "iid",
+  f(ind5, wind_support_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
 
 (b <- Sys.time())
-m1c <- inla(formula1c, family ="Poisson", 
-            control.fixed = list(
-              mean = mean.beta,
-              prec = list(default = prec.beta)),
-            data = all_data,
-            num.threads = 10,
-            control.predictor = list(link = 1), #required to set the right link (i.e., the logit function) 
-                                                #to have the fitted values in the appropriate scale (i.e., the expit of the linear predictor).
-            control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T, cpo = T))
-Sys.time() - b
+M1 <- inla(formulaM1, family ="Poisson", 
+           control.fixed = list(
+             mean = mean.beta,
+             prec = list(default = prec.beta)),
+           data = all_data,
+           num.threads = 10, #This depends on your computer
+           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T))
 
-save(m1c, file = "inla_models/m1c.RData")
+Sys.time() - b #3.3 hours
 
-load("inla_models/m1c.RData")
-summary(m1c)
+save(M1, file = "2021/inla_models/m1.RData")
 
-#plot the posterior densities
-bri.hyperpar.plot(m1c) #summary of hyperparameters in SD scale (converts precision to sd)
-Efxplot(m1c) + theme_bw()
+gc()
+gc()
+#summary(M1)
 
-#remove var of delta t
-  formula1e <- used ~ -1 + delta_t_z * wind_speed_z + wind_support_z + wind_support_var_z +
+#remove variance of delta t
+formulaM2 <- used ~ -1 + delta_t_z * wind_speed_z + wind_support_z + wind_support_var_z +
   f(stratum, model = "iid", 
     hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
   f(species1, delta_t_z, model = "iid", 
@@ -936,7 +765,7 @@ Efxplot(m1c) + theme_bw()
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(species3, wind_support_z,  model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species6, wind_support_var_z, model = "iid",
+  f(species4, wind_support_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(ind1, delta_t_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
@@ -944,31 +773,25 @@ Efxplot(m1c) + theme_bw()
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(ind3, wind_support_z,  model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind6, wind_support_var_z, model = "iid",
+  f(ind4, wind_support_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
 
-(b <- Sys.time())
-m1e <- inla(formula1e, family ="Poisson", 
-            control.fixed = list(
-              mean = mean.beta,
-              prec = list(default = prec.beta)),
-            data = all_data,
-            num.threads = 10,
-            control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T, cpo = T))
-Sys.time() - b
 
-save(m1e, file = "inla_models/m1e.RData")
+M2 <- inla(formulaM2, family ="Poisson", 
+           control.fixed = list(
+             mean = mean.beta,
+             prec = list(default = prec.beta)),
+           data = all_data,
+           num.threads = 10,
+           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = T))
 
-load("inla_models/m1e.RData")
-summary(m1c)
+#summary(M2)
+save(M2, file = "2021/inla_models/m2.RData")
 
-#plot the posterior densities
-bri.hyperpar.plot(m1e) #summary of hyperparameters in SD scale (converts precision to sd)
-Efxplot(list(m1c,m1e,m1d)) + theme_bw()
-
-
-#remove both vars
-formula1d <- used ~ -1 + delta_t_z * wind_speed_z + wind_support_z +
+gc()
+gc()
+#remove variance of wind support
+formulaM3 <- used ~ -1 + delta_t_z * wind_speed_z + wind_support_z +
   f(stratum, model = "iid", 
     hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
   f(species1, delta_t_z, model = "iid", 
@@ -984,180 +807,17 @@ formula1d <- used ~ -1 + delta_t_z * wind_speed_z + wind_support_z +
   f(ind3, wind_support_z,  model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
 
-(b <- Sys.time())
-m1d <- inla(formula1d, family ="Poisson", 
-            control.fixed = list(
-              mean = mean.beta,
-              prec = list(default = prec.beta)),
-            data = all_data,
-            num.threads = 10,
-            control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = F, cpo = F))
-Sys.time() - b
 
-save(m1d, file = "inla_models/m1d.RData")
+M3 <- inla(formulaM3, family ="Poisson", 
+           control.fixed = list(
+             mean = mean.beta,
+             prec = list(default = prec.beta)),
+           data = all_data,
+           num.threads = 10,
+           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = F, cpo = F))
 
-load("inla_models/m1d.RData")
-summary(m1d)
-
-#plot the posterior densities
-bri.hyperpar.plot(m1d) #summary of hyperparameters in SD scale (converts precision to sd)
-Efxplot(list(m1c,m1e,m1d)) + theme_bw()
+save(M3, file = "2021/inla_models/m3.RData")
+#summary(M3)
 
 
-
-#######
-#model with wind speed and wind support
-#also predict with this model
-new_data <- all_data %>% 
-  full_join(new)
-
-formula1d <- used ~ -1 + delta_t_z * wind_speed_z + wind_support_z +
-  f(stratum, model = "iid", 
-    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
-  f(species1, delta_t_z, model = "iid", 
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species2, wind_speed_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species3, wind_support_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind1, delta_t_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
-  f(ind2, wind_speed_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind3, wind_support_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
-
-(b <- Sys.time())
-m1d_pred <- inla(formula1d, family ="Poisson", 
-                 control.fixed = list(
-                   mean = mean.beta,
-                   prec = list(default = prec.beta)),
-                 data = all_data,
-                 num.threads = 10,
-                 control.predictor = list(compute=TRUE),
-                 control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T, cpo = T)) 
-Sys.time() - b
-
-save(m1d_pred, file = "inla_models/m1d_pred_waic.RData")
-
-save(m1d_pred, file = "inla_models/m1d_pred.RData")
-
-load("inla_models/m1d.RData")
-summary(m1d)
-
-#plot the posterior densities 
-bri.hyperpar.plot(m1d) #summary of hyperparameters in SD scale (converts precision to sd)
-Efxplot(m1d) + theme_bw()
-Efxplot(list(m1c,m1d)) + theme_bw()
-
-#extract predicted values
-used_na <- which(is.na(new_data$used))
-m1d_pred$summary.fitted.values[used_na,]
-
-
-#remove species. plots showed that species are not very different
-formula1f <- used ~ -1 + delta_t_z * wind_speed_z + wind_support_z +
-  f(stratum, model = "iid", 
-    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
-  f(ind1, delta_t_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
-  f(ind2, wind_speed_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind3, wind_support_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
-
-(b <- Sys.time())
-m1f <- inla(formula1f, family ="Poisson", 
-            control.fixed = list(
-              mean = mean.beta,
-              prec = list(default = prec.beta)),
-            data = all_data,
-            num.threads = 10,
-            control.predictor = list(compute=TRUE),
-            control.compute = list(openmp.strategy="huge", config = TRUE))#, mlik = T, waic = T, cpo = T)) 
-Sys.time() - b
-
-
-Efxplot(list(m1c,m1e, m1d, m1f)) + theme_bw()  
-  
-  
-################################
-#plot interaction effects
-ws_low <- which(is.na(new_data$used) & new_data$wind_speed_z == -1)
-ws_high <- which(is.na(new_data$used) & new_data$wind_speed_z == 1)
-ws_zero <- which(is.na(new_data$used) & new_data$wind_speed_z == 0)
-
-X11();par(mfrow = c(1,3))
-plot( new_data[which(is.na(new_data$used)),"delta_t_z"], m1d_pred$summary.fitted.values[used_na,"mean"],
-      type="n",
-      main="wind speed = -1" ,
-      xlab="delta_t" )
-points(new_data[ws_low,"delta_t_z"], m1d_pred$summary.fitted.values[ws_low,"mean"])
-
-plot( new_data[which(is.na(new_data$used)),"delta_t_z"], m1d_pred$summary.fitted.values[used_na,"mean"],
-      type="n",
-      main="wind speed = 0" ,
-      xlab="delta_t" )
-points(new_data[ws_zero,"delta_t_z"], m1d_pred$summary.fitted.values[ws_zero,"mean"])
-
-plot( new_data[which(is.na(new_data$used)),"delta_t_z"], m1d_pred$summary.fitted.values[used_na,"mean"],
-      type="n",
-      main="wind speed = 1" ,
-      xlab="delta_t" )
-points(new_data[ws_high,"delta_t_z"], m1d_pred$summary.fitted.values[ws_high,"mean"])
-
-
-
-#posterior mode of variances
-marginals_mode <- sapply(m2$marginals.hyperpar,
-                         function(x)
-                           inla.mmarginal(inla.tmarginal(function(x) 1/x, x)))
-
-names(marginals_mode) <- sapply(as.vector(as.character(names(marginals_mode))),
-                                function(y) gsub("Precision", x=y, "Mode of variance"))
-marginals_mode
-
-#posterior mean of variances
-marginals_mean <- sapply(m2$marginals.hyperpar,
-                         function(x)
-                           inla.emarginal(function(x) x, inla.tmarginal(function(x) 1/x, x)))
-names(marginals_mean) <- sapply(as.vector(as.character(names(marginals_mean))),
-                                function(y) gsub("Precision", x=y, "Mean of variance"))
-marginals_mean
-
-
-### spde in inla #####
-#create a mesh
-#consider ocean_sp as mesh
-load("ocean_0_60.RData") #ocean
-load("ssf_input_ann_z.RData") #all_data
-
-ocean_sp <- as(ocean, "Spatial")
-
-pts <- all_data[all_data$used == 1,]
-coordinates(pts) <-~ location.long + location.lat 
-proj4string(pts) <- wgs
-#pts_m <- spTransform(pts, meters_proj)
-
-#define boundary
-bdy <- unionSpatialPolygons(
-  as(ocean_sp, "SpatialPolygons "), rep (1, length(ocean_sp)) #this method produces a uniform mesh
-)
-bdy2 <- bdy@polygons[[1]]@Polygons[[2]]@coords
-
-mesh <- inla.mesh.2d(loc.domain = bdy, max.edge = c(15,50), offset = c(10,25))
-par(mar = c(0, 0, 0, 0))
-plot(mesh, asp = 1, main = "")
-lines(bdy)
-
-mesh_a <- inla.mesh.2d(loc.domain = pts, max.edge = c(5, 10)) #regular grid
-mesh_b <- inla.mesh.2d(pts, max.edge = c(5, 10))
-
-X11();par(mfrow = c(2,1), mar = c(0, 0, 0, 0))
-plot(mesh_a, main = "")
-points(pts, pch = 16, cex = 0.4, col = "orange")
-plot(mesh_b, main = "")
-plot(mesh_b, main = "")
-plot(ocean_sp, add = T
-     )
 
