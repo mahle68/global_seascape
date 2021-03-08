@@ -289,7 +289,7 @@ save(used_av_ls_90_60, file = "2021/ssf_input_all__90_60_150.RData")
 # })
 
 
-# ---------- STEP 2: annotate#####
+# ---------- STEP 4: annotate#####
 
 load("2021/ssf_input_all_90_60_150.RData") #used_av_ls_90_60
 
@@ -473,7 +473,7 @@ ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>%
 save(ann_cmpl, file = "2021/ssf_input_ann_cmpl_90_60.RData")
 
 
-# ---------- STEP 4: data exploration#####
+# ---------- STEP 5: data exploration#####
 
 # --- 4.1: plot variances against latitude
 
@@ -623,7 +623,7 @@ plot(delta_t ~ wind_speed_var, data = ann_cmpl, col= factor(ann_cmpl$used), pch 
 plot(delta_t ~ abs_cross_wind_var, data = ann_cmpl, col= factor(ann_cmpl$used), pch = 16, cex = 0.7)
 
 
-# ---------- STEP 5: clogit to get a feel for things #####
+# ---------- STEP 6: clogit to get a feel for things #####
 
 load("2021/ssf_input_ann_90_60_z.RData") #all_data
 
@@ -676,7 +676,7 @@ all_data %>%
             n_i = n_distinct(ind)) #the arctic only has 26 strata from 4 tracks of 3 individuals.... let's remove it!
 
 
-# ---------- STEP 6: INLA #####
+# ---------- STEP 7: INLA #####
 
 load("2021/ssf_input_ann_cmpl_90_60.RData") #ann_cmpl
 
@@ -772,8 +772,8 @@ M1 <- inla(formulaM1, family ="Poisson",
              mean = mean.beta,
              prec = list(default = prec.beta)),
            data = all_data,
-           num.threads = 10, #This depends on your computer
-           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T))
+           num.threads = 10,
+           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = F))
 
 Sys.time() - b #3.3 hours
 
@@ -843,8 +843,7 @@ M3 <- inla(formulaM3, family ="Poisson",
              prec = list(default = prec.beta)),
            data = all_data,
            num.threads = 10,
-           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = F, cpo = F),
-           control.predictor = list(compute=TRUE)) #to be able to calculate linear combo to then plot the interaction term)
+           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = F, cpo = F))
 
 save(M3, file = "2021/inla_models/m3.RData")
 #summary(M3)
@@ -1040,144 +1039,4 @@ axis(side= 2, at= c(1:4), #line=-4.8,
 legend(x = 1.8, y = 0.6, legend=c("wind support", "wind speed", expression(paste(Delta,"t"))), 
        col = c("paleturquoise2","yellowgreen","lightcoral"), #coords indicate top-left
        pch = 19, bg="white",bty="n", cex = 0.75)
-
-##############plot the interaction term
-#https://groups.google.com/g/r-inla-discussion-group/c/DwPyw_fOUGI
-dt = inla.rmarginal(10000, M3$marginals.fixed$delta_t_z)
-wspd = inla.rmarginal(10000, M3$marginals.fixed$wind_speed_z)
-dt_wspd = inla.rmarginal(10000, M3$marginals.fixed$delta_t_z) + inla.rmarginal(10000, M3$marginals.fixed$`delta_t_z:wind_speed_z`)
-
-X11()
-plot(density(dt), lty=2, col = "blue")
-lines(density(wspd), lty=2, col = "red")
-lines(density(dt_wspd), lty=1)
-
-
-
-#from inla_plots.R
-#use a sample
-str_to_keep <- sample(unique(all_data$stratum),150)
-sample <- all_data[all_data$stratum %in% str_to_keep,]
-
-#add missing data to the sample for prediction (purpose is to make interaction plots. also see inla_plots.R)
-
-n <- 200
-new <- data.frame(used = rep(NA,n),
-                  delta_t_z = as.numeric(sample(c(-3:3), n, replace = T)),
-                  wind_speed_z = as.numeric(sample(c(-3:3), n, replace = T)), #keep wind speed values at -2,0 and 2
-                  wind_support_z = rep(0,n), #keep wind support values at 0
-                  stratum = factor(sample(c(1:3), n, replace = T)),
-                  species1 = sample(sample$species1, n, replace =T),
-                  ind1 = sample(sample$ind1, n, replace = T)) %>% 
-  mutate(species2 = species1,
-         species3 = species1,
-         ind2 = ind1,
-         ind3 = ind1) 
-
-new_data <- new %>% 
-  full_join(sample)
-
-#model 
-formula1d <- used ~ -1 + wind_speed_z * delta_t_z + wind_support_z +
-  f(stratum, model = "iid", 
-    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
-  f(species1, delta_t_z, model = "iid", 
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species2, wind_speed_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species3, wind_support_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind1, delta_t_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
-  f(ind2, wind_speed_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind3, wind_support_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
-
-(b <- Sys.time())
-m1d_sample <- inla(formula1d, family = "Poisson", 
-                   control.fixed = list(
-                     mean = mean.beta,
-                     prec = list(default = prec.beta)),
-                   data = new_data, #use the sample dataset 
-                   num.threads = 10,
-                   #control.family = list(link='test1'), 
-                   control.predictor = list(compute=TRUE), #this means that NA values will be predicted. link can also be set. but will make the predictions Inf (response is binary but family is poisson.. what is the correct link!!??) # “link = 1: apply the first link function to everything”.
-                   control.compute = list(openmp.strategy="huge", config = TRUE))#, mlik = T, waic = T)) 
-Sys.time() - b
-
-#extract predicted values
-used_na <- which(is.na(new_data$used))
-m1d_sample$summary.fitted.values[used_na,]
-
-#plot interaction effects. this works. but the range of y values doesnt make sense, even when I take the exp()
-ws_low <- which(is.na(new_data$used) & new_data$wind_speed_z == -1)
-ws_high <- which(is.na(new_data$used) & new_data$wind_speed_z == 1)
-ws_zero <- which(is.na(new_data$used) & new_data$wind_speed_z == 0)
-
-X11();par(mfrow = c(1,3))
-plot( new_data[which(is.na(new_data$used)),"delta_t_z"], m1d_sample$summary.fitted.values[used_na,"mean"],
-      type="n",
-      main="wind speed = -1" ,
-      xlab="delta_t" )
-points(new_data[ws_low,"delta_t_z"], m1d_sample$summary.fitted.values[ws_low,"mean"])
-
-plot( new_data[which(is.na(new_data$used)),"delta_t_z"], m1d_sample$summary.fitted.values[used_na,"mean"],
-      type="n",
-      main="wind speed = 0" ,
-      xlab="delta_t" )
-points(new_data[ws_zero,"delta_t_z"], m1d_sample$summary.fitted.values[ws_zero,"mean"])
-
-plot( new_data[which(is.na(new_data$used)),"delta_t_z"], m1d_sample$summary.fitted.values[used_na,"mean"],
-      type="n",
-      main="wind speed = 1" ,
-      xlab="delta_t" )
-points(new_data[ws_high,"delta_t_z"], m1d_sample$summary.fitted.values[ws_high,"mean"])
-
-
-
-X11();par(mfrow = c(1,3))
-plot( new_data[which(is.na(new_data$used)),"delta_t_z"], exp(m1d_sample$summary.fitted.values[used_na,"mean"]),
-      type="n",
-      main="wind speed = -1" ,
-      xlab="delta_t" )
-points(new_data[ws_low,"delta_t_z"], exp(m1d_sample$summary.fitted.values[ws_low,"mean"]))
-
-plot( new_data[which(is.na(new_data$used)),"delta_t_z"], exp(m1d_sample$summary.fitted.values[used_na,"mean"]),
-      type="n",
-      main="wind speed = 0" ,
-      xlab="delta_t" )
-points(new_data[ws_zero,"delta_t_z"], exp(m1d_sample$summary.fitted.values[ws_zero,"mean"]))
-
-plot( new_data[which(is.na(new_data$used)),"delta_t_z"], exp(m1d_sample$summary.fitted.values[used_na,"mean"]),
-      type="n",
-      main="wind speed = 1" ,
-      xlab="delta_t" )
-points(new_data[ws_high,"delta_t_z"], exp(m1d_sample$summary.fitted.values[ws_high,"mean"]))
-
-
-#instead of three plots, try to do one
-
-
-
-
-## try the linear combo
-
-
-lc = inla.make.lincombs(
-  dt = new_data$delta_t_z,
-  "delta_t_z:wind_speed_z" = new_data$wind_speed_z * new_data$delta_t_z)
-
-(b <- Sys.time())
-m1d_sample <- inla(formula1d, family = "Poisson", 
-                   control.fixed = list(
-                     mean = mean.beta,
-                     prec = list(default = prec.beta)),
-                   data = new_data, #use the sample dataset 
-                   num.threads = 10,
-                   #control.family = list(link='test1'), 
-                   control.predictor = list(compute=TRUE), lincomb = lc, #this means that NA values will be predicted. link can also be set. but will make the predictions Inf (response is binary but family is poisson.. what is the correct link!!??) # “link = 1: apply the first link function to everything”.
-                   control.compute = list(openmp.strategy="huge", config = TRUE)) 
-Sys.time() - b
-#i get an error regarding the lc
 

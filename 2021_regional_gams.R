@@ -63,8 +63,21 @@ extent_ls <- list(East_asia = st_bbox(East_asia), Americas = st_bbox(Americas), 
 
 save(extent_ls, file = "2021/extent_ls_regional_gam.RData")
 
-#------------------------------------------------------------------------
-### STEP 1: open data, spatio-termporal filters #####
+
+### STEP 2: open data, spatio-termporal filters #####
+
+load("2021/ecmwf_regions.RData") #called data_df (from 2021_Era_interim_download_prep.R)
+load("2021/ocean.RData") #ocean (prepared in 2021_all_data_prep_analyze.R)
+
+data_sf <- data_df %>% 
+  st_as_sf(coords = c("lon","lat"), crs = wgs) %>% 
+  st_intersection(ocean) %>% #filter out lakes
+  mutate(s_elev_angle = solarpos(st_coordinates(.), date_time, proj4string=CRS("+proj=longlat +datum=WGS84"))[,2]) %>% #calculate solar elevation angle
+  mutate(sun_elev = ifelse(s_elev_angle < -6, "night", #create a categorical variable for teh position of the sun
+                           ifelse(s_elev_angle > 40, "high", "low")),
+         month = month(date_time))
+
+save(data_sf, file = "2021/regional_gam_input.RData")
 
 #spatial extent of ssf data
 load("2021/ssf_input_all_df_1hr.RData") #used_av_df_1hr

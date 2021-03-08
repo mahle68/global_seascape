@@ -60,3 +60,82 @@ for (yr in as.character(c(1979:2018))) {
   server$retrieve(yr_query)
 }
 })
+
+##### STEP 3: process the data #####
+setwd("/home/enourani/Documents/ERA_interim_zones/")
+
+vname <- c("sst","t2m")
+file_list <- list.files(pattern = ".nc",full.names = TRUE)
+
+#start the cluster
+mycl <- makeCluster(detectCores() - 2)
+
+clusterExport(mycl, list("vname","file_list")) #define the variable that will be used within the function
+
+clusterEvalQ(mycl, {
+  
+  library(ncdf4)
+  library(lubridate)
+  library(tidyverse)
+})
+
+
+data_list <- parLapply(cl = mycl, file_list,function(x){
+  
+  nc <- nc_open(x)
+  
+  #extract lon and lat
+  lat <- ncvar_get(nc,'latitude')
+  nlat <- dim(lat) 
+  lon <- ncvar_get(nc,'longitude')
+  nlon <- dim(lon) 
+  
+  #extract the time
+  t <- ncvar_get(nc, "time")
+  nt <- dim(t)
+  
+  #convert the hours into date + hour
+  timestamp <- as_datetime(c(t*60*60),origin = "1900-01-01")
+  
+  #put everything in a large df
+  row_names <- expand.grid(lon,lat,timestamp)
+  
+  var_df <- data.frame(cbind(
+    row_names,
+    matrix(as.vector(ncvar_get(nc,vname[1])), nrow = nlon * nlat * nt, ncol = 1), #array to vector to matrix
+    matrix(as.vector(ncvar_get(nc,vname[2])), nrow = nlon * nlat * nt, ncol = 1)))
+  
+  colnames(var_df) <- c("lon","lat","date_time",vname)   #set column names
+  
+  #remove points over land (NAs)
+  
+  land_df <- var_df %>%
+    na.omit() %>%
+    mutate(delta_t = sst - t2m,
+           yday = yday(date_time),
+           hour = hour(date_time),
+           year = year(date_time),
+           region = str_sub(strsplit(x, "/")[[1]][2],start = 6,end = -12)) %>%
+    data.frame()
+  
+  sample <- land_df %>% 
+    sample_n(50000, replace = F)
+  
+  save(sample,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_interim_regional_sampled/",
+                            str_sub(strsplit(x, "/")[[1]][2],end = -4),".RData"))
+  gc()
+  gc()
+})
+
+stopCluster(mycl)
+
+
+##### STEP 4: put everything together #####
+
+file_ls <- list.files("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_interim_regional_sampled/",".RData",full.names = TRUE)
+
+data_df <- sapply(file_ls, function(x) mget(load(x)), simplify = TRUE) %>%
+  reduce(rbind) %>%
+  mutate(year = year(date_time))
+
+save(data_df, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/ecmwf_regions.RData")
