@@ -189,6 +189,7 @@ clusterEvalQ(mycl, {
 
 models_ls <- lapply(data_ls, function(x){
   
+  
   #m1 <- bam(delta_t ~ s(lat,lon, by = sun_elev_f, k = 100) +
   #      s(yday, by = sun_elev_f, bs = "cc") +
   #      #s(year, bs = "re") +
@@ -209,6 +210,8 @@ models_ls <- lapply(data_ls, function(x){
   #models
 })
 
+
+ 
 stopCluster(mycl)
 
 save(models_ls, file = "models_ls_reg_GAMs.RData")
