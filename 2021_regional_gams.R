@@ -79,36 +79,9 @@ data_sf <- data_df %>%
 
 save(data_sf, file = "2021/regional_gam_input.RData")
 
-#spatial extent of ssf data
-load("2021/ssf_input_all_df_1hr.RData") #used_av_df_1hr
-y_extent <- used_av_df_1hr %>%
-  filter(used == 1) %>% 
-  summarise(max_lat = round(max(y)),
-            min_lat = round(min(y)))
-
-load("processed_era_interim_data/samples_with_local_time_hour.RData") #called df_lt (from delta_t_gam.R) max is 60!!!!!!!!!!!
-X11(); plot(df_lt$lon, df_lt$lat, pch = 16, cex = 0.3, col = "blue")
-
-#ocean layer with no lakes
-ocean <- st_read("/home/enourani/ownCloud/Work/GIS_files/ne_110m_ocean/ne_110m_ocean.shp") %>% 
-  slice(2) %>% #remove the caspian sea
-  st_crop(xmin = -180, ymin = y_extent$min_lat, xmax = 180, ymax = y_extent$max_lat)
-
-data <- df_lt %>% 
-  filter(between(lat, y_extent$min_lat, y_extent$max_lat)) %>% #filter for lat zone 
-  as.data.frame() %>% 
-  st_as_sf(coords = c("lon","lat"), crs = wgs) %>% 
-  st_intersection(ocean) %>% #filter out lakes
-  mutate(s_elev_angle = solarpos(st_coordinates(.), date_time, proj4string=CRS("+proj=longlat +datum=WGS84"))[,2]) %>% #calculate solar elevation angle
-  mutate(sun_elev = ifelse(s_elev_angle < -6, "night", #create a categorical variable for teh position of the sun
-                           ifelse(s_elev_angle > 40, "high", "low")),
-         month = month(date_time))
-
-save(data, file = "2021/t_data_lat_filter.RData")
-
 
 ### STEP 1: open and filter ####
-load("2021/t_data_lat_filter.RData") #data
+load("2021/regional_gam_input.RData") #data_sf
 
 East_asia <- data %>% 
   st_crop(xmin = 99, xmax = 130, ymin = 1.7, ymax = 38) %>% 

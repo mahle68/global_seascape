@@ -692,11 +692,11 @@ ann_cmpl %>%
 all_data <- ann_cmpl %>% 
   #group_by(species) 
   mutate_at(c(2:5,8:11,38:41,45,46),
-            list(z = ~scale(.))) %>%
-  arrange(stratum, desc(used)) %>% 
-  group_by(stratum) %>%  
-  mutate(lat_at_used = head(zone,1)) %>%  #add a variable for latitudinal zone. This will assign the lat zone of the used point to the entire stratum
-  ungroup() %>% 
+            list(z = ~as.numeric(scale(.)))) %>%
+  #arrange(stratum, desc(used)) %>% 
+  #group_by(stratum) %>%  
+  #mutate(lat_at_used = head(zone,1)) %>%  #add a variable for latitudinal zone. This will assign the lat zone of the used point to the entire stratum
+  #ungroup() %>% 
   as.data.frame() 
 
 save(all_data, file = "2021/ssf_input_ann_90_60_z.RData")
@@ -726,16 +726,16 @@ all_data <- all_data %>%
          ind4 = factor(ind),
          ind5 = factor(ind),
          ind6 = factor(ind),
-         zone1 = factor(lat_at_used),
-         zone2 = factor(lat_at_used),
-         zone3 = factor(lat_at_used),
-         zone4 = factor(lat_at_used),
-         zone5 = factor(lat_at_used),
-         zone6 = factor(lat_at_used),
+         #zone1 = factor(lat_at_used), #ran separate models for zone using clogit, not much difference.
+         #zone2 = factor(lat_at_used),
+         #zone3 = factor(lat_at_used),
+         #zone4 = factor(lat_at_used),
+         #zone5 = factor(lat_at_used),
+         #zone6 = factor(lat_at_used),
          stratum = factor(stratum)) %>% 
   dplyr::select(c("used","stratum","delta_t_z","wind_speed_z","wind_support_z","wind_support_var_z", "abs_cross_wind_z","delta_t_var_z",
-                  "species1","species2", "species3", "species4","species5","ind1", "ind2", "ind3", "ind4", "ind5", "zone1", "zone2",
-                  "zone3","zone4","zone5","zone6","location.lat"))
+                  "species1","species2", "species3", "species4","species5","ind1", "ind2", "ind3", "ind4", "ind5", #"zone1", "zone2","zone3","zone4","zone5","zone6",
+                  "location.lat"))
 
 
 # Set mean and precision for the priors of slope coefficients
