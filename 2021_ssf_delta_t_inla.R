@@ -826,82 +826,10 @@ M2a <- inla(formulaM2a, family ="Poisson",
 
 save(M2a, file = "2021/inla_models/m2a.RData")
 
-#now, the interaction of delta_t and wind support and each var on its own arent sig. so remove all.
-#remove both var_wind_support and delta_t. neither is sig
-formulaM3a <- used ~ -1 + delta_t_var_z + wind_support_z +
-  f(stratum, model = "iid", 
-    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
-  f(species3, wind_support_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species4, delta_t_var_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind3, wind_support_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind4, delta_t_var_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
-
-
-#dont remove both at once. remove wind speed first
-formulaM3b <- used ~ -1 + delta_t_z + delta_t_var_z + wind_support_z +
-  f(stratum, model = "iid", 
-    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
-  f(species1, delta_t_z, model = "iid", 
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
-  f(species3, wind_support_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species4, delta_t_var_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind1, delta_t_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
-  f(ind3, wind_support_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind4, delta_t_var_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
-
-
-M3b <- inla(formulaM3b, family ="Poisson", 
-            control.fixed = list(
-              mean = mean.beta,
-              prec = list(default = prec.beta)),
-            data = all_data,
-            num.threads = 10,
-            control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = T))
-
-
-#remove variance of wind support
-formulaM3 <- used ~ -1 + delta_t_z * wind_speed_z + wind_support_z +
-  f(stratum, model = "iid", 
-    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
-  f(species1, delta_t_z, model = "iid", 
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
-  f(species2, wind_speed_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species3, wind_support_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind1, delta_t_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
-  f(ind2, wind_speed_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind3, wind_support_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
-
-
-M3 <- inla(formulaM3, family ="Poisson", 
-           control.fixed = list(
-             mean = mean.beta,
-             prec = list(default = prec.beta)),
-           data = all_data,
-           num.threads = 10,
-           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = F, cpo = F))
-
-save(M3, file = "2021/inla_models/m3.RData")
-#summary(M3)
-
-load("2021/inla_models/m3.RData")
   
 
 # ---------- STEP 7: plots #####
-#FIGURE 2: posterior means of fixed effects ####
+#FIGURE 2: posterior means of fixed effects 
 #easy
 Efxplot(list(M1,M2a))
 
@@ -992,7 +920,7 @@ legend(x = 5.3, y = 0.8, legend=c( "model 2", "model 1"), col = c("palegreen3","
 
 
 
-#SUPPLEMENTARY FIGURE 1: species-specific coefficients ####
+#SUPPLEMENTARY FIGURE 1: species-specific coefficients 
 #for the best model (M3); original code by Virgilio Gomez-Rubio (Bayesian inference with INLA, 2020)
 #species
 species_names <- unique(all_data$species)
@@ -1072,3 +1000,40 @@ legend(x = -9.8 , y = 0.8, legend=c(expression(paste(Delta,"T"," var")),"wind su
        col = c("firebrick","paleturquoise2","yellowgreen","lightcoral"), #coords indicate top-left
        pch = 19, bg="white",bty="n", cex = 0.8)
 
+
+#SUPPLEMENTARY FIGURE 2: boxplots 
+
+
+X11(width = 9, height = 8);par(mfrow= c(2,3), oma = c(0,0,3,0))
+
+for(i in c("delta_t", "wind_support", "wind_speed")){
+  
+  boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = i, xlab = "", ylab = "")
+  if(i == "delta_t"){
+    legend("topleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
+  }
+  boxplot(ann_cmpl[ann_cmpl$used == 1, i] ~ ann_cmpl[ann_cmpl$used == 1,"species"], 
+          xaxt = "n", add = T, boxfill = "orange",
+          boxwex = 0.25, at = 1:length(unique(ann_cmpl[ann_cmpl$used == 1, "species"])) - 0.15)
+  boxplot(ann_cmpl[ann_cmpl$used == 0, i] ~ ann_cmpl[ann_cmpl$used == 0, "species"], 
+          xaxt = "n", add = T, boxfill = "grey",
+          boxwex = 0.25, at = 1:length(unique(ann_cmpl[ann_cmpl$used == 1 , "species"])) + 0.15)
+  
+}
+mtext("Instantaneious values at each step", side = 3, outer = T, cex = 1.3)
+
+for(i in c("delta_t_var", "wind_support_var","wind_speed_var")){
+  
+  boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = i, xlab = "", ylab = "")
+  if(i == "delta_t_var"){
+    legend("topleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
+  }
+  boxplot(ann_cmpl[ann_cmpl$used == 1,i] ~ ann_cmpl[ann_cmpl$used == 1,"species"], 
+          xaxt = "n", add = T, boxfill = "orange",
+          boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) - 0.15)
+  boxplot(ann_cmpl[ann_cmpl$used == 0,i] ~ ann_cmpl[ann_cmpl$used == 0,"species"], 
+          xaxt = "n", add = T, boxfill = "grey",
+          boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) + 0.15)
+} 
+
+mtext("40-yr variances at each point", side = 3, outer = T, cex = 1.3)
