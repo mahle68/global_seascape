@@ -1,6 +1,7 @@
 #script to estimate the step selection function for water-crossing raptors.
 #mostly copied from ssf_delta_t_inla2.R. For previous steps, see 2021_all_data_prep_analyze.R
 #Feb 22. 2021. Radolfzell, Germany. Elham Nourani, PhD.
+#decided to use only two alternative models. Model 3's mlik is not too different from model 2.... but accessible in the older versions on github
 
 library(tidyverse)
 library(move)
@@ -699,7 +700,7 @@ ann_cmpl %>%
 #z-transform
 all_data <- ann_cmpl %>% 
   #group_by(species) 
-  mutate_at(c("delta_t", "wind_speed", "wind_support", "wind_support_var", "delta_t_var"),
+  mutate_at(c("delta_t", "wind_speed", "wind_support", "wind_support_var", "abs_cross_wind", "delta_t_var"),
             #list(z = ~scale(.)))
             list(z = ~as.numeric(scale(.)))) %>%
   arrange(stratum, desc(used)) %>% 
@@ -735,7 +736,7 @@ all_data <- all_data %>%
          ind4 = factor(ind),
          ind5 = factor(ind),
          ind6 = factor(ind),
-         zone1 = factor(lat_at_used), #latitude is correlated with variance values. so, try to use this instead of var variables
+         zone1 = factor(lat_at_used), #latitude is correlated with variance values. so, try to use this instead of var variables.. messed everything up...
          zone2 = factor(lat_at_used),
          zone3 = factor(lat_at_used),
          zone4 = factor(lat_at_used),
@@ -792,7 +793,7 @@ load("2021/inla_models/m1.RData")
 summary(M1)#
 
 
-### ------ playing around a bit: interaction with wind support instead of wind speed. not very different from M1
+### ------ playing around a bit: interaction with wind support instead of wind speed. not very different from M1. this has lower mlik than M1
 formulaM1a <- used ~ -1 + delta_t_z * wind_support_z + delta_t_var_z + wind_support_var_z +
   f(stratum, model = "iid", 
     hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
@@ -824,7 +825,44 @@ M1a <- inla(formula = formulaM1a, family ="Poisson",
 
 Sys.time() - b #4.236147 mins
 
-#save(M1a, file = "2021/inla_models/m1a.RData")
+
+### ------ what if I add crosswind instead of wind speed (they were correlated afterall)
+formulaM1aa <- used ~ -1 + delta_t_z * wind_support_z + delta_t_var_z + wind_support_var_z + wind_speed_z +
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
+  f(species1, delta_t_z, model = "iid", 
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  f(species2, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species3, delta_t_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species4, wind_support_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species5, wind_speed_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(ind1, delta_t_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  f(ind2, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(ind3, delta_t_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(ind4, wind_support_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(ind5, wind_speed_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
+
+(b <- Sys.time())
+M1aa <- inla(formula = formulaM1aa, family ="Poisson",  
+            control.fixed = list(
+              mean = mean.beta,
+              prec = list(default = prec.beta)),
+            data = all_data,
+            num.threads = 10,
+            control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T))
+
+Sys.time() - b #4.236147 mins
+
+
 
 ### ------ playing around a bit: variance variables are correlated with latitude. so, use latitudinal zone as a random variable and remove the var variables from the model
 formulaM1b <- used ~ -1 + delta_t_z * wind_speed_z +  wind_support_z +
@@ -1004,7 +1042,7 @@ load("2021/inla_models/m3.RData")
 # ---------- STEP 7: plots #####
 #FIGURE 2: posterior means of fixed effects ####
 #easy
-Efxplot(list(M1, M2a, M3a,M4a))
+Efxplot(list(M1, M1a, M2a, M3a))
 
 #sophisticated
 ModelList <- list(M1,M2,M3)
