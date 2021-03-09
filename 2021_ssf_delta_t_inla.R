@@ -289,7 +289,7 @@ save(used_av_ls_90_60, file = "2021/ssf_input_all__90_60_150.RData")
 # })
 
 
-# ---------- STEP 2: annotate#####
+# ---------- STEP 4: annotate#####
 
 load("2021/ssf_input_all_90_60_150.RData") #used_av_ls_90_60
 
@@ -473,7 +473,7 @@ ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>%
 save(ann_cmpl, file = "2021/ssf_input_ann_cmpl_90_60.RData")
 
 
-# ---------- STEP 4: data exploration#####
+# ---------- STEP 5: data exploration#####
 
 # --- 4.1: plot variances against latitude
 
@@ -623,18 +623,22 @@ plot(delta_t ~ wind_speed_var, data = ann_cmpl, col= factor(ann_cmpl$used), pch 
 plot(delta_t ~ abs_cross_wind_var, data = ann_cmpl, col= factor(ann_cmpl$used), pch = 16, cex = 0.7)
 
 
-# ---------- STEP 5: clogit to get a feel for things #####
+# ---------- STEP 6: clogit to get a feel for things #####
+
+load("2021/ssf_input_ann_90_60_z.RData") #all_data
 
 #### exploration. run a quick clogit to see if the results are what I expect
 
-library(survival)
 form_original <- formula(used ~  delta_t_z * wind_speed_z + wind_support_z +
                     strata(stratum))
 
-form_1 <- formula(used ~ zone * delta_t_z * wind_speed_z + zone * delta_t_z *  wind_support_z +
+form_6 <- formula(used ~  delta_t_z * wind_support_z + 
+                           strata(stratum))
+
+form_1 <- formula(used ~ lat_at_used * delta_t_z + lat_at_used * wind_support_z +
                       strata(stratum))
 
-form_2 <- formula(used ~ zone * delta_t_z +  zone * wind_support_z +
+form_2 <- formula(used ~ lat_at_used * delta_t_z +  lat_at_used * wind_support_z +
                     strata(stratum))
 
 form_3 <- formula(used ~  delta_t_z * wind_speed_z + delta_t_z * wind_support_z +
@@ -643,7 +647,7 @@ form_3 <- formula(used ~  delta_t_z * wind_speed_z + delta_t_z * wind_support_z 
 form_4 <- formula(used ~  delta_t_z * wind_support_z +
                     strata(stratum))
 
-form_5 <- formula(used ~  delta_t_z * location.lat_z + location.lat_z * wind_support_z +
+form_5 <- formula(used ~  delta_t_z * lat_at_used + wind_support_z * lat_at_used +
                     strata(stratum))
 
 m1 <- clogit(form_1, data = all_data) #when zone is added, delta t coeff becomes positive. still not sig, but positive. but wind support is negative. but interaction of wind support with zones is positive. so, only negative in the arctic
@@ -652,8 +656,17 @@ m1b <- clogit(form_2, data = all_data)
 m1c <- clogit(form_3, data= all_data)
 m1d <- clogit(form_4, data= all_data)
 m1e <- clogit(form_5, data = all_data)
+m1f <- clogit(form_6, data = all_data)
 
-#-------
+
+###zone_specific... conclusion: the order of importance is pretty much the same. only the direction of delta_t:windspeed changes... but still small. delta t is negative all through (not sig. in tw)
+
+twtmp <- clogit(form_original, data = all_data[all_data$lat_at_used %in% c("temperate", "tradewind"),]) #similar to all_data
+tmp <- clogit(form_original, data = all_data[all_data$lat_at_used == "temperate",])
+tw <- clogit(form_original, data = all_data[all_data$lat_at_used == "tradewind",])
+arctr <- clogit(form_original, data = all_data[all_data$lat_at_used %in% c("tropical", "arctic"),])
+
+#---
 #extract number of strata per zone and consider removing the arctic
 
 all_data %>% 
@@ -662,13 +675,10 @@ all_data %>%
             n_t = n_distinct(track),
             n_i = n_distinct(ind)) #the arctic only has 26 strata from 4 tracks of 3 individuals.... let's remove it!
 
-data_no_arctic <- all_data %>% 
-  filter(zone != "arctic")
 
-m4 <- clogit(form_original, data = data_no_arctic) #coefficients are not too different from using all the data. 
+# ---------- STEP 7: INLA #####
 
-
-# ---------- STEP 6: INLA #####
+load("2021/ssf_input_ann_cmpl_90_60.RData") #ann_cmpl
 
 #correlation
 ann_cmpl %>% 
@@ -682,11 +692,22 @@ ann_cmpl %>%
 all_data <- ann_cmpl %>% 
   #group_by(species) 
   mutate_at(c(2:5,8:11,38:41,45,46),
-            list(z = ~scale(.))) %>%
+            list(z = ~as.numeric(scale(.)))) %>%
+  #arrange(stratum, desc(used)) %>% 
+  #group_by(stratum) %>%  
+  #mutate(lat_at_used = head(zone,1)) %>%  #add a variable for latitudinal zone. This will assign the lat zone of the used point to the entire stratum
+  #ungroup() %>% 
   as.data.frame() 
 
 save(all_data, file = "2021/ssf_input_ann_90_60_z.RData")
 
+
+#check to make sure each stratum has one lat zone value
+all_data %>% 
+  group_by(stratum) %>% 
+  summarize(n = n_distinct(lat_at_used),
+            n_z = n_distinct(zone)) %>% 
+  filter(n > 1)
 
 
 load("2021/ssf_input_ann_90_60_z.RData") #all_data
@@ -705,9 +726,16 @@ all_data <- all_data %>%
          ind4 = factor(ind),
          ind5 = factor(ind),
          ind6 = factor(ind),
+         #zone1 = factor(lat_at_used), #ran separate models for zone using clogit, not much difference.
+         #zone2 = factor(lat_at_used),
+         #zone3 = factor(lat_at_used),
+         #zone4 = factor(lat_at_used),
+         #zone5 = factor(lat_at_used),
+         #zone6 = factor(lat_at_used),
          stratum = factor(stratum)) %>% 
   dplyr::select(c("used","stratum","delta_t_z","wind_speed_z","wind_support_z","wind_support_var_z", "abs_cross_wind_z","delta_t_var_z",
-                  "species1","species2", "species3", "species4","species5","ind1", "ind2", "ind3", "ind4", "ind5", "location.lat"))
+                  "species1","species2", "species3", "species4","species5","ind1", "ind2", "ind3", "ind4", "ind5", #"zone1", "zone2","zone3","zone4","zone5","zone6",
+                  "location.lat"))
 
 
 # Set mean and precision for the priors of slope coefficients
@@ -739,21 +767,22 @@ formulaM1 <- used ~ -1 + delta_t_z * wind_speed_z + delta_t_var_z + wind_support
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
 
 (b <- Sys.time())
-M1 <- inla(formulaM1, family ="Poisson", 
+M1 <- inla(formulaM1, family ="Poisson",  #can't find windspeed :/
            control.fixed = list(
              mean = mean.beta,
              prec = list(default = prec.beta)),
            data = all_data,
-           num.threads = 10, #This depends on your computer
-           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T))
+           num.threads = 10,
+           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = F))
 
 Sys.time() - b #3.3 hours
 
 save(M1, file = "2021/inla_models/m1.RData")
 
-gc()
-gc()
-#summary(M1)
+load("2021/inla_models/m1.RData")
+summary(M1)
+
+
 
 #remove variance of delta t
 formulaM2 <- used ~ -1 + delta_t_z * wind_speed_z + wind_support_z + wind_support_var_z +
@@ -788,8 +817,8 @@ M2 <- inla(formulaM2, family ="Poisson",
 #summary(M2)
 save(M2, file = "2021/inla_models/m2.RData")
 
-gc()
-gc()
+load("2021/inla_models/m2.RData")
+
 #remove variance of wind support
 formulaM3 <- used ~ -1 + delta_t_z * wind_speed_z + wind_support_z +
   f(stratum, model = "iid", 
@@ -819,5 +848,195 @@ M3 <- inla(formulaM3, family ="Poisson",
 save(M3, file = "2021/inla_models/m3.RData")
 #summary(M3)
 
+load("2021/inla_models/m3.RData")
+  
 
+# latitudinal zone as a random effect (on the full model. instead of species and individual for now)
+formulaM0 <- used ~ -1 + delta_t_z * wind_speed_z + delta_t_var_z + wind_support_z + wind_support_var_z +
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
+  f(zone1, delta_t_z, model = "iid", 
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+  f(zone2, wind_speed_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(zone3, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(zone4, delta_t_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(zone5, wind_support_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
+  
+(b <- Sys.time())
+M0 <- inla(formulaM0, family ="Poisson", 
+           control.fixed = list(
+             mean = mean.beta,
+             prec = list(default = prec.beta)),
+           data = all_data,
+           num.threads = 10, #This depends on your computer
+           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T))
+
+Sys.time() - b #3.3 hours
+
+save(M0, file = "2021/inla_models/m0.RData")
+
+
+# ---------- STEP 7: plots #####
+#FIGURE 2: posterior means of fixed effects ####
+
+ModelList <- list(M1,M2,M3)
+graphlist<-list()
+for(i in 1:length(ModelList)){
+  model<-ModelList[[i]]
+  
+  graph<-as.data.frame(summary(model)$fixed)
+  colnames(graph)[which(colnames(graph)%in%c("0.025quant","0.975quant"))]<-c("Lower","Upper")
+  colnames(graph)[which(colnames(graph)%in%c("0.05quant","0.95quant"))]<-c("Lower","Upper")
+  colnames(graph)[which(colnames(graph)%in%c("mean"))]<-c("Estimate")
+  
+  graph$Model<-i
+  graph$Factor<-rownames(graph)
+  
+  graphlist[[i]]<-graph
+}
+
+graph <- bind_rows(graphlist)
+
+graph$Sig <- with(graph, ifelse(Lower*Upper>0, "*", ""))
+
+graph$Model <- as.factor(graph$Model)
+
+position <- ifelse(length(unique(graph$Model))  ==  1, "none", "right")
+
+VarOrder <- rev(unique(graph$Factor))
+VarNames <- VarOrder
+
+graph$Factor <- factor(graph$Factor, levels = VarOrder)
+levels(graph$Factor) <- VarNames
+
+min<-min(graph$Lower,na.rm = T)
+max<-max(graph$Upper,na.rm = T)
+
+graph$Factor_n <- as.numeric(graph$Factor)
+
+X11(width = 3.5, height = 3)
+
+par(mfrow=c(1,1), bty="n", #no box around the plot
+    #cex.axis= 0.75, #x and y labels have 0.75% of the default size
+    #font.axis= 0.75, #3: axis labels are in italics
+    #cex.lab = 0.75,
+    cex = 0.7,
+    oma = c(0,3.5,0,0),
+    mar = c(3, 3.5, 0.5, 1),
+    bty = "l"
+)
+
+#plot(0, type = "n", bty = "l",labels = FALSE, tck = 0, ann = F, xlim = c(-6,8), ylim = c(0,6.3))
+plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(-6,8), ylim = c(0,6.3), xlab = "Estimate", ylab = "")
+
+#add vertical line for zero
+abline(v = 0, col = "grey30",lty = 2)
+#add points and error bars
+points(graph[graph$Model == 1, "Estimate"], graph[graph$Model == 1,"Factor_n"] - 0.2, col = "salmon2", pch = 19, cex = 1.3)
+arrows(graph[graph$Model == 1, "Lower"], graph[graph$Model == 1,"Factor_n"] - 0.2,
+       graph[graph$Model == 1, "Upper"], graph[graph$Model == 1,"Factor_n"] - 0.2,
+       col = "salmon2", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+
+points(graph[graph$Model == 2, c("Estimate","Factor")], col = "palegreen3", pch = 19, cex = 1.3)
+arrows(graph[graph$Model == 2, "Lower"], graph[graph$Model == 2,"Factor_n"],
+       graph[graph$Model == 2, "Upper"], graph[graph$Model == 2,"Factor_n"],
+       col = "palegreen3", code = 3, length = 0.03, angle = 90)
+
+points(graph[graph$Model == 3, "Estimate"], graph[graph$Model == 3,"Factor_n"] + 0.2, col = "steelblue1", pch = 19, cex = 1.3)
+arrows(graph[graph$Model == 3, "Lower"], graph[graph$Model == 3,"Factor_n"] + 0.2,
+       graph[graph$Model == 3, "Upper"], graph[graph$Model == 3,"Factor_n"] + 0.2,
+       col = "steelblue1", code = 3, length = 0.03, angle = 90)
+#add axes
+axis(side= 1, at= c(-5,0,5), labels= c("-5", "0", "5"), 
+     tick=T ,col = NA, col.ticks = 1, tck=-.015)
+
+axis(side= 2, at= c(1:6), #line=-4.8, 
+     labels= c( expression(paste(Delta,"t"," : wind speed")),
+                "wind support var","wind support",#expression(paste(Delta,"t"," var")),
+                "wind speed", expression(paste(Delta,"t")),NA),
+     tick=T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
+     tck=-.015 , #tick marks smaller than default by this proportion
+     las=2 ) # text perpendicular to axis label 
+
+#add legend
+legend(x = 5.3, y = 0.8, legend=c("model 3", "model 2", "model 1"), col = c("steelblue1","palegreen3","salmon2"), #coords indicate top-left
+       pch = 19, bg="white",bty="n", cex = 0.75)
+
+
+
+
+
+
+
+#SUPPLEMENTARY FIGURE 1: species-specific coefficients ####
+#for the best model (M3); original code by Virgilio Gomez-Rubio (Bayesian inference with INLA, 2020)
+species_names <- unique(all_data$species)
+
+tab_dt <- data.frame(ID = as.factor(M3$summary.random$species1$ID),
+                     mean = M3$summary.random$species1$mean,
+                     IClower = M3$summary.random$species1[, 4],
+                     ICupper = M3$summary.random$species1[, 6])
+
+tab_wspd <- data.frame(ID = as.factor(M3$summary.random$species2$ID),
+                       mean = M3$summary.random$species2$mean,
+                       IClower = M3$summary.random$species2[, 4],
+                       ICupper = M3$summary.random$species2[, 6])
+
+tab_wspt <- data.frame(ID = as.factor(M3$summary.random$species3$ID),
+                       mean = M3$summary.random$species3$mean,
+                       IClower = M3$summary.random$species3[, 4],
+                       ICupper = M3$summary.random$species3[, 6])
+
+X11(width = 3.5, height = 3)
+
+par(mfrow = c(1,1), bty="n", #no box around the plot
+    #cex.axis= 0.75, #x and y labels have 0.75% of the default size
+    #font.axis= 0.75, #3: axis labels are in italics
+    #cex.lab = 0.75,
+    cex = 0.7,
+    oma = c(0,3.5,0,0),
+    mar = c(3, 3.5, 0.5, 1),
+    bty = "l"
+)
+
+
+plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(-4,4), ylim = c(0,4.3), xlab = "", ylab = "")
+#add vertical line for zero
+abline(v = 0, col = "grey30",lty = 2)
+
+points(tab_dt$mean, as.numeric(tab_dt$ID) - 0.2, col = "lightcoral", pch = 19, cex = 1.3)
+arrows(tab_dt$IClower, as.numeric(tab_dt$ID) - 0.2,
+       tab_dt$ICupper, as.numeric(tab_dt$ID) - 0.2,
+       col = "lightcoral", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+
+points(tab_wspd$mean, as.numeric(tab_wspd$ID), col = "yellowgreen", pch = 19, cex = 1.3)
+arrows(tab_wspd$IClower, as.numeric(tab_wspd$ID),
+       tab_wspd$ICupper, as.numeric(tab_wspd$ID),
+       col = "yellowgreen", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+
+points(tab_wspt$mean, as.numeric(tab_wspt$ID) + 0.2, col = "paleturquoise2", pch = 19, cex = 1.3)
+arrows(tab_wspt$IClower, as.numeric(tab_wspt$ID) + 0.2,
+       tab_wspt$ICupper, as.numeric(tab_wspt$ID) + 0.2,
+       col = "paleturquoise2", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+
+axis(side= 1, at= c(-2,0,2), labels= c("-2", "0", "2"), 
+     tick=T ,col = NA, col.ticks = 1, tck=-.015)
+
+axis(side= 2, at= c(1:4), #line=-4.8, 
+     #labels= c("Falco eleonorae", "Pandion haliaetus", "Pernis ptilorhynchus", "Falco peregrinus"),
+     labels= c(expression(italic("F. eleonorae")), expression(italic("P. haliaetus")),
+               expression(italic("P. ptilorhynchus")),
+               expression(italic("F. peregrinus"))),
+     tick=T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
+     tck=-.015 , #tick marks smaller than default by this proportion
+     las=2 ) # text perpendicular to axis label 
+  
+#add legend
+legend(x = 1.8, y = 0.6, legend=c("wind support", "wind speed", expression(paste(Delta,"t"))), 
+       col = c("paleturquoise2","yellowgreen","lightcoral"), #coords indicate top-left
+       pch = 19, bg="white",bty="n", cex = 0.75)
 
