@@ -767,7 +767,7 @@ formulaM1 <- used ~ -1 + delta_t_z * wind_speed_z + delta_t_var_z + wind_support
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
 
 (b <- Sys.time())
-M1 <- inla(formulaM1, family ="Poisson", 
+M1 <- inla(formulaM1, family ="Poisson",  #can't find windspeed :/
            control.fixed = list(
              mean = mean.beta,
              prec = list(default = prec.beta)),
