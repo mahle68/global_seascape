@@ -692,12 +692,15 @@ ann_cmpl %>%
 all_data <- ann_cmpl %>% 
   #group_by(species) 
   mutate_at(c(2:5,8:11,38:41,45,46),
-            list(z = ~as.numeric(scale(.)))) %>%
+            list(z = ~scale(.)))
+            #list(z = ~as.numeric(scale(.)))) #%>%
   #arrange(stratum, desc(used)) %>% 
   #group_by(stratum) %>%  
   #mutate(lat_at_used = head(zone,1)) %>%  #add a variable for latitudinal zone. This will assign the lat zone of the used point to the entire stratum
   #ungroup() %>% 
-  as.data.frame() 
+  #as.data.frame() 
+
+
 
 save(all_data, file = "2021/ssf_input_ann_90_60_z.RData")
 
@@ -767,7 +770,7 @@ formulaM1 <- used ~ -1 + delta_t_z * wind_speed_z + delta_t_var_z + wind_support
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
 
 (b <- Sys.time())
-M1 <- inla(formulaM1, family ="Poisson",  #can't find windspeed :/
+M1 <- inla(formula = formulaM1, family ="Poisson",  
            control.fixed = list(
              mean = mean.beta,
              prec = list(default = prec.beta)),
@@ -780,7 +783,45 @@ Sys.time() - b #3.3 hours
 save(M1, file = "2021/inla_models/m1.RData")
 
 load("2021/inla_models/m1.RData")
-summary(M1)#sdfsd
+summary(M1)#
+
+#formula doenst work
+(b <- Sys.time())
+M1 <- inla(formula = used ~ -1 + delta_t_z * wind_speed_z + delta_t_var_z + wind_support_z + wind_support_var_z +
+             f(stratum, model = "iid", 
+               hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
+             f(species1, delta_t_z, model = "iid", 
+               hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+             f(species2, wind_speed_z,  model = "iid",
+               hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+             f(species3, wind_support_z,  model = "iid",
+               hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+             f(species4, delta_t_var_z, model = "iid",
+               hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+             f(species5, wind_support_var_z, model = "iid",
+               hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+             f(ind1, delta_t_z, model = "iid",
+               hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
+             f(ind2, wind_speed_z,  model = "iid",
+               hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+             f(ind3, wind_support_z,  model = "iid",
+               hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+             f(ind4, delta_t_var_z, model = "iid",
+               hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+             f(ind5, wind_support_var_z, model = "iid",
+               hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))),
+           family ="Poisson",  
+           control.fixed = list(
+             mean = mean.beta,
+             prec = list(default = prec.beta)),
+           data = all_data,
+           num.threads = 10,
+           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = F))
+
+Sys.time() - b #3.3 hours
+
+
+
 
 
 

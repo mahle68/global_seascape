@@ -6,6 +6,7 @@ library(tidyverse)
 library(sp)
 library(sf)
 library(raster)
+library(maptools)
 library(mapview)
 library(parallel)
 library(lubridate)
@@ -16,7 +17,7 @@ library(TeachingDemos) #for subplot
 library(readxl)
 library(png)
 
-setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files")
+setwd("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files")
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 
 
@@ -71,7 +72,7 @@ load("2021/ocean.RData") #ocean (prepared in 2021_all_data_prep_analyze.R)
 
 data_sf <- data_df %>% 
   st_as_sf(coords = c("lon","lat"), crs = wgs) %>% 
-  st_intersection(ocean) %>% #filter out lakes
+  #st_intersection(ocean) %>% #filter out lakes
   mutate(s_elev_angle = solarpos(st_coordinates(.), date_time, proj4string=CRS("+proj=longlat +datum=WGS84"))[,2]) %>% #calculate solar elevation angle
   mutate(sun_elev = ifelse(s_elev_angle < -6, "night", #create a categorical variable for teh position of the sun
                            ifelse(s_elev_angle > 40, "high", "low")),
