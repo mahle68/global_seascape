@@ -2,3 +2,8 @@
 .Rhistory
 .RData
 .Ruserdata
+<<<<<<< HEAD
+=======
+.Rproj
+Elham_script.R
+>>>>>>> 0bec934d4a099c2c45e3aff5ff18ce328e0dc024

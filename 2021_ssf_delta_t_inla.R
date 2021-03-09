@@ -632,9 +632,6 @@ load("2021/ssf_input_ann_90_60_z.RData") #all_data
 form_original <- formula(used ~  delta_t_z * wind_speed_z + wind_support_z +
                     strata(stratum))
 
-form_6 <- formula(used ~  delta_t_z * wind_support_z + 
-                           strata(stratum))
-
 form_1 <- formula(used ~ lat_at_used * delta_t_z + lat_at_used * wind_support_z +
                       strata(stratum))
 
@@ -650,6 +647,15 @@ form_4 <- formula(used ~  delta_t_z * wind_support_z +
 form_5 <- formula(used ~  delta_t_z * lat_at_used + wind_support_z * lat_at_used +
                     strata(stratum))
 
+form_6 <- formula(used ~  delta_t_z * wind_support_z + 
+                    strata(stratum))
+
+form_7 <- formula(used ~  delta_t_z *  wind_support_z +
+                    strata(stratum))
+
+form_8 <- formula(used ~  delta_t_z * wind_support_z + delta_t_z * abs_cross_wind +
+                             strata(stratum))
+
 m1 <- clogit(form_1, data = all_data) #when zone is added, delta t coeff becomes positive. still not sig, but positive. but wind support is negative. but interaction of wind support with zones is positive. so, only negative in the arctic
 m1a <- clogit(form_original, data = all_data)
 m1b <- clogit(form_2, data = all_data)
@@ -657,6 +663,8 @@ m1c <- clogit(form_3, data= all_data)
 m1d <- clogit(form_4, data= all_data)
 m1e <- clogit(form_5, data = all_data)
 m1f <- clogit(form_6, data = all_data)
+m1g <- clogit(form_7, data = all_data)
+m1h <- clogit(form_8, data = all_data)
 
 
 ###zone_specific... conclusion: the order of importance is pretty much the same. only the direction of delta_t:windspeed changes... but still small. delta t is negative all through (not sig. in tw)
@@ -686,7 +694,7 @@ ann_cmpl %>%
   correlate() %>% 
   stretch() %>% 
   filter(abs(r) > 0.6) #correlated: var_cw with location.lat and var_delta_t with location.lat. avg delta_t and delta_t. avg_ws and var_delta_t
-#correlated: wind support var & wind speed var and cross wind var, crosswind var and wind speed var.  
+#correlated: wind support var & wind speed var and cross wind var, crosswind var and wind speed var.  delta-t var and wind support var!!! wind speed and abs_crosswind
 
 #z-transform
 all_data <- ann_cmpl %>% 
@@ -717,12 +725,12 @@ load("2021/ssf_input_ann_90_60_z.RData") #all_data
 
 #repeat variabels that will be used as random slopes
 all_data <- all_data %>% 
-  mutate(species1 = species,
-         species2 = species,
-         species3 = species,
-         species4 = species,
-         species5 = species,
-         species6 = species,
+  mutate(species1 = factor(species),
+         species2 = factor(species),
+         species3 = factor(species),
+         species4 = factor(species),
+         species5 = factor(species),
+         species6 = factor(species),
          ind1 = factor(ind),
          ind2 = factor(ind),
          ind3 = factor(ind),
@@ -735,17 +743,17 @@ all_data <- all_data %>%
          #zone4 = factor(lat_at_used),
          #zone5 = factor(lat_at_used),
          #zone6 = factor(lat_at_used),
-         stratum = factor(stratum)) %>% 
-  dplyr::select(c("used","stratum","delta_t_z","wind_speed_z","wind_support_z","wind_support_var_z", "abs_cross_wind_z","delta_t_var_z",
-                  "species1","species2", "species3", "species4","species5","ind1", "ind2", "ind3", "ind4", "ind5", #"zone1", "zone2","zone3","zone4","zone5","zone6",
-                  "location.lat"))
+         stratum = factor(stratum)) #%>% 
+  #dplyr::select(c("used","stratum","delta_t_z","wind_speed_z","wind_support_z","wind_support_var_z", "abs_cross_wind_z","delta_t_var_z",
+  #                "species1","species2", "species3", "species4","species5","ind1", "ind2", "ind3", "ind4", "ind5", #"zone1", "zone2","zone3","zone4","zone5","zone6",
+  #                "location.lat"))
 
 
 # Set mean and precision for the priors of slope coefficients
 mean.beta <- 0
 prec.beta <- 1e-4 
 
-formulaM1 <- used ~ -1 + delta_t_z * wind_speed_z + delta_t_var_z + wind_support_z + wind_support_var_z +
+formulaM1 <- used ~ -1 + delta_t_var_z + wind_support_z + delta_t_z * wind_speed_z + wind_support_var_z +
   f(stratum, model = "iid", 
     hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
   f(species1, delta_t_z, model = "iid", 
@@ -776,7 +784,7 @@ M1 <- inla(formula = formulaM1, family ="Poisson",
              prec = list(default = prec.beta)),
            data = all_data,
            num.threads = 10,
-           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = F))
+           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T))
 
 Sys.time() - b #3.3 hours
 
