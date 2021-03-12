@@ -790,7 +790,7 @@ Sys.time() - b #3.3 hours
 
 save(M1, file = "2021/inla_models/m1.RData")
 
-load("2021/inla_models/m1.RData")
+
 summary(M1)#
 
 
@@ -826,7 +826,7 @@ M2a <- inla(formulaM2a, family ="Poisson",
 
 save(M2a, file = "2021/inla_models/m2a.RData")
 
-load("2021/inla_models/m2a.RData")
+
   
 #remove wind speed and delta t
 formulaM3a <- used ~ -1 + delta_t_var_z + wind_support_z +
@@ -855,9 +855,15 @@ save(M3a, file = "2021/inla_models/m3a.RData")
 
 
 # ---------- STEP 7: plots #####
+
+#load models
+load("2021/inla_models/m2a.RData")
+load("2021/inla_models/m3a.RData")
+load("2021/inla_models/m1.RData")
+
 #FIGURE 2: posterior means of fixed effects 
 #easy
-Efxplot(list(M1,M2a))
+Efxplot(list(M1,M2a,M3a))
 
 #sophisticated
 ModelList <- list(M1,M2a)
@@ -897,13 +903,15 @@ graph$Factor_n <- as.numeric(graph$Factor)
 
 X11(width = 4, height = 3)
 
+pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/coefficients.pdf", width = 4, height = 3)
+
 par(mfrow=c(1,1), bty="n", #no box around the plot
     #cex.axis= 0.75, #x and y labels have 0.75% of the default size
     #font.axis= 0.75, #3: axis labels are in italics
     #cex.lab = 0.75,
     cex = 0.7,
     oma = c(0,3.7,0,0),
-    mar = c(3, 3.5, 0.5, 1),
+    mar = c(3, 3.7, 0.5, 1),
     bty = "l"
 )
 
@@ -913,38 +921,37 @@ plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(-7.2,8), ylim = c(0,6.3), 
 #add vertical line for zero
 abline(v = 0, col = "grey30",lty = 2)
 #add points and error bars
-points(graph[graph$Model == 1, "Estimate"], graph[graph$Model == 1,"Factor_n"] - 0.2, col = "salmon2", pch = 19, cex = 1.3)
-arrows(graph[graph$Model == 1, "Lower"], graph[graph$Model == 1,"Factor_n"] - 0.2,
-       graph[graph$Model == 1, "Upper"], graph[graph$Model == 1,"Factor_n"] - 0.2,
-       col = "salmon2", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+points(graph[graph$Model == 1, "Estimate"], graph[graph$Model == 1,"Factor_n"] - 0.3, col = "lightsteelblue3", pch = 19, cex = 1.3)
+arrows(graph[graph$Model == 1, "Lower"], graph[graph$Model == 1,"Factor_n"] - 0.3,
+       graph[graph$Model == 1, "Upper"], graph[graph$Model == 1,"Factor_n"] - 0.3,
+       col = "lightsteelblue3", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
 
-points(graph[graph$Model == 2, c("Estimate","Factor")], col = "palegreen3", pch = 19, cex = 1.3)
+points(graph[graph$Model == 2, c("Estimate","Factor")], col = "peachpuff3", pch = 19, cex = 1.3)
 arrows(graph[graph$Model == 2, "Lower"], graph[graph$Model == 2,"Factor_n"],
        graph[graph$Model == 2, "Upper"], graph[graph$Model == 2,"Factor_n"],
-       col = "palegreen3", code = 3, length = 0.03, angle = 90)
-
-#points(graph[graph$Model == 3, "Estimate"], graph[graph$Model == 3,"Factor_n"] + 0.2, col = "steelblue1", pch = 19, cex = 1.3)
-#arrows(graph[graph$Model == 3, "Lower"], graph[graph$Model == 3,"Factor_n"] + 0.2,
-#       graph[graph$Model == 3, "Upper"], graph[graph$Model == 3,"Factor_n"] + 0.2,
-#       col = "steelblue1", code = 3, length = 0.03, angle = 90)
+       col = "peachpuff3", code = 3, length = 0.03, angle = 90)
+# 
+# points(graph[graph$Model == 3, "Estimate"], graph[graph$Model == 3,"Factor_n"] + 0.2, col = "steelblue1", pch = 19, cex = 1.3)
+# arrows(graph[graph$Model == 3, "Lower"], graph[graph$Model == 3,"Factor_n"] + 0.2,
+#        graph[graph$Model == 3, "Upper"], graph[graph$Model == 3,"Factor_n"] + 0.2,
+#        col = "steelblue1", code = 3, length = 0.03, angle = 90)
 #add axes
 axis(side= 1, at= c(-5,0,5), labels= c("-5", "0", "5"), 
      tick=T ,col = NA, col.ticks = 1, tck=-.015)
 
 axis(side= 2, at= c(1:6), #line=-4.8, 
-     labels= c( expression(italic(paste(Delta,"T"," : Wind speed"))),
-                "Wind support var","Wind support",expression(paste(Delta,"T"," var")),
+     labels= c(expression(paste(italic(paste(Delta,"T"))," : Wind speed")),
+                "Wind support var","Wind support", expression(paste(italic(paste(Delta,"T"))," var")),
                 "Wind speed", expression(italic(paste(Delta,"T")))),
      tick=T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
      tck=-.015 , #tick marks smaller than default by this proportion
-     las=2 ) # text perpendicular to axis label 
+     las=2) # text perpendicular to axis label 
 
 #add legend
-legend(x = 5.3, y = 0.8, legend=c( "model 2", "model 1"), col = c("palegreen3","salmon2"), #coords indicate top-left
-       pch = 19, bg="white",bty="n", cex = 0.75)
+legend(x = 5.3, y = 0.8, legend=c( "Model 2", "Model 1"), col = c("peachpuff3","lightsteelblue3"), #coords indicate top-left
+       pch = 19, bg="white",bty="n", cex = 0.8)
 
-
-
+dev.off()
 
 #SUPPLEMENTARY FIGURE 1: species-specific coefficients 
 #for the best model (M3); original code by Virgilio Gomez-Rubio (Bayesian inference with INLA, 2020)
@@ -973,66 +980,65 @@ tab_vdt <- data.frame(ID = as.factor(M2a$summary.random$species4$ID),
 
 X11(width = 4, height = 3)
 
+pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/species_var.pdf", width = 4, height = 3)
+
 par(mfrow = c(1,1), bty="n", #no box around the plot
     #cex.axis= 0.75, #x and y labels have 0.75% of the default size
     #font.axis= 0.75, #3: axis labels are in italics
     #cex.lab = 0.75,
     cex = 0.7,
     oma = c(0,3.5,0,0),
-    mar = c(3, 3.5, 0.5, 1),
+    mar = c(3, 2, 0.5, 1),
     bty = "l"
 )
 
 
-plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(-10,7), ylim = c(0,4.3), xlab = "", ylab = "")
+plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(-10,7), ylim = c(0,4.5), xlab = "", ylab = "")
 #add vertical line for zero
 abline(v = 0, col = "grey30",lty = 2)
 
-points(tab_dt$mean, as.numeric(tab_dt$ID) - 0.2, col = "lightcoral", pch = 19, cex = 1.3)
+points(tab_dt$mean, as.numeric(tab_dt$ID) - 0.2, col = "burlywood3", pch = 19, cex = 1.3)
 arrows(tab_dt$IClower, as.numeric(tab_dt$ID) - 0.2,
        tab_dt$ICupper, as.numeric(tab_dt$ID) - 0.2,
-       col = "lightcoral", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+       col = "burlywood3", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
 
-points(tab_wspd$mean, as.numeric(tab_wspd$ID), col = "yellowgreen", pch = 19, cex = 1.3)
+points(tab_wspd$mean, as.numeric(tab_wspd$ID), col = "darkseagreen", pch = 19, cex = 1.3)
 arrows(tab_wspd$IClower, as.numeric(tab_wspd$ID),
        tab_wspd$ICupper, as.numeric(tab_wspd$ID),
-       col = "yellowgreen", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+       col = "darkseagreen", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
 
-points(tab_wspt$mean, as.numeric(tab_wspt$ID) + 0.2, col = "paleturquoise2", pch = 19, cex = 1.3)
+points(tab_wspt$mean, as.numeric(tab_wspt$ID) + 0.2, col = "lightpink2", pch = 19, cex = 1.3)
 arrows(tab_wspt$IClower, as.numeric(tab_wspt$ID) + 0.2,
        tab_wspt$ICupper, as.numeric(tab_wspt$ID) + 0.2,
-       col = "paleturquoise2", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+       col = "lightpink2", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
 
-points(tab_vdt$mean, as.numeric(tab_vdt$ID) + 0.4, col = "firebrick", pch = 19, cex = 1.3)
+points(tab_vdt$mean, as.numeric(tab_vdt$ID) + 0.4, col = "ivory4", pch = 19, cex = 1.3)
 arrows(tab_vdt$IClower, as.numeric(tab_vdt$ID) + 0.4,
        tab_vdt$ICupper, as.numeric(tab_vdt$ID) + 0.4,
-       col = "firebrick", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+       col = "ivory4", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
 
 axis(side= 1, at= c(-4,-2,0,2,4), labels= c("-4","-2", "0", "2","4"), 
      tick=T ,col = NA, col.ticks = 1, tck=-.015)
 
-axis(side= 2, at= c(1:4), #line=-4.8, 
-     #labels= c("Falco eleonorae", "Pandion haliaetus", "Pernis ptilorhynchus", "Falco peregrinus"),
-     #labels= c(expression(italic("F. eleonorae")), expression(italic("P. haliaetus")),
-     #expression(italic("P. ptilorhynchus")),
-     #expression(italic("F. peregrinus")))
-     labels= unique(all_data$species), #or reversed?
-     tick=T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
-     tck=-.015 , #tick marks smaller than default by this proportion
-     las=2 ) # text perpendicular to axis label 
+axis(side= 2, at= c(1:4), #line = 6, 
+     labels = tab_dt$ID,# c( "Eleonora's falcon","Osprey", "Oriental\n honey buzzard", "Peregrine falcon"), #same order as tab_dt$ID
+     tick = T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
+     tck = -.015 , #tick marks smaller than default by this proportion
+     las = 2) # text perpendicular to axis label 
 
 #add legend
-legend(x = -9.8 , y = 0.8, legend=c(expression(paste(Delta,"T"," var")),"wind support", "wind speed", expression(paste(Delta,"T"))), 
-       col = c("firebrick","paleturquoise2","yellowgreen","lightcoral"), #coords indicate top-left
+legend(x = -9.8 , y = 0.9, legend=c(expression(paste(italic(paste(Delta,"T"))," var")),"wind support", "wind speed", expression(italic(paste(Delta,"T")))), 
+       col = c("ivory4","lightpink2","darkseagreen","burlywood3"), #coords indicate top-left
        pch = 19, bg="white",bty="n", cex = 0.8)
 
+dev.off()
 
 #SUPPLEMENTARY FIGURE 2: boxplots 
 
 
 X11(width = 9, height = 7)
 
-pdf("/home/mahle68/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/boxplots.pdf", width = 9, height = 7)
+pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/boxplots.pdf", width = 9, height = 7)
 
 par(mfrow= c(2,3), oma = c(0,0,3,0))
 
