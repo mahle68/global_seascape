@@ -119,7 +119,7 @@ data_list <- parLapply(cl = mycl, file_list,function(x){
     data.frame()
   
   sample <- land_df %>% 
-    sample_n(50000, replace = F)
+    sample_n(5000, replace = F)
   
   save(sample,file = paste0("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_interim_regional_sampled/",
                             str_sub(strsplit(x, "/")[[1]][2],end = -4),".RData"))
@@ -135,7 +135,6 @@ stopCluster(mycl)
 file_ls <- list.files("/home/enourani/ownCloud/Work/Projects/delta_t/ERA_interim_regional_sampled/",".RData",full.names = TRUE)
 
 data_df <- sapply(file_ls, function(x) mget(load(x)), simplify = TRUE) %>%
-  reduce(rbind) %>%
-  mutate(year = year(date_time))
+  reduce(rbind)
 
-save(data_df, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/ecmwf_regions.RData")
+save(data_df, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/ecmwf_regions_5ksample.RData")

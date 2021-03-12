@@ -17,7 +17,7 @@ library(TeachingDemos) #for subplot
 library(readxl)
 library(png)
 
-setwd("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files")
+setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files")
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 
 
@@ -62,51 +62,52 @@ mapview(East_asia) + mapview(Indian_ocean) + mapview(Americas) + mapview(Europe)
 extent_ls <- list(East_asia = st_bbox(East_asia), Americas = st_bbox(Americas), Indian_ocean = st_bbox(Indian_ocean),
                 Europe = st_bbox(Europe), Madagascar = st_bbox(Madagascar))
 
-save(extent_ls, file = "2021/extent_ls_regional_gam.RData")
+save(extent_ls, file = "2021/extent_ls_regional_gam.RData") #use this later in 2021_Era_interim_download_prep.R
 
 
-### STEP 2: open data, spatio-termporal filters #####
+### --------STEP 2: open data, spatio-termporal filters #####
 
-load("2021/ecmwf_regions.RData") #called data_df (from 2021_Era_interim_download_prep.R)
+load("2021/ecmwf_regions_5ksample.RData") #called data_df (from 2021_Era_interim_download_prep.R)
 load("2021/ocean.RData") #ocean (prepared in 2021_all_data_prep_analyze.R)
 
-data_sf <- data_df %>% 
-  st_as_sf(coords = c("lon","lat"), crs = wgs) %>% 
-  #st_intersection(ocean) %>% #filter out lakes
-  mutate(s_elev_angle = solarpos(st_coordinates(.), date_time, proj4string=CRS("+proj=longlat +datum=WGS84"))[,2]) %>% #calculate solar elevation angle
-  mutate(sun_elev = ifelse(s_elev_angle < -6, "night", #create a categorical variable for teh position of the sun
-                           ifelse(s_elev_angle > 40, "high", "low")),
-         month = month(date_time))
+regions_ls <- split(data_df, data_df$region)
 
-save(data_sf, file = "2021/regional_gam_input.RData")
+regions_ls <- lapply(regions_ls, function(x){
+  x %>% 
+    st_as_sf(coords = c("lon","lat"), crs = wgs)
+})
 
+save(regions_ls, file = "2021/ecmwf_regions_sf_ls.RData")
 
-### STEP 1: open and filter ####
-load("2021/regional_gam_input.RData") #data_sf
+load("2021/ecmwf_regions_sf_ls.RData") #regions_ls
 
-East_asia <- data %>% 
-  st_crop(xmin = 99, xmax = 130, ymin = 1.7, ymax = 38) %>% 
-  #st_difference(st_union(outliers)) %>%  #remove outliers
-  as("Spatial") %>% 
-  as.data.frame() %>% 
-  rename(lon = coords.x1,
-         lat = coords.x2) %>% 
-  mutate(sun_elev_f = factor(sun_elev)) %>% 
-  as.data.frame()
+list2env(regions_ls, envir = .GlobalEnv)
+
+#for some regions, further spatial subsetting is needed
+ocean_ea <- ocean %>% 
+  st_crop(st_bbox(East_asia))
+
+#for indian ocean, remove 
+io_to_delete <- st_read("/home/enourani/ownCloud/Work/GIS_files/World_Seas_IHO_v3/World_Seas_IHO_v3.shp") %>% 
+  filter(NAME %in% c("Persian Gulf", "Red Sea")) %>%  
+  st_union() %>%
+  st_transform(meters_proj) %>% 
+  st_buffer(dist = units::set_units(50000, 'm')) %>% 
+  st_transform(wgs)
+
+(b <- Sys.time())
+Indian_ocean <- Indian_ocean %>%  
+  st_difference(io_to_delete) #%>%  #remove points over the persian gulf and the red sea.
+  #st_intersection(ocean)
+Sys.time() - b #14 min
   
-#for indian ocean, remove the caspian sea
-pg <- st_read("/home/enourani/ownCloud/Work/GIS_files/World_Seas_IHO_v3/World_Seas_IHO_v3.shp") %>% 
-  filter(NAME == "Persian Gulf")
+save(Indian_ocean, file = "2021/Indian_ocean_sp.RData")
 
-Indian_ocean <- data %>% 
-  st_crop(xmin = 43, xmax = 78, ymin = 9, ymax = 26) %>% 
-  st_difference(pg) %>%  #remove points over the persian gulf
-  as("Spatial") %>% 
-  as.data.frame() %>% 
-  rename(lon = coords.x1,
-         lat = coords.x2) %>% 
-  mutate(sun_elev_f = factor(sun_elev)) %>% 
-  as.data.frame()
+    # as("Spatial") %>% 
+  # as.data.frame() %>% 
+  # rename(lon = coords.x1,
+  #        lat = coords.x2) %>% 
+  # as.data.frame()
 
 #for the Americas, get rid of the pacific ocean
 
@@ -114,9 +115,20 @@ np_ocean <- st_read("/home/enourani/ownCloud/Work/GIS_files/World_Seas_IHO_v3/Wo
   filter(NAME == "North Pacific Ocean") %>% 
   st_crop(xmin = -118, xmax = -60, ymin = 0, ymax = 29) 
 
-Americas <- data %>% 
-  st_crop(xmin = -98, xmax = -54, ymin = 5.7, ymax = 47) %>% 
-  st_difference(np_ocean) %>% 
+Americas <- Americas %>% 
+  #st_crop(xmin = -98, xmax = -54, ymin = 5.7, ymax = 47) %>% 
+  st_difference(np_ocean) 
+
+#crop ocean to the extent of americas
+ocean_am <- ocean %>% 
+  st_crop(st_bbox(Americas))
+
+Americas <- Americas %>% 
+  st_intersection(ocean_am)
+
+save(Americas, file = "2021/Americas_sf.RData")
+
+#%>% 
   st_difference(outlier) %>%  #some points remain on the Pacific ocean. remove them. outlier: outlier <- Americas %>% filter(row_number() == which(Americas$yday == 74 & Americas$year == 2017 & Americas$local_hour == 13))
   #dplyr::select(names(data)) %>%
   #st_drop_geometry() %>% 
@@ -129,24 +141,29 @@ Americas <- data %>%
   mutate(sun_elev_f = factor(sun_elev)) %>% 
   as.data.frame()
 
-#for Europe, include mediterranean and the baltic
-bs <- st_read("/home/enourani/ownCloud/Work/GIS_files/baltic_sea/iho.shp") %>% 
-  st_union()
-ms <- st_read("/home/enourani/ownCloud/Work/GIS_files/med_sea/iho.shp") %>% 
+#for Europe, include mediterranean and the baltic, white sea, and Barentsz Sea
+bzs <- st_read("/home/enourani/ownCloud/Work/GIS_files/barentsz_sea/iho.shp") %>% 
   st_union()
 
-eur_sea <- bs %>% 
-  st_union(ms)
+ws <- st_read("/home/enourani/ownCloud/Work/GIS_files/white_sea/iho.shp") %>% 
+  st_union()
 
-save(ms, file = "med_sea.RData")
-save(bs, file = "blt_sea.RData")
-save(eur_sea, file = "eur_sea.RData")
-load("eur_sea.RData")
+load("eur_sea.RData") #eur_sea from regional_gams.R
+
+eur_updated <- eur_sea %>% 
+  st_union(bzs) %>% 
+  st_union(ws)
+
+save(eur_updated, file = "2021/eur_sea.RData")
 
 #mask europe layer to keep only waterbodies of itnerest
-Europe <- data %>% 
-  st_crop(xmin = -11, xmax = 37, ymin = 30, ymax = 68.5) %>% 
-  st_intersection(eur_sea) %>% 
+Europe <- Europe %>% 
+ # st_crop(xmin = -11, xmax = 37, ymin = 30, ymax = 68.5) %>% 
+  st_intersection(eur_updated) #
+
+save(Europe, file = "2021/Europe_sf.RData")
+
+#%>% 
   as("Spatial") %>% 
   as.data.frame() %>% 
   rename(lon = coords.x1,
@@ -157,11 +174,27 @@ Europe <- data %>%
 save(Europe, file = "Europe_seas.RData")
 load("Europe_seas.RData") 
 
+
+
 #put all regional data in a list
 data_ls <- list(East_asia = East_asia, Americas = Americas, Indian_ocean = Indian_ocean, Europe = Europe)
 
 save(data_ls, file = "data_ls_regional_gam.RData")
 save(data_ls, file = "data_ls_regional_gam2.RData") #smaller extend for the Americas
+
+
+### --------STEP 3: calculate sun position #####
+data_sf <- data_df %>% 
+  st_as_sf(coords = c("lon","lat"), crs = wgs) %>% 
+  st_intersection(ocean) %>% #filter out lakes
+  mutate(s_elev_angle = solarpos(st_coordinates(.), date_time, proj4string=CRS("+proj=longlat +datum=WGS84"))[,2]) %>% #calculate solar elevation angle
+  mutate(sun_elev = ifelse(s_elev_angle < -6, "night", #create a categorical variable for teh position of the sun
+                           ifelse(s_elev_angle > 40, "high", "low")),
+         month = month(date_time))
+
+save(data_sf, file = "2021/regional_gam_input.RData")
+
+
 
 ### STEP 2: model####
 load("data_ls_regional_gam.RData")
