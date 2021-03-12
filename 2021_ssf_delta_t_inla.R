@@ -826,7 +826,33 @@ M2a <- inla(formulaM2a, family ="Poisson",
 
 save(M2a, file = "2021/inla_models/m2a.RData")
 
+load("2021/inla_models/m2a.RData")
   
+#remove wind speed and delta t
+formulaM3a <- used ~ -1 + delta_t_var_z + wind_support_z +
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T))) +
+  f(species3, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(species4, delta_t_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(ind3, wind_support_z,  model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
+  f(ind4, delta_t_var_z, model = "iid",
+    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
+
+
+M3a <- inla(formulaM3a, family ="Poisson", 
+            control.fixed = list(
+              mean = mean.beta,
+              prec = list(default = prec.beta)),
+            data = all_data,
+            num.threads = 10,
+            control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = T))
+
+save(M3a, file = "2021/inla_models/m3a.RData")
+
+
 
 # ---------- STEP 7: plots #####
 #FIGURE 2: posterior means of fixed effects 
@@ -906,9 +932,9 @@ axis(side= 1, at= c(-5,0,5), labels= c("-5", "0", "5"),
      tick=T ,col = NA, col.ticks = 1, tck=-.015)
 
 axis(side= 2, at= c(1:6), #line=-4.8, 
-     labels= c( expression(paste(Delta,"T"," : wind speed")),
-                "wind support var","wind support",expression(paste(Delta,"T"," var")),
-                "wind speed", expression(paste(Delta,"T"))),
+     labels= c( expression(italic(paste(Delta,"T"," : Wind speed"))),
+                "Wind support var","Wind support",expression(paste(Delta,"T"," var")),
+                "Wind speed", expression(italic(paste(Delta,"T")))),
      tick=T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
      tck=-.015 , #tick marks smaller than default by this proportion
      las=2 ) # text perpendicular to axis label 
@@ -1004,36 +1030,46 @@ legend(x = -9.8 , y = 0.8, legend=c(expression(paste(Delta,"T"," var")),"wind su
 #SUPPLEMENTARY FIGURE 2: boxplots 
 
 
-X11(width = 9, height = 8);par(mfrow= c(2,3), oma = c(0,0,3,0))
+X11(width = 9, height = 7)
 
-for(i in c("delta_t", "wind_support", "wind_speed")){
+pdf("/home/mahle68/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/boxplots.pdf", width = 9, height = 7)
+
+par(mfrow= c(2,3), oma = c(0,0,3,0))
+
+labels <- c(expression(italic(paste(Delta,"T"))), "Wind support", "Wind speed")
+variables <- c("delta_t", "wind_support", "wind_speed")
+v_variables <- c("delta_t_var", "wind_support_var","wind_speed_var")
+
+for(i in 1:length(variables)){
   
-  boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = i, xlab = "", ylab = "")
-  if(i == "delta_t"){
+  boxplot(ann_cmpl[,variables[i]] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = labels[i], xlab = "", ylab = "")
+  if(i == 1){
     legend("topleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
   }
-  boxplot(ann_cmpl[ann_cmpl$used == 1, i] ~ ann_cmpl[ann_cmpl$used == 1,"species"], 
+  boxplot(ann_cmpl[ann_cmpl$used == 1, variables[i]] ~ ann_cmpl[ann_cmpl$used == 1,"species"], 
           xaxt = "n", add = T, boxfill = "orange",
           boxwex = 0.25, at = 1:length(unique(ann_cmpl[ann_cmpl$used == 1, "species"])) - 0.15)
-  boxplot(ann_cmpl[ann_cmpl$used == 0, i] ~ ann_cmpl[ann_cmpl$used == 0, "species"], 
+  boxplot(ann_cmpl[ann_cmpl$used == 0, variables[i]] ~ ann_cmpl[ann_cmpl$used == 0, "species"], 
           xaxt = "n", add = T, boxfill = "grey",
           boxwex = 0.25, at = 1:length(unique(ann_cmpl[ann_cmpl$used == 1 , "species"])) + 0.15)
   
 }
-mtext("Instantaneious values at each step", side = 3, outer = T, cex = 1.3)
+mtext("instantaneous values at each step", side = 3, outer = T, cex = 1.3)
 
-for(i in c("delta_t_var", "wind_support_var","wind_speed_var")){
+for(i in 1:length(v_variables)){
   
-  boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = i, xlab = "", ylab = "")
-  if(i == "delta_t_var"){
+  boxplot(ann_cmpl[,v_variables[i]] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = labels[i], xlab = "", ylab = "")
+  if(i == 1){
     legend("topleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
   }
-  boxplot(ann_cmpl[ann_cmpl$used == 1,i] ~ ann_cmpl[ann_cmpl$used == 1,"species"], 
+  boxplot(ann_cmpl[ann_cmpl$used == 1,v_variables[i]] ~ ann_cmpl[ann_cmpl$used == 1,"species"], 
           xaxt = "n", add = T, boxfill = "orange",
           boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) - 0.15)
-  boxplot(ann_cmpl[ann_cmpl$used == 0,i] ~ ann_cmpl[ann_cmpl$used == 0,"species"], 
+  boxplot(ann_cmpl[ann_cmpl$used == 0,v_variables[i]] ~ ann_cmpl[ann_cmpl$used == 0,"species"], 
           xaxt = "n", add = T, boxfill = "grey",
           boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) + 0.15)
 } 
 
-mtext("40-yr variances at each point", side = 3, outer = T, cex = 1.3)
+mtext("40-year variances at each step", side = 3, outer = T, cex = 1.3, line = -25)
+
+dev.off()
