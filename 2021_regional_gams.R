@@ -22,7 +22,7 @@ wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 
 
 
-### -------- STEP 1: determine the extents for each region ####
+### --------STEP 1: determine the extents for each region ####
 
 #spatial extent of ssf data
 load("2021/ssf_input_all_df_1hr.RData") #used_av_df_1hr
@@ -186,7 +186,7 @@ save(data_ls_sun, file = "2021/data_ls_regional_gam.RData")
 
 
 
-### STEP 2: model####
+### --------STEP 3: model #####
 load("2021/data_ls_regional_gam.RData")
 
 mycl <- makeCluster(5) 
@@ -233,7 +233,7 @@ latex_ls <- lapply(names(models_ls), function(x){
   gamtabs(m$gam, caption = x)
 })
 
-### STEP 3: prediction and maps ####
+### --------STEP 4: predictions #####
 #extract migration timing OVER THE SEA for each species
 load("2021/all_2009_2020_overwater_points.RData") #all_oversea. prepped in 2021_all_data_prep_analyze.R
 
@@ -268,36 +268,30 @@ timing_areas <- list(East_asia = c(min(c(timing$GFB,timing$OHB)):max(c(timing$GF
 save(timing_areas, file = "2021/timing_for_gam_preds.RData")
 
 #make predictions
+
 load("2021/data_ls_regional_gam.RData") #data_ls_sun
 load("2021/models_ls_reg_GAMs.RData") #models_ls
 load("2021/timing_for_gam_preds.RData") #timing_areas
 
-
-mycl <- makeCluster(5) 
-
-clusterExport(mycl, list("timing_areas","models_ls", "data_ls_sun", "wgs"))
-
-clusterEvalQ(mycl, {
-  library(mgcv)
-  library(raster)
-  library(dplyr)
-  library(sf)
-  library(fields) #for Tps
-})
+#these inputs are too large. don't have enough ram to run multi-core. doesn't take that long anyway
 
 (b <- Sys.time())
-preds <- parLapply(cl = mycl, c(names(models_ls)),function(x){
-  d <- data_ls[[x]] %>% 
-    filter(yday %in% timing_areas[[x]])
+
+preds <- lapply(c(names(models_ls)),function(x){
+  d <- data_ls_sun[[x]] %>% 
+    filter(yday %in% timing_areas[[x]]) %>% 
+    mutate(sun_elev_f = as.factor(sun_elev))
+  
   m <- models_ls[[x]]
   
-  pred <- data.frame(pred = as.numeric(predict(m,d)), lon = d$lon, lat = d$lat)
+  pred <- data.frame(pred = as.numeric(predict(m$gam, d)), lon = d$lon, lat = d$lat)
   
-  coordinates(pred) <- ~lon+lat
-  gridded(pred) <- T
-  r <- raster(pred)
-  proj4string(r) <- wgs
+  coordinates(pred) <- ~ lon + lat
+  proj4string(pred) <- wgs
   
+  pred_sp <- SpatialPixelsDataFrame(pred, tolerance = 0.916421, pred@data)
+  r <- raster(pred_sp)
+
   #interpolate. for visualization purposes
   surf.1 <- Tps(as.matrix(as.data.frame(r,xy = T)[,c(1,2)],col = 2),as.data.frame(r,xy = T)[,3])
   
@@ -311,7 +305,7 @@ preds <- parLapply(cl = mycl, c(names(models_ls)),function(x){
   
   colnames(interpdf)<-c("lon","lat","delta_t")
   
-  coordinates(interpdf) <- ~lon+lat
+  coordinates(interpdf) <- ~ lon + lat
   gridded(interpdf) <- TRUE
   interpr <- raster(interpdf)
   proj4string(interpr) <- wgs
@@ -320,9 +314,9 @@ preds <- parLapply(cl = mycl, c(names(models_ls)),function(x){
   
 })
 
-Sys.time() -b
+Sys.time() -b # 58 sec
 
-stopCluster(mycl)
+
 
 names(preds) <- names(models_ls)
 save(preds, file = "2021/regional_gam_preds.RData")
@@ -330,14 +324,12 @@ save(preds, file = "2021/regional_gam_preds.RData")
 #mask the rasters with the relevant land layer. or simply plot land over the top
 #coastlines layer
 region <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") %>% 
-  st_crop(xmin = -130, xmax = 157, ymin = -50, ymax = 73) %>%
+  st_crop(xmin = -130, xmax = 157, ymin = -50, ymax = 70) %>%
   st_union()
 
 #mask all with the landmass layer
 preds_filt <- lapply(preds, function(x){
   x_f <- raster::mask(x,as(region,"Spatial"), inverse = T) 
-    #x %>% 
-    #st_difference(region)
   x_f
 })
 
@@ -352,9 +344,13 @@ np_ocean <- waters %>%
 preds_filt$Americas <- mask(preds_filt$Americas, np_ocean, inverse = T)
 
 #Europe
-load("eur_sea.RData") #eur_sea
+load("2021/eur_sea.RData") #eur_updated
+eur_sea <- eur_updated %>% 
+  st_crop(xmin = 5.425, xmax = 50.875 , ymin = 25.825, ymax = 70) 
+  
 preds_filt$Europe <- mask(preds_filt$Europe, as(eur_sea,"Spatial"), inverse = F)
 
+  
 #Indian ocean
 pg_rs <- waters %>% 
   filter(NAME %in% c("Persian Gulf","Red Sea"))
@@ -367,14 +363,25 @@ ea <- waters %>%
   st_buffer(0.1) #some points on the edges remain after filtering, so make a buffer to make sure they all go away
 
 preds_filt$East_asia <- mask(preds_filt$East_asia, ea, inverse = T)
+preds_filt$East_asia <- crop(preds_filt$East_asia, extent(99, 130.175, 1.275 , 41.075 ))
 
-save(preds_filt, file = "predictions_regional_gam_map.RData")
 
-load("predictions_regional_gam_map.RData")
-load("models_ls_reg_GAMs.RData")
+#Madagascar
+mch <- st_read("/home/enourani/ownCloud/Work/GIS_files/Mozambique_Channel/iho.shp") %>% 
+  st_union()
+
+preds_filt$Madagascar <- mask(preds_filt$Madagascar, as(mch,"Spatial"), inverse = F)
+
+save(preds_filt, file = "2021/predictions_regional_gam_map.RData")
+
+
+
+### --------STEP 5: plot #####
+load("2021/predictions_regional_gam_map.RData") #preds_filt
+load("2021/models_ls_reg_GAMs.RData") #models_ls
 
 # create a plotting function for effect plots
-names <- c("South-East Asia", "The Americas", "Indian Ocean", "Europe")
+names <- c("South-East Asia", "The Americas", "Indian Ocean", "Europe", "Mozambique Channel")
 
 reg_gam_plot <- function(x){
   m <- models_ls[[x]]
