@@ -346,7 +346,7 @@ preds_filt$Americas <- mask(preds_filt$Americas, np_ocean, inverse = T)
 #Europe
 load("2021/eur_sea.RData") #eur_updated
 eur_sea <- eur_updated %>% 
-  st_crop(xmin = 5.425, xmax = 50.875 , ymin = 25.825, ymax = 70) 
+  st_crop(xmin = -5.425, xmax = 50.875 , ymin = 25.825, ymax = 70) 
   
 preds_filt$Europe <- mask(preds_filt$Europe, as(eur_sea,"Spatial"), inverse = F)
 
@@ -379,6 +379,11 @@ save(preds_filt, file = "2021/predictions_regional_gam_map.RData")
 ### --------STEP 5: plot #####
 load("2021/predictions_regional_gam_map.RData") #preds_filt
 load("2021/models_ls_reg_GAMs.RData") #models_ls
+load("2021/timing_for_gam_preds.RData") #timing_areas
+
+region <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") %>% 
+  st_crop(xmin = -130, xmax = 157, ymin = -50, ymax = 70) %>%
+  st_union()
 
 # create a plotting function for effect plots
 names <- c("South-East Asia", "The Americas", "Indian Ocean", "Europe", "Mozambique Channel")
@@ -418,7 +423,7 @@ imaginary_r@data@values[10:16]<- rep(-1,7)
 
 
 #create a color palette
-cuts<-seq(-1,5,0.01) #set breaks
+cuts <- seq(-1,5,0.01) #set breaks
 #pal <- colorRampPalette(c("dodgerblue","darkturquoise","goldenrod1","coral","firebrick1"))
 pal <- colorRampPalette(c("dodgerblue","darkturquoise", "goldenrod1","coral","firebrick1","firebrick4"))
 colpal <- pal(570)
@@ -446,6 +451,7 @@ plot(preds_filt[[1]],axes = F, box=F, legend=FALSE,zlim=c(-1,5),breaks=cuts, col
 plot(preds_filt[[2]],axes = F, box=F, legend=FALSE,zlim=c(-1,5),breaks=cuts, col = colpal, add = T) 
 plot(preds_filt[[3]],axes = F, box=F, legend=FALSE,zlim=c(-1,5),breaks=cuts, col = colpal, add = T) 
 plot(preds_filt[[4]],axes = F, box=F, legend=FALSE,zlim=c(-1,5),breaks=cuts, col = colpal, add = T) 
+plot(preds_filt[[5]],axes = F, box=F, legend=FALSE,zlim=c(-1,5),breaks=cuts, col = colpal, add = T) 
 
 #add tracks
 lwd <- 1.2
