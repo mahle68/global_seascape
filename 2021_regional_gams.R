@@ -202,24 +202,12 @@ models_ls <- lapply(data_ls_sun, function(x){
   
   x$sun_elev_f <- as.factor(x$sun_elev)
   
-  #m1 <- bam(delta_t ~ s(lat,lon, by = sun_elev_f, k = 100) +
-  #      s(yday, by = sun_elev_f, bs = "cc") +
-  #      #s(year, bs = "re") +
-  #      sun_elev_f , method = "REML", data = x, cluster = mycl)
-  
-  # bam(delta_t ~ s(lat,lon, by = sun_elev_f, k = 100) +
-  #       s(yday, by = sun_elev_f, bs = "cc") +
-  #       s(year, bs = "re") +
-  #       sun_elev_f , method = "REML", data = x, cluster = mycl)
-  
   gamm(delta_t ~ s(lat,lon, by = sun_elev_f, k = 100) +
         s(yday, by = sun_elev_f, bs = "cc") +
         s(year, bs = "re") +
         sun_elev_f , method = "REML", data = x, 
       weights = varPower(form = ~lat))
-  
-  #models <- list(m1,m2)
-  #models
+
 })
 
 Sys.time() - b #8.8 hours
@@ -227,9 +215,9 @@ Sys.time() - b #8.8 hours
 stopCluster(mycl)
 
 save(models_ls, file = "2021/models_ls_reg_GAMs.RData")
-save(models_ls, file = "2021/models_ls_reg_GAMs2.RData")
 
-load("models_ls_reg_GAMs.RData")
+
+load("2021/models_ls_reg_GAMs.RData")
 
 #model checking
 
@@ -242,29 +230,29 @@ lapply(models_ls, function(x){
 #create output tables in Latex
 latex_ls <- lapply(names(models_ls), function(x){
   m <- models_ls[[x]]
-  gamtabs(m, caption = x)
+  gamtabs(m$gam, caption = x)
 })
 
 ### STEP 3: prediction and maps ####
 #extract migration timing OVER THE SEA for each species
-load("all_spp_spatial_filtered_updated.RData") #called dataset_sea. mainly use this. created in all_data_prep_analyze.R
+load("2021/all_2009_2020_overwater_points.RData") #all_oversea. prepped in 2021_all_data_prep_analyze.R
 
-dataset_sea %>% 
+all_oversea %>% 
   filter(season == "autumn") %>%
   as("Spatial") %>% 
   as.data.frame() %>% 
-  mutate(continent = ifelse(coords.x1 < -24, "A","not_relevant")) %>% 
+  mutate(continent = ifelse(coords.x1 < -24, "A", #america
+                            ifelse(species == "EF" & coords.x2 < 0, "S.Africa","not_relevant"))) %>% #southern hemisphere for EF
   group_by(continent,species) %>% 
   summarise(min = min(yday(date_time)),
             max = max(yday(date_time)))
   
-load("segs_EF_dt.RData") #segs_ann_EF; Eleonora's falcon. also prepped in all_data_prep_analyze.R  
-range(yday(segs_ann_EF$timestamp))
 
 timing <- list(OHB = c(260:294), #sea-crossing; ref: almost Yamaguchi
                GFB = c(277:299),
                AF = c(319:323), #mid-november. ref: Bernd's poster
-               EF = c(288:301),
+               EF_E = c(288:301),
+               EF_A = c(303:339),
                PF_EU = c(261:289),
                O_EU = c(222:277),
                PF_A = c(279:305),
@@ -273,13 +261,21 @@ timing <- list(OHB = c(260:294), #sea-crossing; ref: almost Yamaguchi
 timing_areas <- list(East_asia = c(min(c(timing$GFB,timing$OHB)):max(c(timing$GFB,timing$OHB))),
                      Americas = c(min(c(timing$O_A,timing$PF_A)):max(c(timing$O_A,timing$PF_A))),
                      Indian_ocean = timing$AF,
-                     Europe = c(min(c(timing$O_EU,timing$PF_EU,timing$EF)):max(c(timing$O_EU,timing$PF_EU,timing$EF)))) #consider separating this into regions
+                     Europe = c(min(c(timing$O_EU,timing$PF_EU,timing$EF_E)):max(c(timing$O_EU,timing$PF_EU,timing$EF_E))),
+                     Madagascar = timing$EF_A) 
 
+
+save(timing_areas, file = "2021/timing_for_gam_preds.RData")
 
 #make predictions
-mycl <- makeCluster(4) 
+load("2021/data_ls_regional_gam.RData") #data_ls_sun
+load("2021/models_ls_reg_GAMs.RData") #models_ls
+load("2021/timing_for_gam_preds.RData") #timing_areas
 
-clusterExport(mycl, list("timing_areas","models_ls", "data_ls", "wgs"))
+
+mycl <- makeCluster(5) 
+
+clusterExport(mycl, list("timing_areas","models_ls", "data_ls_sun", "wgs"))
 
 clusterEvalQ(mycl, {
   library(mgcv)
@@ -289,6 +285,7 @@ clusterEvalQ(mycl, {
   library(fields) #for Tps
 })
 
+(b <- Sys.time())
 preds <- parLapply(cl = mycl, c(names(models_ls)),function(x){
   d <- data_ls[[x]] %>% 
     filter(yday %in% timing_areas[[x]])
@@ -323,10 +320,12 @@ preds <- parLapply(cl = mycl, c(names(models_ls)),function(x){
   
 })
 
+Sys.time() -b
+
 stopCluster(mycl)
 
 names(preds) <- names(models_ls)
-save(preds, file = "regional_gam_preds.RData")
+save(preds, file = "2021/regional_gam_preds.RData")
 
 #mask the rasters with the relevant land layer. or simply plot land over the top
 #coastlines layer
