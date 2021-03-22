@@ -395,7 +395,7 @@ PF_E <- readPNG("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figure
 
 
 region <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") %>% 
-  st_crop(xmin = -130, xmax = 157, ymin = -50, ymax = 70) %>%
+  st_crop(xmin = -130, xmax = 158, ymin = -74, ymax = 71) %>%
   st_union()
 
 # create a plotting function for effect plots
@@ -438,9 +438,9 @@ cuts <- seq(-1,5,0.01) #set breaks
 pal <- colorRampPalette(c("dodgerblue","darkturquoise", "goldenrod1","coral","firebrick1","firebrick4"))
 colpal <- pal(570)
   
-#pdf("/home/mahle68/ownCloud/Work/Projects/delta_t/paper_prep/figures/global_plot_scaled.pdf", width = 11, height = 5.2)
+#pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/global_plot.pdf", width = 11, height = 6)
 
-X11(width = 11, height = 5.2) #make the window proportional to region
+X11(width = 11, height = 6) #make the window proportional to region
 
 par(mfrow=c(1,1),
     fig = c(0,1,0,1), #do this if you want to add the small plots as subplots
@@ -478,27 +478,36 @@ clip(-130, 157, -50, 73)
 abline(h = 0, col = "grey70",lty = 2)
 abline(h = 30, col = "grey70",lty = 2)
 abline(h = 60, col = "grey70",lty = 2)
-text(x = -125, y = c(2,32,62), labels = c("0° ", "30° N", "60° N"), cex = 0.6, col = "grey65")
+#text(x = -125, y = c(2,32,62), labels = c("0° ", "30° N", "60° N"), cex = 0.6, col = "grey65")
+text(x = -125, y = c(32,62), labels = c("30° N", "60° N"), cex = 0.6, col = "grey65")
 
-#add a frame for the sub-plots
-rect(xleft = -85,
-     xright = 153,
-     ybottom =  -52,
-     ytop = -4,
+#add a frame for the sub-plots and legend
+rect(xleft = -130,
+     xright = 159,
+     ybottom =  -74.5,
+     ytop = -28,
+     col="white",
+     border = NA)
+
+rect(xleft = -130,
+     xright = -87,
+     ybottom =  -15,
+     ytop = 7,
      col="white",
      border = NA)
 
 #add subplots...
-centers_x <- c(124,-56,64,4) #distance between centers = 60
+#centers_x <- c(124,-56,64,4) #distance between centers = 60
+centers_x <- c(130,-102,72,-44,14) #distance between centers = 58
 
 for(i in 1:length(centers_x)){
-  rect(xleft = centers_x[i] - 27,
-       xright = centers_x[i] + 27,
-       ybottom =  -42, #-38
-       ytop = -6, #-2
+  rect(xleft = centers_x[i] - 27.5,
+       xright = centers_x[i] + 28,
+       ybottom =  -66,#-42
+       ytop = -30, #-4
        col="white")
   
-  subplot(reg_gam_plot(i), x = centers_x[i] + 4,y = -23, size = c(1.6,0.7),  #-23 was -19
+  subplot(reg_gam_plot(i), x = centers_x[i] + 4,y = -47, size = c(1.6,0.7),  #-23 was -19
           pars = list(mar=c(0,0,0.6,0),cex = 0.6, bty = "l", mgp = c(0,0.2,0),tck = 0.015, cex.main = 0.8, font.main = 3))
 }
 
@@ -515,9 +524,9 @@ rasterImage(OS_A, xleft = -110, xright = -80, ybottom = 35, ytop = 65)
 
 
 #add legend
-plot(imaginary_r, legend.only = TRUE, breaks = cuts, col = colpal, #create an imaginary raster that has the high values from juv and low values from adlt
+plot(imaginary_r, legend.only = TRUE, breaks = cuts, col = colpal, 
      #legend.width = 0.3, legend.shrink = 0.3,
-     smallplot = c(0.059,0.169, 0.145,0.16), #c(min % from left, max % from left, min % from bottom, max % from bottom)
+     smallplot = c(0.04,0.15,0.37,.385),#c(0.059,0.169,0.145,0.16), #c(min % from left, max % from left, min % from bottom, max % from bottom)
      #smallplot = c(0.06,0.17, 0.28,0.295),#c(0.06,0.17, 0.36,0.375), 
      axis.args = list(at = c(-1,0,2,4), #same arguments as any axis, to determine the length of the bar and tick marks and labels
                     labels = c(-1,0,2,4), 
@@ -528,14 +537,15 @@ plot(imaginary_r, legend.only = TRUE, breaks = cuts, col = colpal, #create an im
      legend.args = list(text = expression(italic(paste(Delta,"T", "(°C)"))), side = 3, font = 2, line = 0.1, cex = 0.7)
      )
 
-text(x = -105,y = -8, "Map legend", cex = 0.8)
-legend(-126,-10, legend = c("Oriental honey buzzard", "Grey-faced buzzard", "Amur falcon", 
+text(x = -118,y = 10, "Map legend", cex = 0.8)
+legend(-130,8, legend = c("Oriental honey buzzard", "Grey-faced buzzard", "Amur falcon", 
                                   "Eleonora's falcon", "Peregrine falcon", "Osprey"),
        lty = c(4,1,6,2,3,5), cex = 0.55, bty = "n", seg.len = 3)
 
-legend(-30,-43, legend = c("sea-crossing period","High sun elevation", "Low sun elevation", "Night"),
+legend(-45,-67, legend = c("sea-crossing period","High sun elevation", "Low sun elevation", "Night"),
        lty = c(1,1,2,3), lwd = c(9,1,1,1), col = c("#99CC0060", rep("black",3)),cex = 0.55, bty = "n", seg.len = 3, horiz = T)
 
+dev.off()
 
 ### --------STEP 5: plot the regions#####
 
