@@ -73,24 +73,11 @@ mv2$wind_support <- wind_support(u = mv2$u925,v = mv2$v925, heading = mv2$headin
 mv2$cross_wind <- cross_wind(u = mv2$u925,v = mv2$v925, heading = mv2$heading)
 
 
-#plot depending on wind support values
-Pal <- colorRampPalette(c('thistle1',"slateblue1",'slateblue4'))
-
-#This adds a column of color values
-# based on the y values
-mv2$Col <- rbPal(8)[as.numeric(cut(mv2$wind_support, breaks = 8))]
-
-plot(region, col="#e5e5e5",border="#e5e5e5")
-points(mv2,pch = 20,col = mv2$Col)
-
-legend("topleft",title="Decile",legend=c(1:3),col =rbPal(3),pch=20)
-
-
-#################################
-
+### wind support map #####
+#create color palettes and select colors for positive and negative values
 Pal_p <- colorRampPalette(c("plum3",'slateblue4')) #colors for positive values
 Pal_n <- colorRampPalette(c('indianred1','tan1')) #colors for negative values
-Cols <- c(Pal_n(3),Pal_p(4))
+Cols_w <- c(Pal_n(3),Pal_p(4))
 
 Cols_t <- paste0(Cols, "E6") #add transparency. 50% is "80". 70% is "B3". 80% is "CC". 90% is "E6"
   
@@ -101,32 +88,30 @@ tags <- c("< -10","-10 to -5","-5 to 0","0 to 5","5 to 10","10 to 15", "> 15")
 
 mv2$binned_wind <- cut(mv2$wind_support,breaks = breaks, include.lowest = T, right = F, labels = tags)
 mv2$col <- as.factor(mv2$binned_wind)
-levels(mv2$col) <- Cols_t
-
-negatives <- mv2[mv2$col %in% Cols_t[1:3],]
-positives <- mv2[mv2$col %in% Cols_t[4:7],]
+levels(mv2$col_w) <- Cols_t
 
 plot(region, col="#e5e5e5",border="#e5e5e5")
-
-points(negatives,pch = 20, col = as.character(negatives$col), cex = 0.3) #plot negative points first
-points(positives,pch = 20, col = as.character(positives$col), cex = 0.3) #plot positive points
 
 points(mv2, pch = 1, col = as.character(mv2$col), cex = 0.2)
 
 
 legend("bottomleft", legend = levels(mv2$binned_wind), col = Cols_t, pch = 20, bty = "n")
 
+X11(width = 11, height = 12) #make the window proportional to region
 
-mapview(mv2,zcol = "wind_support")
+par(mfrow=c(2,1),
+    #fig = c(0,1,0,1), #do this if you want to add the small plots as subplots
+    bty="n", #no box around the plot
+    cex.axis= 0.6, #x and y labels have 0.75% of the default size
+    font = 3, #3: axis labels are in italics
+    font.axis = 3,
+    cex.lab = 0.6,
+    #cex = 0.5,
+    oma = c(0,0,0,0),
+    mar = c(0, 0, 0, 0),
+    lend = 1  #rectangular line endings (trick for adding the rectangle to the legend)
+)
 
-
-
-df <- as.data.frame(mv) %>% 
-  drop_na(heading) %>% 
-  mutate(wind_support = ,
-         cross_wind= cross_wind(u=u925,v=v925,heading=heading),
-         wind_speed = sqrt(u925^2 + v925^2),
-         abs_cross_wind = abs(cross_wind(u = u925, v = v925, heading = heading)))
-
-
-# 
+#maps::map("world",fill = TRUE, col = "grey30", border = F)
+plot(region, col="#e5e5e5",border="#e5e5e5")
+### delta_t map #####
