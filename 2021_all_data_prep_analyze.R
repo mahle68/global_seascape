@@ -170,98 +170,36 @@ dataset <- list(OHB,GFB, PF, OE, OA, EF_aut, OHB_GPS_aut) %>%
 
 save(dataset, file = "R_files/2021/all_spp_unfiltered_updated_lc_0_removed_new_track_id.RData")
 
+
+##### STEP 3 alternative: skip creating lines. filter land from the points layer #####
+load("R_files/2021/all_spp_unfiltered_updated_lc_0_removed_new_track_id.RData") #called dataset
+
+land_pts <- dataset %>%
+  filter(year >= 2008 & season == "autumn" & sensor.type == "gps") %>% 
+  drop_na(c("location.long", "location.lat")) %>% 
+  st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
+  st_difference(land_no_buffer)
+
+save(land_pts, file = "R_files/2021/sea_pts.RData")
+
 ##### STEP 3: convert tracks to lines ##### 
 
 load("R_files/2021/all_spp_unfiltered_updated_lc_0_removed_new_track_id.RData") #called dataset
 
-# #only keep gps data (ie.get rid of GFB)
-# dataset <- dataset %>% 
-#   filter(sensor.type == "gps")
-# 
-# ocean_sp <- as(ocean,"Spatial")
-# land_sp <- as(land_no_buffer,"Spatial")
-# land_b <-buffer(land_sp, width=0.001)
-# 
-# dataset <- dataset[complete.cases(dataset$location.long),]
-# 
-# coordinates(dataset) <- ~ location.long + location.lat
-# proj4string(dataset) <- wgs
-# 
-# track_ls <- split(dataset,dataset$track)
-# track_ls <- track_ls[lapply(track_ls,nrow) > 1] #remove tracks with one point
-# 
-# (b <- Sys.time())
-# mycl <- makeCluster(10) #total number of tracks is 369, so 41 will be sent to each core
-# 
-# clusterExport(mycl, c("track_ls", "land_sp","ocean_sp","wgs")) #define the variable that will be used within the function
-# 
-# clusterEvalQ(mycl, {
-#   library(raster)
-#   library(mapview)
-#   library(Orcs)
-# })
-# 
-# Lines_ls <- parLapply(mycl, track_ls, function(x){
-#   #find out if the track has any points over water
-#   over_sea <- intersect(x,ocean_sp) #track_ls needs to be spatial for this to work
-#   #if the track has any point over water, convert to spatial line and subset for sea
-#   if(nrow(over_sea) != 0){
-#     x <- x[order(x$date_time),]
-#     line <- coords2Lines(x@coords, ID = x$track[1], proj4string = wgs)
-#     line_sea <- erase(line,land_sp)
-#     line_sea$track <- x$track[1]
-#   } else {
-#     line_sea <- NA
-#   }
-#   
-#   line_sea
-# })
-# 
-# 
-# Sys.time() - b #takes 45 min
-# 
-# stopCluster(mycl)
-# 
-# save(Lines_ls,file = "R_files/2021/Lines_ls_no_land.RData") 
-# 
-# ##### STEP 2: break up tracks into sea-crossing segments and filter #####
-# 
-# #remove elements with 0 elements (tracks with no sea-crossing)
-# Lines_ls_no_na <- Lines_ls[lapply(Lines_ls,is.na) == FALSE] 
-# 
-# #only keep the track column (some objects have an ID column)
-# Lines_ls_no_na <- lapply(Lines_ls_no_na,"[",,"track")
-# 
-# #convert to one object
-# lines <- do.call(rbind,Lines_ls_no_na)
-# 
-# #filter segments
-# segs_filtered <- st_as_sf(lines) %>% #convert to sf object
-#   st_cast("LINESTRING") %>% #convert to linestring (separate the segments)
-#   mutate(length = as.numeric(st_length(.)),
-#          n = npts(.,by_feature = T)) %>% 
-#   filter(n > 2 & length >= 30000) #remove sea-crossing shorter than 30 km and segment with less than 2 points 
-# 
-# segs_filtered$track <- as.character(segs_filtered$track)
-# 
-# save(segs_filtered,file = "Segs_no_land_filtered.RData") 
 
+dataset_sea <- dataset %>%
+  filter(year >= 2009 & season == "autumn" & sensor.type == "gps") %>% 
+  drop_na(c("location.long", "location.lat")) %>% 
+  st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
+  group_by(track) %>% 
+  filter(n() > 1) %>%  #remove tracks with only one point
+  arrange(date_time) %>% 
+  summarise(track = head(track,1),
+            species = head(species,1),
+            zone = head(zone, 1), do_union = F) %>% 
+  st_cast("LINESTRING")
 
-#############################################3
-
- dataset_sea <- dataset %>%
-   filter(year >= 2009 & season == "autumn" & sensor.type == "gps") %>% 
-   drop_na(c("location.long", "location.lat")) %>% 
-   st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
-   group_by(track) %>% 
-   filter(n() > 1) %>%  #remove tracks with only one point
-   arrange(date_time) %>% 
-   summarise(track = head(track,1),
-             species = head(species,1),
-             zone = head(zone, 1), do_union = F) %>% 
-   st_cast("LINESTRING")
- 
- save(dataset_sea, file = "R_files/2021/all_spp_2009_2020_complete_lines.RData")
+save(dataset_sea, file = "R_files/2021/all_spp_2009_2020_complete_lines.RData")
 
 
 ##### STEP 4: subset for tracks over the sea and assign segments ##### 
