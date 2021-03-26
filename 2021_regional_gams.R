@@ -383,6 +383,12 @@ load("2021/timing_for_gam_preds.RData") #timing_areas
 
 #elements prepared in regional_gam.R
 load("tracks_for_global_map.RData") #sp_samples
+EF_S <- read.csv("/home/mahle68/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/EF_B2378_2017_autumn.csv") %>% 
+  mutate(dt,dt = as.POSIXct(strptime(dt,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
+  filter(dt <= "2017-11-15 14:00:00") %>% #remove wintering points
+  st_as_sf(coords = c("long","lat"), crs = wgs)
+  
+  
 AF <- readPNG("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/from_james/AF_1.png")
 EF <- readPNG("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/from_james/Updated/EF-2.png")
 GFB <- readPNG("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/from_james/Updated/GFB-2.png")
@@ -472,6 +478,7 @@ plot(st_geometry(sp_samples$O_sample), add= T, lty = 5, lwd = lwd, col = col)#lw
 plot(st_geometry(sp_samples$OHB_sample), add= T, lty = 4, lwd = lwd, col = col)#lwd = 1, col = "tan3")
 plot(st_geometry(sp_samples$GFB_sample), add= T, lty = 1, lwd = lwd, col = col)#lwd = 1, col = "seagreen4")
 plot(st_geometry(sp_samples$AF_sample), add= T, lty = 6, lwd = lwd, col = col)#lwd = 1, col = "seagreen4")
+plot(EF_S, add = T, lty = 2, lwd = lwd, col = col)
 
 #add latitudes
 clip(-130, 157, -50, 73)

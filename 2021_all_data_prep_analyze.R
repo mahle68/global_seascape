@@ -24,6 +24,7 @@ meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
 load("R_files/2021/ocean.RData")
 load("R_files/2021/land_no_buffer.RData")
+load("R_files/2021/land_15km.RData")
 
 ##### STEP 0: prep spatial layers #####
 land_15km <- st_read("/home/enourani/ownCloud/Work/GIS_files/ne_10m_land/ne_10m_land.shp") %>% 
@@ -174,13 +175,13 @@ save(dataset, file = "R_files/2021/all_spp_unfiltered_updated_lc_0_removed_new_t
 ##### STEP 3 alternative: skip creating lines. filter land from the points layer #####
 load("R_files/2021/all_spp_unfiltered_updated_lc_0_removed_new_track_id.RData") #called dataset
 
-land_pts <- dataset %>%
+sea_pts <- dataset %>%
   filter(year >= 2008 & season == "autumn" & sensor.type == "gps") %>% 
   drop_na(c("location.long", "location.lat")) %>% 
   st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
-  st_difference(land_no_buffer)
+  st_difference(land_15km) #remove short sea-crossings already. 
 
-save(land_pts, file = "R_files/2021/sea_pts.RData")
+save(sea_pts, file = "R_files/2021/sea_pts_15kmbuffer.RData")
 
 ##### STEP 3: convert tracks to lines ##### 
 
@@ -204,7 +205,8 @@ save(dataset_sea, file = "R_files/2021/all_spp_2009_2020_complete_lines.RData")
 
 ##### STEP 4: subset for tracks over the sea and assign segments ##### 
 
-load("R_files/2021/all_spp_2009_2020_complete_lines.RData") #dataset_sea
+load("R_files/2021/all_spp_2009_2020
+     _complete_lines.RData") #dataset_sea
 
 segs_filtered <- dataset_sea %>% 
   st_difference(land_no_buffer)
@@ -229,16 +231,21 @@ save(segs, file = "R_files/2021/all_spp_2009_2020_filtered_segments.RData")
 
 #open data points and segments
 load("R_files/2021/all_spp_unfiltered_updated_lc_0_removed_new_track_id.RData") #called dataset
+load("R_files/2021/sea_pts_15kmbuffer.RData") #land_pts
 load("R_files/2021/all_spp_2009_2020_filtered_segments.RData") #segs
 
-#only keep data points from tracks that are represented in the over-sea segments (this will also get rid of spring tracks)
-points_with_segs <- dataset %>% 
-  drop_na(location.long) %>% 
-  filter(track %in% unique(segs$track)) 
 
+# #only keep data points from tracks that are represented in the over-sea segments (this will also get rid of spring tracks)
+#points_with_segs <- dataset %>%
+#  drop_na(location.long) %>%
+#  filter(track %in% unique(segs$track))
+
+
+dataset_no_NA <- dataset %>% 
+  drop_na(location.long)
 
 mycl <- makeCluster(4)
-clusterExport(mycl, c("points_with_segs", "segs", "wgs")) #define the variable that will be used within the function
+clusterExport(mycl, c("dataset_no_NA", "segs", "wgs")) #define the variable that will be used within the function
 
 clusterEvalQ(mycl, {
   library(sf)
@@ -250,97 +257,95 @@ clusterEvalQ(mycl, {
 
 #points_oversea <- parLapply(mycl, split(points_with_segs, points_with_segs$track), function(x){
 
-points_oversea <- lapply(split(points_with_segs, points_with_segs$track), function(x){
+points_oversea <- lapply(split(dataset_no_NA, dataset_no_NA$track), function(x){
 
   seg <- segs[segs$track == x$track[1],]
 
   oversea <- x %>%
     st_as_sf(coords = c("location.long","location.lat"), crs = wgs) %>%
-    st_intersection(seg, tolerance = 0.0001) %>%
+    st_intersection(st_buffer(seg, 0.1)) %>%
     dplyr::select(-c(track.1, zone.1, species.1))
 
   oversea
 }) %>%
   reduce(rbind)
 
-Sys.time() - b #50 secs
+Sys.time() - b #1.6 min
 
 stopCluster(mycl)
 
 
 save(points_oversea, file = "R_files/2021/all_spp_2009_2020_overwater_points.RData")
 
-
+################################################################## 
 # ##### STEP 5: annotate with date-time #####
-# 
-# #convert segments to points
-# segs_pts <- segs %>% 
-#   mutate(seg_id = seq(1:nrow(.))) %>% 
-#   st_cast("POINT")
+
+load("R_files/2021/sea_pts.RData") #called land_pts (but really they are the sea-points)
+load("R_files/2021/all_spp_2009_2020_filtered_segments.RData") #segs
+
+ #convert segments to points
+ segs_pts <- segs %>% 
+   mutate(seg_id = seq(1:nrow(.))) %>% 
+   st_cast("POINT")
 # 
 # #create a buffer around the dataset points to make polygons. then overlay
-# dataset_buff <- points_with_segs %>% 
-#   drop_na() %>% 
-#   st_as_sf(coords = c("location.long","location.lat"), crs = wgs) %>% 
-#   st_transform(meters_proj) %>% 
-#   st_buffer(dist = units::set_units(10, 'm')) %>% 
-#   st_transform(wgs) 
-# 
-# save(dataset_buff,file = "R_files/2021/dataset_10m_buffer.RData")
-# 
-# load("R_files/2021/dataset_10m_buffer.RData")
-# 
-# #for each segs_pts point, find the index of the dataset_buff polygon that it intersects, then extract that row from dataset and add to segs_pts
-# mycl <- makeCluster(9) 
-# 
-# clusterExport(mycl, c("segs_pts", "dataset_buff")) #define the variable that will be used within the function
-# 
-# clusterEvalQ(mycl, {
-#   library(sf)
-#   library(raster)
-#   library(tidyverse)
-# })
-# 
-# b <- Sys.time()
-# 
-# segs_ann <- parLapply(mycl,split(segs_pts,segs_pts$track), function(x){ #separate by track first to break up the job into smaller chunks
-#   
-#   data <- dataset_buff[dataset_buff$track == x$track[1],]
-#   #track_ann <- apply(x,1,function(y){ #for each point on the track
-#   #x2 <- list()
-#   track_ann <- lapply(split(x,rownames(x)), function(y){ #for each point on the track
-#     #for (i in 1:nrow(x)){
-#     #   y <- x[i,]
-#     inter <- st_intersection(y,data)
-#     
-#     if(nrow(inter) == 0){ #if there are no intersections, find the nearest neighbor
-#       nearest <- data[st_nearest_feature(y,data),]
-#       # x$date_time[i] <- as.character(nearest$date_time)
-#       # x$season[i] <- nearest$season
-#       # x$species[i] <- nearest$species
-#       
-#       y <- y %>% 
-#         full_join(st_drop_geometry(nearest))
-#       y
-#     } else { #if there is an intersection, just return the intersection result
-#       # x$date_time[i] <- as.character(inter$date_time)
-#       # x$season[i] <- inter$season
-#       # x$species[i] <- inter$species
-#       inter %>% 
-#         dplyr::select(-track.1)
-#     }
-#     #}
-#   }) %>% 
-#     reduce(rbind)
-#   
-#   track_ann
-#   
-# }) %>% 
-#   reduce(rbind)
-# Sys.time() - b
-# 
-# stopCluster(mycl)
-# 
+ dataset_buff <- dataset %>% 
+   drop_na() %>% 
+   st_as_sf(coords = c("location.long","location.lat"), crs = wgs) %>% 
+   st_transform(meters_proj) %>% 
+   st_buffer(dist = units::set_units(50, 'm')) %>% 
+   st_transform(wgs) 
+ 
+ save(dataset_buff,file = "R_files/2021/dataset_50m_buffer.RData")
+ 
+ #load("R_files/2021/dataset_10m_buffer.RData")
+ 
+ #for each segs_pts point, find the index of the dataset_buff polygon that it intersects, then extract that row from dataset and add to segs_pts
+ mycl <- makeCluster(10) 
+ 
+ clusterExport(mycl, c("segs_pts", "dataset_buff")) #define the variable that will be used within the function
+ 
+ clusterEvalQ(mycl, {
+   library(sf)
+   library(raster)
+   library(tidyverse)
+ })
+ 
+ (b <- Sys.time())
+ 
+ segs_ann <- parLapply(mycl,split(segs_pts,segs_pts$track), function(x){ #separate by track first to break up the job into smaller chunks
+   
+   data <- dataset_buff[dataset_buff$track == x$track[1],]
+
+   track_ann <- lapply(split(x,rownames(x)), function(y){ #for each point on the track
+     #for (i in 1:nrow(x)){
+     #   y <- x[i,]
+     inter <- st_intersection(y,data)
+     
+     if(nrow(inter) == 0){ #if there are no intersections, find the nearest neighbor
+       nearest <- data[st_nearest_feature(y,data),]
+
+       
+       y <- y %>% 
+         full_join(st_drop_geometry(nearest))
+       y
+     } else { #if there is an intersection, just return the intersection result
+
+       inter
+     }
+
+   }) %>% 
+     reduce(rbind)
+   
+   track_ann
+   
+ }) #%>% 
+   #reduce(rbind)
+ 
+ Sys.time() - b #took over two days, so killed it
+ 
+ stopCluster(mycl)
+ 
 # save(segs_ann, file = "segs_dt.RData")
 
 
