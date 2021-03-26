@@ -234,28 +234,11 @@ load("R_files/2021/all_spp_unfiltered_updated_lc_0_removed_new_track_id.RData") 
 load("R_files/2021/sea_pts_15kmbuffer.RData") #land_pts
 load("R_files/2021/all_spp_2009_2020_filtered_segments.RData") #segs
 
-
-# #only keep data points from tracks that are represented in the over-sea segments (this will also get rid of spring tracks)
-#points_with_segs <- dataset %>%
-#  drop_na(location.long) %>%
-#  filter(track %in% unique(segs$track))
-
-
 dataset_no_NA <- dataset %>% 
   drop_na(location.long)
 
-mycl <- makeCluster(4)
-clusterExport(mycl, c("dataset_no_NA", "segs", "wgs")) #define the variable that will be used within the function
-
-clusterEvalQ(mycl, {
-  library(sf)
-  library(raster)
-  library(tidyverse)
-})
 
 (b <- Sys.time())
-
-#points_oversea <- parLapply(mycl, split(points_with_segs, points_with_segs$track), function(x){
 
 points_oversea <- lapply(split(dataset_no_NA, dataset_no_NA$track), function(x){
 
@@ -272,83 +255,8 @@ points_oversea <- lapply(split(dataset_no_NA, dataset_no_NA$track), function(x){
 
 Sys.time() - b #1.6 min
 
-stopCluster(mycl)
 
-
-save(points_oversea, file = "R_files/2021/all_spp_2009_2020_overwater_points.RData")
-
-################################################################## 
-# ##### STEP 5: annotate with date-time #####
-
-load("R_files/2021/sea_pts.RData") #called land_pts (but really they are the sea-points)
-load("R_files/2021/all_spp_2009_2020_filtered_segments.RData") #segs
-
- #convert segments to points
- segs_pts <- segs %>% 
-   mutate(seg_id = seq(1:nrow(.))) %>% 
-   st_cast("POINT")
-# 
-# #create a buffer around the dataset points to make polygons. then overlay
- dataset_buff <- dataset %>% 
-   drop_na() %>% 
-   st_as_sf(coords = c("location.long","location.lat"), crs = wgs) %>% 
-   st_transform(meters_proj) %>% 
-   st_buffer(dist = units::set_units(50, 'm')) %>% 
-   st_transform(wgs) 
- 
- save(dataset_buff,file = "R_files/2021/dataset_50m_buffer.RData")
- 
- #load("R_files/2021/dataset_10m_buffer.RData")
- 
- #for each segs_pts point, find the index of the dataset_buff polygon that it intersects, then extract that row from dataset and add to segs_pts
- mycl <- makeCluster(10) 
- 
- clusterExport(mycl, c("segs_pts", "dataset_buff")) #define the variable that will be used within the function
- 
- clusterEvalQ(mycl, {
-   library(sf)
-   library(raster)
-   library(tidyverse)
- })
- 
- (b <- Sys.time())
- 
- segs_ann <- parLapply(mycl,split(segs_pts,segs_pts$track), function(x){ #separate by track first to break up the job into smaller chunks
-   
-   data <- dataset_buff[dataset_buff$track == x$track[1],]
-
-   track_ann <- lapply(split(x,rownames(x)), function(y){ #for each point on the track
-     #for (i in 1:nrow(x)){
-     #   y <- x[i,]
-     inter <- st_intersection(y,data)
-     
-     if(nrow(inter) == 0){ #if there are no intersections, find the nearest neighbor
-       nearest <- data[st_nearest_feature(y,data),]
-
-       
-       y <- y %>% 
-         full_join(st_drop_geometry(nearest))
-       y
-     } else { #if there is an intersection, just return the intersection result
-
-       inter
-     }
-
-   }) %>% 
-     reduce(rbind)
-   
-   track_ann
-   
- }) #%>% 
-   #reduce(rbind)
- 
- Sys.time() - b #took over two days, so killed it
- 
- stopCluster(mycl)
- 
-# save(segs_ann, file = "segs_dt.RData")
-
-
+save(points_oversea, file = "R_files/2021/all_spp_2009_2020_overwater_points_updated.RData")
 
 ##### STEP 6: append eleonora's falcon from spain #####
 
@@ -367,14 +275,13 @@ EF_spain <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/data/Eleonor
          length = NA,
          sensor.type = "gps") %>% 
   dplyr::select(-c("X", "alt", "dt")) %>% 
-  filter(year >= 2013) %>% #should I remove this filter?!!!!!!!!!!!!!!
   st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
   st_difference(land_no_buffer)
 
 
 all_oversea <- rbind(points_oversea, EF_spain)
 
-save(all_oversea, file = "R_files/2021/all_2009_2020_overwater_points.RData")
+save(all_oversea, file = "R_files/2021/all_2009_2020_overwater_points_updated.RData")
 
 
 ### some summary stats
