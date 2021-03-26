@@ -17,7 +17,7 @@ library(TeachingDemos) #for subplot
 library(readxl)
 library(png)
 
-setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files")
+setwd("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files")
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 
 
@@ -386,7 +386,10 @@ load("tracks_for_global_map.RData") #sp_samples
 EF_S <- read.csv("/home/mahle68/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/EF_B2378_2017_autumn.csv") %>% 
   mutate(dt,dt = as.POSIXct(strptime(dt,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
   filter(dt <= "2017-11-15 14:00:00") %>% #remove wintering points
-  st_as_sf(coords = c("long","lat"), crs = wgs)
+  st_as_sf(coords = c("long","lat"), crs = wgs) %>% 
+  arrange(dt) %>% 
+  summarise(do_union = F) %>%
+  st_cast("LINESTRING")
   
   
 AF <- readPNG("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/from_james/AF_1.png")
@@ -461,7 +464,6 @@ par(mfrow=c(1,1),
     lend = 1  #rectangular line endings (trick for adding the rectangle to the legend)
 )
 
-#maps::map("world",fill = TRUE, col = "grey30", border = F)
 plot(region, col="#e5e5e5",border="#e5e5e5")
 plot(preds_filt[[1]],axes = F, box=F, legend=FALSE,zlim=c(-1,5),breaks=cuts, col = colpal, add = T) 
 plot(preds_filt[[2]],axes = F, box=F, legend=FALSE,zlim=c(-1,5),breaks=cuts, col = colpal, add = T) 
@@ -478,7 +480,7 @@ plot(st_geometry(sp_samples$O_sample), add= T, lty = 5, lwd = lwd, col = col)#lw
 plot(st_geometry(sp_samples$OHB_sample), add= T, lty = 4, lwd = lwd, col = col)#lwd = 1, col = "tan3")
 plot(st_geometry(sp_samples$GFB_sample), add= T, lty = 1, lwd = lwd, col = col)#lwd = 1, col = "seagreen4")
 plot(st_geometry(sp_samples$AF_sample), add= T, lty = 6, lwd = lwd, col = col)#lwd = 1, col = "seagreen4")
-plot(EF_S, add = T, lty = 2, lwd = lwd, col = col)
+plot(st_geometry(EF_S), add = T, lty = 2, lwd = lwd, col = col)
 
 #add latitudes
 clip(-130, 157, -50, 73)

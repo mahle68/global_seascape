@@ -1,5 +1,4 @@
 #script for creating maps color-coded with wind and delta-t of the raw data
-#also look into Gil's suggestion for showing delta t is correlated with uplift
 # maybe also plot all the points. load("R_files/2021/all_spp_unfiltered_updated_lc_0_removed_new_track_id.RData") #called dataset ... as a background.
 # or as lines. with the same characteristics as the gam map
 
@@ -19,7 +18,7 @@ wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
 #open sea-crossing points, prepared in 2021_all_data_preo_analyze.R
-load("R_files/2021/all_2009_2020_overwater_points.RData") #all_oversea
+load("R_files/2021/all_2009_2020_overwater_points_updated.RData") #all_oversea
 
 region <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") %>% 
   st_crop(xmin = -99, xmax = 144, ymin = -74, ymax = 71) %>%
@@ -59,6 +58,8 @@ more_than_one_point <- ann %>%
 
 ann <- ann %>% 
   filter(track %in% more_than_one_point$track)
+
+save(ann, file = "R_files/2021/raw_sea_points_annotated.RData")
 
 #remove duplicated rows
 rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(ann$track),timestamps = ann$timestamp),"[",-1)) #get all but the first row of each set of duplicate rows
@@ -170,12 +171,6 @@ par(mfrow=c(2,1),
 #maps::map("world",fill = TRUE, col = "grey30", border = F)
 plot(region, col="#e5e5e5",border="#e5e5e5")
 ### delta_t map #####
-
-
-
-
-
-### w* #####
 
 
 
