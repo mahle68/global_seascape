@@ -17,7 +17,7 @@ library(TeachingDemos) #for subplot
 library(readxl)
 library(png)
 
-setwd("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files")
+setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files")
 wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 
 
@@ -383,7 +383,7 @@ load("2021/timing_for_gam_preds.RData") #timing_areas
 
 #elements prepared in regional_gam.R
 load("tracks_for_global_map.RData") #sp_samples
-EF_S <- read.csv("/home/mahle68/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/EF_B2378_2017_autumn.csv") %>% 
+EF_S <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/EF_B2378_2017_autumn.csv") %>% 
   mutate(dt,dt = as.POSIXct(strptime(dt,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
   filter(dt <= "2017-11-15 14:00:00") %>% #remove wintering points
   st_as_sf(coords = c("long","lat"), crs = wgs) %>% 

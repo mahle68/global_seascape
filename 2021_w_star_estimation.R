@@ -8,6 +8,7 @@ library(sp)
 library(sf)
 library(move)
 library(scales)
+library(jtools) #for effect_plots
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
 source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
@@ -16,7 +17,7 @@ wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
 #annotated data.(prepped in 2021_wind_delta_t_maps.R)
-ann <- read.csv("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files/2021/annotations/raw_points_for_maps/interim/raw_points_for_maps.csv-3930001190922922558.csv") %>% 
+ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/annotations/raw_points_for_maps/interim/raw_points_for_maps.csv-3930001190922922558.csv") %>% 
   mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
   rename(sst = ECMWF.Interim.Full.Daily.SFC.FC.Sea.Surface.Temperature,
          t2m = ECMWF.Interim.Full.Daily.SFC.FC.Temperature..2.m.above.Ground.,
@@ -24,6 +25,14 @@ ann <- read.csv("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files/2021/annot
          s_flux = ECMWF.Interim.Full.Daily.SFC.FC.Instantaneous.Surface.Heat.Flux,
          m_flux = ECMWF.Interim.Full.Daily.SFC.FC.Instantaneous.Moisture.Flux) %>%
   mutate(delta_t = sst - t2m) %>%
+  st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
+  mutate(s_elev_angle = solarpos(st_coordinates(.), timestamp, proj4string=CRS("+proj=longlat +datum=WGS84"))[,2]) %>% #calculate solar elevation angle
+  mutate(sun_elev = ifelse(s_elev_angle < -6, "night", #create a categorical variable for teh position of the sun
+                           ifelse(s_elev_angle > 40, "high", "low"))) %>% 
+  as("Spatial") %>% 
+  as.data.frame() %>% 
+  rename(lat = coords.x2,
+         lon = coords.x1) %>% 
   arrange(track, timestamp)
 
 #remove tracks with one point
@@ -43,27 +52,6 @@ ann <- ann %>%
 #m_flux: "ECMWF Interim Full Daily SFC-FC Instantaneous Moisture Flux" (kg m^-2 s^-1)
 #blh: boundary layer height (m)
 #t2m: 2m temperature
-
-#msshf <- ann$s_flux / 3*3600 #this is now in W/m^2
-
-msshf <- ann$s_flux
-mslhf <- ann$m_flux
-z <- ann$blh #this is in m
-T2m <- ann$t2m #in K
-g <- 9.81
-T2m <- (ann$t2m - 273.15) * 0.006 * ann$blh
-
-wt <- msshf/1013/1.2 #surface kinetic heat flux
-wq <- (mslhf * 1000) /1.2 #surface water vapor flux
-
-wthetav <- wt + (0.61*T*(wq))
-
-ann$w_star <- ((g*z*wthetav)/T2m)^(1/3)
-
-
-
-
-###### Gil's code
 
 
 w_star <- function(g = 9.81, blh, T2m, s_flux, m_flux) {
@@ -88,83 +76,139 @@ ann$w_star <- w_star(blh = ann$blh, T2m = ann$t2m,
                      s_flux = ann$s_flux, m_flux = ann$m_flux)
 
 
-
-
-
-
-############
-z <- ann$blh
-T_k_2m <- ann$t2m
-T_c_2m <- T_k_2m - 273.15
-Thetav_k_z <- T_k_2m + 0.006 * z
-wT <- ann$s_flux / 1013 / 1.2
-wq <- ann$m_flux *1000 /1.2
-
-wthetav <- wT + 0.61 * T_c_2m * wq
-
-w_star <- (g*z*(wthetav/Thetav_k_z)) ^ (1/3)
-
-
-
-#############
-g <- 9.81
-z <- ann$blh
-T_k_2m <- ann$t2m
-T_c_2m <- T_k_2m - 273.15
-Thetav_k_z <- (T_k_2m) + 0.006*z
-wT <- ann$s_flux/1013/1.2
-wq <- ann$m_flux*1000 /1.2
-
-wthetav <- wT + 0.61*T_c_2m*wq
-
-ann$w_star <- (g*z*(wthetav/Thetav_k_z)) ^ (1/3)
-
-
-
-w_star <- (g*z*wthetav/Thetav_k_z) ^ (1/3)
-
-wthetv <- wT + (0.61*T_c_2m*wq)
-
-
-
-wT <- s_flux/1013/1.2
-wq <- m_flux * 1000 /1.2
-z <- blh
-T_c_2m <- T_k_2m -273.15
-Thetav_k_z <- (T_k_2m) + 0.006*z
-
-###
-
-W*= [g*z*(w’thetav’)/(Thetav_k|z)] ^ 1/3
-(w’thetv’) = (w’T’) + 0.61*(T_c|2m)*(w’q’)
-(Thetav_k|z) = (T_k|2) + 0.006*z
-(T_c|2m) = (T_k|2m) -273.15
-
-w’T’ [K*m/s] = s_flux [W/m^2] / 1013 [J/kg/K] / 1.2 [kg/m^3]
-w’q’ [g/kg*m/s]= m_flux [kg/s/m^2] *1000 [g/kg] /1.2 [kg/m^3]
-z=blh [m]
-
-
-#ann$w_star <- (9.81*z*(msshf/1013/1.2+0.61*(T2m-273.15)* 0.006*z*mslhf/1.2* 1000) / (T2m*0.006*z))^ 1/3
-  
   
 postive_dt <- ann %>% 
   filter(delta_t > 0)
 
 #plot
-fit <- lm(w_star~ log(delta_t+1),data = postive_dt) 
+fit_1 <- lm(w_star~ log(delta_t+1),data = postive_dt) 
 
-summary(fit)
+summary(fit_1)
 
-with(postive_dt,plot(log(delta_t+1), w_star))
-abline(fit)
+with(postive_dt,plot(log(delta_t+1), w_star, col= as.factor(sun_elev)))
+abline(fit_1)
 
 
 #plot
-fit <- lm(w_star~delta_t,data = postive_dt) 
 
-summary(fit)
+#color
+#color palette
+Pal <- colorRampPalette(c("darkgoldenrod1","lightpink1", "mediumblue")) #colors for negative values
+Cols <- paste0(Pal(3), "B3") #add transparency. 50% is "80". 70% is "B3". 80% is "CC". 90% is "E6"
 
-with(postive_dt,plot(delta_t, w_star))
-abline(fit)
+#convert complex numbers to numerics
+data <- postive_dt
+data$w_star <- as.numeric(data$w_star)
+data$color <- as.factor(data$sun_elev)
+levels(data$color) <- Cols
 
+
+fit_2 <- lm(w_star ~ delta_t, data = data) 
+
+summary(fit_2)
+
+
+
+#plot in base r #############
+
+#new data for predictions
+newx <- seq(min(data$delta_t), 9, by=0.05)
+conf_interval <- predict(fit_2, newdata = data.frame(delta_t = newx), interval = "confidence",
+                         level = 0.95)
+
+
+X11(width = 7, height = 6)
+
+
+par(mfrow=c(1,1), 
+    bty = "l",
+    #font.axis = 3,
+    #font.lab = 3,
+    font = 3,
+    cex.axis = 0.8,
+    mgp=c(2.5,1,0) #margin line for the axis titles
+)
+
+plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(0,8.5), ylim = c(0.3,2.5), xlab = expression(italic(paste(Delta,"T", "(°C)"))), ylab = "w* (m/s)")
+
+with(postive_dt,points(delta_t, w_star, col= as.character(data$color), pch = 20, cex = 0.7))
+clip(0, max(data$delta_t), 0, 3)
+lines(newx, conf_interval[,2], col = alpha(rgb(0,0,0), 0.15), lwd = 5.5)
+lines(newx, conf_interval[,3], col = alpha(rgb(0,0,0), 0.15), lty = 1, lwd = 5.5)
+abline(fit_2, col = "black")
+
+axis(side = 1, at = c(0,2,4,6,8), line = -0, labels = c(0,2,4,6,8), 
+     tick = T , col.ticks = 1, col=NA, tck = -.015)
+axis(side= 2, at= c(0.5,1,1.5,2,2.5), line=0, labels= c(0.5,1,1.5,2,2.5),
+     tick=T , col.ticks = 1,col=NA, tck=-.015, 
+     las=2) # text perpendicular to axis label 
+legend(x = 6.5, y = 0.79, legend = c("daytime: high sun", "daytime: low sun", "night"), col = Cols, #coords indicate top-left
+       cex = 0.8, pt.cex = 0.9, bg = "white", bty = "n", pch = 20)
+
+text(7.2,0.8, "Time of day", cex = 0.8)
+
+###############################
+#D3D3D3
+
+effect_plot(fit_2, delta_t, interval = T, plot.points = T, int.type = "confidence",int.width = .95, point.color = data$color)
+
+
+
+
+
+polygon(x = c(postive_dt$delta_t, rev(postive_dt$delta_t)), y = c(exp(wspd$ll95),rev(exp(wspd$ul95))), col = adjustcolor("grey", alpha.f = 0.3), border = NA)
+
+
+abline(fit_2$coefficients[1]+sd2,fit_2$coefficients[2])
+abline(fit_2$coefficients[1]-sd2,fit_2$coefficients[2])
+
+### plot
+
+par(mfrow=c(1,1), bty="n", #no box around the plot
+    cex.axis= 0.75, #x and y labels have 0.75% of the default size
+    font.axis= 3, #axis labels are in italics
+    cex.lab=1
+)
+
+
+plot(m,select=2, xlab="day of year",ylab="delta T", ylim= c(-2,2), shade=T, shade.col= "grey75",
+     scheme=0,se=12,bty="l",labels = FALSE, tck=0) #plot only the second smooth term
+
+
+###gggplot
+ggplot(data, aes(delta_t, w_star)) +
+  geom_point() +
+  geom_smooth(method = lm, se = TRUE)
+
+
+############################### play around
+#correlation
+
+fit_3 <- lm(w_star ~ delta_t + lat, data = postive_dt) 
+
+with(postive_dt,plot(delta_t, w_star, col= as.factor(species)))
+abline(fit_3)
+
+correlate(as.numeric(postive_dt$w_star), postive_dt$delta_t)
+
+gm1 <- gam(w_star ~ s(delta_t, k = 4), data = data)
+
+gm3 <- gamm(w_star ~ s(lat,lon, k = 100) +
+       s(delta_t) , method = "REML", data = data, 
+     weights = varPower(form = ~lat))
+
+
+gm2 <- gam(w_star ~ s(delta_t, k = 4),
+           weights = varPower(form = ~lat), data = data)
+
+par(mfrow=c(1,1), bty="n", #no box around the plot
+    cex.axis= 0.75, #x and y labels have 0.75% of the default size
+    font.axis= 3, #axis labels are in italics
+    cex.lab=1
+)
+
+
+plot(gm1, select = 1, xlab = expression(italic(paste(Delta,"T", "(°C)"))), ylab="w* (m/s)", ylim= c(0,5), shade=T, shade.col= "grey85",
+     scheme = 0, se = 12, bty="l",labels = FALSE, tck=0) #plot only the second smooth term
+
+with(data,points(delta_t, w_star, col= as.factor(species)))

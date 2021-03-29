@@ -132,14 +132,14 @@ clusterEvalQ(mycl, {
 
 (b <- Sys.time())
 
-used_av_ls_90_30 <- parLapply(mycl, move_ls, function(group){ #each group
+used_av_ls_90_15 <- parLapply(mycl, move_ls, function(group){ #each group
   
   sp_obj_ls <- lapply(split(group), function(track){
   
     #--STEP 1: thin the data to 1-hourly intervals
     track_th <- track %>%
       thinTrackTime(interval = as.difftime(90, units='mins'),
-                    tolerance = as.difftime(30, units='mins')) #the unselected bursts are the large gaps between the selected ones
+                    tolerance = as.difftime(15, units='mins')) #the unselected bursts are the large gaps between the selected ones
     #--STEP 2: assign burst IDs (each chunk of track with 1 hour intervals is one burst... longer gaps will divide the brusts) 
     track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
     track_th$burst_id <-c(1,rep(NA,nrow(track_th)-1)) #define value for first row
@@ -206,7 +206,7 @@ used_av_ls_90_30 <- parLapply(mycl, move_ls, function(group){ #each group
   fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
   
   #plot
-  pdf(paste0("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/ssf_plots/90_30/",group@idData$group[1], ".pdf"))
+  pdf(paste0("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/ssf_plots/90_15/",group@idData$group[1], ".pdf"))
   par(mfrow=c(1,2))
   hist(sl,freq=F,main="",xlab = "Step length (km)")
   plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
@@ -277,7 +277,7 @@ Sys.time() - b #6.3 mins
 stopCluster(mycl) 
   
   
-save(used_av_ls_90_30, file = "2021/ssf_input_all_90_30_150.RData")
+save(used_av_ls_90_15, file = "2021/ssf_input_all_90_15_150.RData")
 
 #remove alternative points over land, and randomly select 50 points from those that remain
 
@@ -350,7 +350,7 @@ mapview(data_sf, zcol = "species")
 
 # --- after movebank
 #open annotated data and add wind support and crosswind
-ann <- read.csv("2021/annotations/ssf_input_df_60_30_150.csv-7035743881751154719/ssf_input_df_60_30_150.csv-7035743881751154719.csv",
+ann <- read.csv("2021/annotations/ssf_input_df_90_30_150.csv-5951845391466099179/ssf_input_df_90_30_150.csv-5951845391466099179.csv",
                 stringsAsFactors = F) %>% 
   drop_na() 
           
@@ -400,7 +400,7 @@ ann_50 <- used_avail_50 %>%
   as.data.frame()
 
 
-save(ann_50, file = "2021/ssf_input_annotated_60_30_50.RData")
+save(ann_50, file = "2021/ssf_input_annotated_90_30_50.RData")
 
 # long-term annotation data (40 year data)
 #prep a dataframe with 40 rows corresponding to 40 years (1981,2020), for each point. then i can calculate variance of delta t over 41 years for each point
@@ -495,155 +495,48 @@ ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>%
 save(ann_cmpl, file = "2021/ssf_input_ann_cmpl_60_30.RData")
 
 
-# ---------- STEP 5: data exploration#####
+# ---------- STEP 5: sub-sample for individuals #####
+#the dataset is too big. let's make the number of strata per species/group more manageable
 
-# --- 4.1: plot variances against latitude
+ann_cmpl %>% 
+  group_by(group) %>% 
+  summarise(n_str = n_distinct(stratum),
+            n_ind = n_distinct(ind))
 
-#for each stratum, calculate variances and means across all points, not only the available points. then create a scatter plot of 
-var_data <- ann_cmpl %>% 
-  group_by(stratum) %>% 
-  arrange(desc(used), .by_group = T) %>% 
-  summarise(m_wspt = mean(wind_support),
-            var_wspt = var(wind_support),
-            m_delta_t = mean(delta_t),
-            var_delta_t = var(delta_t),
-            m_wspd = mean(wind_speed),
-            var_wspd = var(wind_speed),
-            used_lat = head(location.lat,1),
-            species = head(species,1),
-            zone = head(zone,1)) #the first row is the used point
-  
-#plot
-par(mfrow = c(3,1))
-plot(var_data$used_lat, var_data$var_wspt, main = "variation in wind support", col = as.factor(var_data$species))
-plot(var_data$used_lat, var_data$var_wspd, main = "variation in wind speed", col = as.factor(var_data$species))
-plot(var_data$used_lat, var_data$var_delta_t, main = "variation in delta t", col = as.factor(var_data$species))
+#remove argos data for American osprey (open OA from 2021_all_data_prep_analyze.R)
+argos <- OA[OA$sensor.type == "argos-doppler-shift",]
 
-par(mfrow = c(3,1))
-plot(var_data$used_lat, var_data$m_wspt, main = "average wind support")
-plot(var_data$used_lat, var_data$m_wspd, main = "average wind speed")
-plot(var_data$used_lat, var_data$m_delta_t, main = "average delta t")
+ann_cmpl %>% 
+  filter(track %in% argos$track) %>% 
+  summarise(track = unique(track))
+
+ann_cmpl_sample <- ann_cmpl %>% 
+  filter(!(track %in% argos$track))
 
 
-# --- 4.2: boxplots
+#select 10 individuals for EF_S and O_A
+sample_ids <- ann_cmpl_sample %>%
+  filter(group %in% c("EF_S", "O_A")) %>% 
+  group_by(group) %>% 
+  summarise(ind_id = unique(ind)) %>% 
+  sample_n(10, replace = F)
 
-load("2021/ssf_input_ann_cmpl_60_30.RData") #ann_cmpl
+IDs_to_keep <- ann_cmpl_sample %>% 
+  filter(!(group %in% c("EF_S", "O_A"))) %>% 
+  group_by(group) %>% 
+  summarise(ind_id = unique(ind)) %>% 
+  full_join(sample_ids)
 
-#for plotting
-ann_cmpl$species <- factor(ann_cmpl$species)
+ann_cmpl_sample <- ann_cmpl_sample %>% 
+  filter(ind %in% IDs_to_keep$ind_id)
 
-
-#plot
-X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
-for(i in c("wind_speed_avg", "abs_cross_wind_avg","delta_t_avg", "wind_support_avg")){
-    
-    boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = i, xlab = "", ylab = "")
-    if(i == "wind_speed_avg"){
-      legend("bottomleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
-    }
-    boxplot(ann_cmpl[ann_cmpl$used == 1,i] ~ ann_cmpl[ann_cmpl$used == 1,"species"], 
-            xaxt = "n", add = T, boxfill = "orange",
-            boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) - 0.15)
-    boxplot(ann_cmpl[ann_cmpl$used == 0,i] ~ ann_cmpl[ann_cmpl$used == 0,"species"], 
-            xaxt = "n", add = T, boxfill = "grey",
-            boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) + 0.15)
-  } 
-
-mtext("40-yr averages at each point", side = 3, outer = T, cex = 1.3)
-
-X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
-for(i in c("wind_speed_var", "abs_cross_wind_var","delta_t_var", "wind_support_var")){
-
-  boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = i, xlab = "", ylab = "")
-  if(i == "wind_speed_var"){
-    legend("bottomleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
-  }
-  boxplot(ann_cmpl[ann_cmpl$used == 1,i] ~ ann_cmpl[ann_cmpl$used == 1,"species"], 
-          xaxt = "n", add = T, boxfill = "orange",
-          boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) - 0.15)
-  boxplot(ann_cmpl[ann_cmpl$used == 0,i] ~ ann_cmpl[ann_cmpl$used == 0,"species"], 
-          xaxt = "n", add = T, boxfill = "grey",
-          boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) + 0.15)
-} 
-
-mtext("40-yr variances at each point", side = 3, outer = T, cex = 1.3)
-
-X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
-for(i in c("wind_speed_rsd", "abs_cross_wind_rsd","delta_t_rsd", "wind_support_rsd")){
-  
-  boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = i, xlab = "", ylab = "")
-  if(i == "wind_speed_rsd"){
-    legend("bottomleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
-  }
-  boxplot(ann_cmpl[ann_cmpl$used == 1,i] ~ ann_cmpl[ann_cmpl$used == 1,"species"], 
-          xaxt = "n", add = T, boxfill = "orange",
-          boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) - 0.15)
-  boxplot(ann_cmpl[ann_cmpl$used == 0,i] ~ ann_cmpl[ann_cmpl$used == 0,"species"], 
-          xaxt = "n", add = T, boxfill = "grey",
-          boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) + 0.15)
-} 
-
-mtext("40-yr relative standard deviation (%) at each point", side = 3, outer = T, cex = 1.3)
-
-X11(width = 15, height = 10);par(mfrow= c(3,3), oma = c(0,0,3,0))
-for(i in c("wind_speed", "abs_cross_wind","delta_t", "wind_support")){
-  
-  for(j in unique(ann_cmpl$zone)){ 
-    
-  boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = paste(i,"(",j,")",sep = " "), xlab = "", ylab = "")
-  if(i == "wind_speed"){
-    legend("bottomleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
-  }
-  boxplot(ann_cmpl[ann_cmpl$used == 1 & ann_cmpl$zone == j, i] ~ ann_cmpl[ann_cmpl$used == 1 & ann_cmpl$zone == j,"species"], 
-          xaxt = "n", add = T, boxfill = "orange",
-          boxwex = 0.25, at = 1:length(unique(ann_cmpl[ann_cmpl$used == 1 & ann_cmpl$zone == j, "species"])) - 0.15)
-  boxplot(ann_cmpl[ann_cmpl$used == 0 & ann_cmpl$zone == j, i] ~ ann_cmpl[ann_cmpl$used == 0 & ann_cmpl$zone == j, "species"], 
-          xaxt = "n", add = T, boxfill = "grey",
-          boxwex = 0.25, at = 1:length(unique(ann_cmpl[ann_cmpl$used == 1 & ann_cmpl$zone == j, "species"])) + 0.15)
-} 
-}
-mtext("values at timestamp of each point", side = 3, outer = T, cex = 1.3)
+ann_cmpl_sample %>% 
+  group_by(group) %>% 
+  summarise(n_str = n_distinct(stratum),
+            n_ind = n_distinct(ind))
 
 
-X11(width = 15, height = 10);par(mfrow= c(2,2), oma = c(0,0,3,0))
-for(i in c("wind_speed","delta_t", "wind_support", "abs_cross_wind")){
-
-    boxplot(ann_cmpl[,i] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = i, xlab = "", ylab = "")
-    if(i == "wind_speed"){
-      legend("bottomleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
-    }
-    boxplot(ann_cmpl[ann_cmpl$used == 1, i] ~ ann_cmpl[ann_cmpl$used == 1,"species"], 
-            xaxt = "n", add = T, boxfill = "orange",
-            boxwex = 0.25, at = 1:length(unique(ann_cmpl[ann_cmpl$used == 1, "species"])) - 0.15)
-    boxplot(ann_cmpl[ann_cmpl$used == 0, i] ~ ann_cmpl[ann_cmpl$used == 0, "species"], 
-            xaxt = "n", add = T, boxfill = "grey",
-            boxwex = 0.25, at = 1:length(unique(ann_cmpl[ann_cmpl$used == 1 , "species"])) + 0.15)
-
-}
-mtext("values at timestamp of each point", side = 3, outer = T, cex = 1.3)
-
-
-# --- 4.3:plot relationship between wind and delta t
-
-X11(); par(mfrow=c(3,2))
-plot(delta_t ~ wind_support, data = ann_cmpl[ann_cmpl$used ==1,], col= factor(ann_cmpl[ann_cmpl$used ==1,"species"]), pch = 16, cex = 0.7)
-plot(delta_t ~ wind_speed, data = ann_cmpl[ann_cmpl$used ==1,], col= factor(ann_cmpl[ann_cmpl$used ==1,"species"]), pch = 16, cex = 0.7)
-plot(delta_t ~ abs_cross_wind, data = ann_cmpl[ann_cmpl$used ==1,], col= factor(ann_cmpl[ann_cmpl$used ==1,"species"]), pch = 16, cex = 0.7)
-
-plot(delta_t_var ~ wind_support_var, data = ann_cmpl[ann_cmpl$used ==1,], col= ann_cmpl[ann_cmpl$used ==1,"species"], pch = 16, cex = 0.7)
-plot(delta_t_var ~ wind_speed_var, data = ann_cmpl[ann_cmpl$used ==1,], col= ann_cmpl[ann_cmpl$used ==1,"species"], pch = 16, cex = 0.7)
-plot(delta_t_var ~ abs_cross_wind_var, data = ann_cmpl[ann_cmpl$used ==1,], col= ann_cmpl[ann_cmpl$used ==1,"species"], pch = 16, cex = 0.7)
-
-X11(); par(mfrow=c(3,1))
-plot(delta_t ~ wind_support, data = ann_cmpl, col= factor(ann_cmpl$used), pch = 16, cex = 0.7)
-plot(delta_t ~ wind_speed, data = ann_cmpl, col= factor(ann_cmpl$used), pch = 16, cex = 0.7)
-plot(delta_t ~ abs_cross_wind, data = ann_cmpl, col = factor(ann_cmpl$used), pch = 16, cex = 0.7)
-
-X11(); par(mfrow=c(3,1))
-plot(delta_t ~ wind_support_var, data = ann_cmpl, col=factor(ann_cmpl$used), pch = 16, cex = 0.7)
-plot(delta_t ~ wind_speed_var, data = ann_cmpl, col= factor(ann_cmpl$used), pch = 16, cex = 0.7)
-plot(delta_t ~ abs_cross_wind_var, data = ann_cmpl, col= factor(ann_cmpl$used), pch = 16, cex = 0.7)
-
+save(ann_cmpl_sample, file = "2021/ssf_input_ann_cmpl_60_30_sample.RData")
 
 # ---------- STEP 6: clogit to get a feel for things #####
 
@@ -678,6 +571,9 @@ form_7 <- formula(used ~  delta_t_z *  wind_support_z +
 form_8 <- formula(used ~  delta_t_z * wind_support_z + delta_t_z * abs_cross_wind +
                              strata(stratum))
 
+form_9 <- formula(used ~ delta_t_z * wind_support_z + s_elev_angle +
+                    strata(stratum))
+
 m1 <- clogit(form_1, data = all_data) #when zone is added, delta t coeff becomes positive. still not sig, but positive. but wind support is negative. but interaction of wind support with zones is positive. so, only negative in the arctic
 m1a <- clogit(form_original, data = all_data)
 m1b <- clogit(form_2, data = all_data)
@@ -687,6 +583,12 @@ m1e <- clogit(form_5, data = all_data)
 m1f <- clogit(form_6, data = all_data)
 m1g <- clogit(form_7, data = all_data)
 m1h <- clogit(form_8, data = all_data)
+m1i <- clogit(form_9, data = all_data)
+
+#only during the day:
+day <- all_data[all_data$sun_elev != "night",]
+m2c <- clogit(form_3, data = day)
+
 
 
 ###zone_specific... conclusion: the order of importance is pretty much the same. only the direction of delta_t:windspeed changes... but still small. delta t is negative all through (not sig. in tw)
@@ -708,34 +610,8 @@ all_data %>%
 
 # ---------- STEP 7: INLA #####
 
-load("2021/ssf_input_ann_cmpl_60_30.RData") #ann_cmpl
+load("2021/ssf_input_ann_cmpl_60_30_sample.RData") #ann_cmpl_sample
 
-#the dataset is too big. let's make the number of strata per species/group more manageable
-ann_cmpl %>% 
-  group_by(group) %>% 
-  summarise(n_str = n_distinct(stratum),
-            n_ind = n_distinct(ind))
-
-#select 10 individuals for EF_S and O_A
-sample_ids <- ann_cmpl %>%
-  filter(group %in% c("EF_S", "O_A")) %>% 
-  group_by(group) %>% 
-  summarise(ind_id = unique(ind)) %>% 
-  sample_n(10, replace = F)
-
-IDs_to_keep <- ann_cmpl %>% 
-  filter(!(group %in% c("EF_S", "O_A"))) %>% 
-  group_by(group) %>% 
-  summarise(ind_id = unique(ind)) %>% 
-  full_join(sample_ids)
-
-ann_cmpl_sample <- ann_cmpl %>% 
-filter(ind %in% IDs_to_keep$ind_id)
-
-ann_cmpl_sample %>% 
-  group_by(group) %>% 
-  summarise(n_str = n_distinct(stratum),
-            n_ind = n_distinct(ind))
 
 #correlation
 ann_cmpl_sample %>% 
@@ -830,7 +706,7 @@ M1 <- inla(formula = formulaM1, family ="Poisson",
            num.threads = 10,
            control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = F))
 
-Sys.time() - b #3.3 hours
+Sys.time() - b #killed after 7.5 min
 
 save(M1, file = "2021/inla_models/m1_60_30.RData")
 

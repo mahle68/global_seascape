@@ -11,8 +11,8 @@ library(sf)
 library(move)
 library(scales)
 
-setwd("/home/mahle68/ownCloud/Work/Projects/delta_t")
-source("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
+setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
+source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 
 wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
@@ -20,7 +20,7 @@ meters_proj <- CRS("+proj=moll +ellps=WGS84")
 #open sea-crossing points, prepared in 2021_all_data_preo_analyze.R
 load("R_files/2021/all_2009_2020_overwater_points_updated.RData") #all_oversea
 
-region <- st_read("/home/mahle68/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") %>% 
+region <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") %>% 
   st_crop(xmin = -99, xmax = 144, ymin = -30, ymax = 71) %>%
   st_union()
 
@@ -37,7 +37,7 @@ write.csv(mv, "R_files/2021/raw_points_for_maps.csv")
        
 
 #annotated data
-ann <- read.csv("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files/2021/annotations/raw_points_for_maps/era5/raw_points_for_maps.csv-8853543643507767873.csv") %>% 
+ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/annotations/raw_points_for_maps/era5/raw_points_for_maps.csv-8853543643507767873.csv") %>% 
   mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
   rename(sst = ECMWF.ERA5.SL.Sea.Surface.Temperature,
          t2m = ECMWF.ERA5.SL.Temperature..2.m.above.Ground.,
@@ -67,6 +67,9 @@ mv <- move(x = ann$location.long, y = ann$location.lat, time = ann$timestamp, da
 
 #calculate heading
 mv$heading <- unlist(lapply(angle(mv), c, NA))
+
+save(mv, file = "R_files/2021/raw_sea_points_for_maps_mv.RData")
+
 
 #add a categorical variable for wind levels
 breaks_w <- c(-20,-10,-5,0,5,10,15,35)
@@ -102,7 +105,7 @@ df_sp <- SpatialPointsDataFrame(coords = df[,c("location.long", "location.lat")]
 #plot
 X11(width = 12, height = 11.5) #make the window proportional to region
 
-pdf("/home/mahle68/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/raw_wind_dt.pdf", width = 12, height = 11.5)
+pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/raw_wind_dt.pdf", width = 12, height = 11.5)
 
 par(mfrow=c(2,1),
     #fig = c(0,1,0,1), #do this if you want to add the small plots as subplots
@@ -139,9 +142,9 @@ rect(xleft = -100,
      border = NA)
 
 text(x = -85,y = 0, "Wind support (m/s)", cex = 0.8)
-legend(x = -100, y = 0, legend = levels(df_sp$binned_w), col = as.character(df_sp$cols_w), pch = 20, 
+legend(x = -100, y = 0, legend = levels(df_sp$binned_w), col = Cols_w, pch = 20, 
        bty = "n", cex = 0.8)
-mtext("Bio-logging points annotated with wind support", 3, outer = F, cex = 1.3, line = -1)
+mtext("Bio-logging data annotated with wind support", 3, outer = F, cex = 1.3, line = -1)
 
 plot(region, col="#e5e5e5",border="#e5e5e5")
 points(df_sp, pch = 1, col = as.character(df_sp$cols_dt), cex = 0.2)
@@ -164,9 +167,9 @@ rect(xleft = -100,
      border = NA)
 
 text(x = -93,y = 0,  expression(italic(paste(Delta,"T", "(°C)"))), cex = 0.8)
-legend(x = -100, y = -1, legend = levels(df_sp$binned_dt), col = as.character(df_sp$cols_dt), pch = 20, 
+legend(x = -100, y = -1, legend = levels(df_sp$binned_dt), col =Cols_dt, pch = 20, 
        bty = "n", cex = 0.8)
-mtext(bquote(italic('Bio-logging points annotated with' ~ Delta *"T")), 3, outer = F, cex = 1.3, line = -1)
+mtext(bquote(italic('Bio-logging data annotated with' ~ Delta *"T")), 3, outer = F, cex = 1.3, line = -1)
 
 dev.off()
 
