@@ -346,7 +346,7 @@ data_sf <- used_av_df_90_30 %>%
   filter(used == 1) %>% 
   st_as_sf(coords = c(2,3), crs = wgs)
 
-mapview(data_sf, zcol = "species", viewer.suppress = TRUE)
+mapview(data_sf, zcol = "species")
 
 # --- after movebank
 #open annotated data and add wind support and crosswind
