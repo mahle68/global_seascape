@@ -15,9 +15,25 @@ source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.
 wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
-#open annotated sea-crossing points (prepped in 2021_wind_delta_t_maps.R)
-load("R_files/2021/raw_sea_points_annotated.RData") #called ann
+#annotated data.(prepped in 2021_wind_delta_t_maps.R)
+ann <- read.csv("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files/2021/annotations/raw_points_for_maps/interim/raw_points_for_maps.csv-3930001190922922558.csv") %>% 
+  mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
+  rename(sst = ECMWF.Interim.Full.Daily.SFC.FC.Sea.Surface.Temperature,
+         t2m = ECMWF.Interim.Full.Daily.SFC.FC.Temperature..2.m.above.Ground.,
+         blh = ECMWF.Interim.Full.Daily.SFC.FC.Boundary.Layer.Height,
+         s_flux = ECMWF.Interim.Full.Daily.SFC.FC.Instantaneous.Surface.Heat.Flux,
+         m_flux = ECMWF.Interim.Full.Daily.SFC.FC.Instantaneous.Moisture.Flux) %>%
+  mutate(delta_t = sst - t2m) %>%
+  arrange(track, timestamp)
 
+#remove tracks with one point
+more_than_one_point <- ann %>% 
+  group_by(track) %>% 
+  summarize(n = n()) %>% 
+  filter(n > 1)
+
+ann <- ann %>% 
+  filter(track %in% more_than_one_point$track)
 
 
 #with ECMWF ERA-interim data, units for "ECMWF Interim Full Daily SFC-FC Instantaneous Moisture Flux": kg m^-2 s^-1
@@ -61,7 +77,7 @@ w_star <- function(g = 9.81, blh, T2m, s_flux, m_flux) {
   
   wthetav <- wT + 0.61 * T_c_2m * wq
   
-  w_star <- (g*z*(wthetav/Thetav_k_z)) ^ 1/3
+  w_star <- as.complex(g*z*(wthetav/Thetav_k_z)) ^ (1/3)
   
   return(w_star)
   

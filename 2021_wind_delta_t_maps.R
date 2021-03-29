@@ -11,8 +11,8 @@ library(sf)
 library(move)
 library(scales)
 
-setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
-source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
+setwd("/home/mahle68/ownCloud/Work/Projects/delta_t")
+source("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 
 wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
@@ -20,12 +20,11 @@ meters_proj <- CRS("+proj=moll +ellps=WGS84")
 #open sea-crossing points, prepared in 2021_all_data_preo_analyze.R
 load("R_files/2021/all_2009_2020_overwater_points_updated.RData") #all_oversea
 
-region <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") %>% 
-  st_crop(xmin = -99, xmax = 144, ymin = -74, ymax = 71) %>%
+region <- st_read("/home/mahle68/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") %>% 
+  st_crop(xmin = -99, xmax = 144, ymin = -30, ymax = 71) %>%
   st_union()
 
 #prepare for movebank annotation
-
 mv <- all_oversea %>% 
   as("Spatial") %>% 
   as.data.frame() %>% 
@@ -38,26 +37,23 @@ write.csv(mv, "R_files/2021/raw_points_for_maps.csv")
        
 
 #annotated data
-ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/annotations/raw_points_for_maps/raw_points_for_maps.csv-5184501718572889126.csv") %>% 
+ann <- read.csv("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files/2021/annotations/raw_points_for_maps/era5/raw_points_for_maps.csv-8853543643507767873.csv") %>% 
   mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
   rename(sst = ECMWF.ERA5.SL.Sea.Surface.Temperature,
          t2m = ECMWF.ERA5.SL.Temperature..2.m.above.Ground.,
          u925 = ECMWF.ERA5.PL.U.Wind,
-         v925 = ECMWF.ERA5.PL.V.wind,
-         blh = ECMWF.Interim.Full.Daily.SFC.FC.Boundary.Layer.Height,
-         s_flux = ECMWF.Interim.Full.Daily.SFC.FC.Instantaneous.Surface.Heat.Flux,
-         m_flux = ECMWF.Interim.Full.Daily.SFC.FC.Instantaneous.Moisture.Flux) %>%
+         v925 = ECMWF.ERA5.PL.V.wind) %>% 
   mutate(delta_t = sst - t2m) %>%
   arrange(track, timestamp)
 
 #remove tracks with one point
-more_than_one_point <- ann %>% 
+more_than_two_point <- ann %>% 
   group_by(track) %>% 
   summarize(n = n()) %>% 
-  filter(n > 1)
+  filter(n > 2)
 
 ann <- ann %>% 
-  filter(track %in% more_than_one_point$track)
+  filter(track %in% more_than_two_point$track)
 
 save(ann, file = "R_files/2021/raw_sea_points_annotated.RData")
 
@@ -104,7 +100,9 @@ levels(df$cols_dt) <- Cols_dt
 df_sp <- SpatialPointsDataFrame(coords = df[,c("location.long", "location.lat")], proj4string = wgs, data = df)
 
 #plot
-X11(width = 11, height = 12) #make the window proportional to region
+X11(width = 12, height = 11.5) #make the window proportional to region
+
+pdf("/home/mahle68/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/raw_wind_dt.pdf", width = 12, height = 11.5)
 
 par(mfrow=c(2,1),
     #fig = c(0,1,0,1), #do this if you want to add the small plots as subplots
@@ -114,7 +112,7 @@ par(mfrow=c(2,1),
     font.axis = 3,
     cex.lab = 0.6,
     #cex = 0.5,
-    oma = c(0,0,0,0),
+    oma = c(0,0,1.5,0),
     mar = c(0, 0, 0, 0),
     lend = 1  #rectangular line endings (trick for adding the rectangle to the legend)
 )
@@ -123,54 +121,52 @@ par(mfrow=c(2,1),
 plot(region, col="#e5e5e5",border="#e5e5e5")
 points(df_sp, pch = 1, col = as.character(df_sp$cols_w), cex = 0.2)
 
+#add latitudes
+clip(-99, 144, -30, 71)
+abline(h = 0, col = "grey70",lty = 2)
+abline(h = 30, col = "grey70",lty = 2)
+abline(h = 60, col = "grey70",lty = 2)
+#text(x = -125, y = c(2,32,62), labels = c("0° ", "30° N", "60° N"), cex = 0.6, col = "grey65")
+text(x = -95, y = c(32,62), labels = c("30° N", "60° N"), cex = 0.6, col = "grey65")
+
+
+#add a frame for the sub-plots and legend
+rect(xleft = -100,
+     xright = -71,
+     ybottom =  -30,
+     ytop = 2,
+     col="white",
+     border = NA)
+
+text(x = -85,y = 0, "Wind support (m/s)", cex = 0.8)
+legend(x = -100, y = 0, legend = levels(df_sp$binned_w), col = as.character(df_sp$cols_w), pch = 20, 
+       bty = "n", cex = 0.8)
+mtext("Bio-logging points annotated with wind support", 3, outer = F, cex = 1.3, line = -1)
+
 plot(region, col="#e5e5e5",border="#e5e5e5")
 points(df_sp, pch = 1, col = as.character(df_sp$cols_dt), cex = 0.2)
 
-#-----------------------------------------------------------------------------------------------------
+#add latitudes
+clip(-99, 144, -30, 71)
+abline(h = 0, col = "grey70",lty = 2)
+abline(h = 30, col = "grey70",lty = 2)
+abline(h = 60, col = "grey70",lty = 2)
+#text(x = -125, y = c(2,32,62), labels = c("0° ", "30° N", "60° N"), cex = 0.6, col = "grey65")
+text(x = -95, y = c(32,62), labels = c("30° N", "60° N"), cex = 0.6, col = "grey65")
 
 
-mv2 <- mv[complete.cases(mv$heading),]
-mv2$wind_support <- wind_support(u = mv2$u925,v = mv2$v925, heading = mv2$heading)
-mv2$cross_wind <- cross_wind(u = mv2$u925,v = mv2$v925, heading = mv2$heading)
+#add a frame for the sub-plots and legend
+rect(xleft = -100,
+     xright = -80,
+     ybottom =  -30,
+     ytop = 2,
+     col="white",
+     border = NA)
 
-### wind support map #####
+text(x = -93,y = 0,  expression(italic(paste(Delta,"T", "(°C)"))), cex = 0.8)
+legend(x = -100, y = -1, legend = levels(df_sp$binned_dt), col = as.character(df_sp$cols_dt), pch = 20, 
+       bty = "n", cex = 0.8)
+mtext(bquote(italic('Bio-logging points annotated with' ~ Delta *"T")), 3, outer = F, cex = 1.3, line = -1)
 
-
-Cols_t <- paste0(Cols, "E6") #add transparency. 50% is "80". 70% is "B3". 80% is "CC". 90% is "E6"
-
-#add a categorical variable for wind levels
-breaks_w <- c(-20,-10,-5,0,5,10,15,35)
-tags_w <- c("< -10","-10 to -5","-5 to 0","0 to 5","5 to 10","10 to 15", "> 15")
-
-mv2$binned_wind <- cut(mv2$wind_support,breaks = breaks, include.lowest = T, right = F, labels = tags)
-mv2$col <- as.factor(mv2$binned_wind)
-levels(mv2$col_w) <- Cols_t
-
-plot(region, col="#e5e5e5",border="#e5e5e5")
-
-points(mv2, pch = 1, col = as.character(mv2$col), cex = 0.2)
-
-
-legend("bottomleft", legend = levels(mv2$binned_wind), col = Cols_t, pch = 20, bty = "n")
-
-X11(width = 11, height = 12) #make the window proportional to region
-
-par(mfrow=c(2,1),
-    #fig = c(0,1,0,1), #do this if you want to add the small plots as subplots
-    bty="n", #no box around the plot
-    cex.axis= 0.6, #x and y labels have 0.75% of the default size
-    font = 3, #3: axis labels are in italics
-    font.axis = 3,
-    cex.lab = 0.6,
-    #cex = 0.5,
-    oma = c(0,0,0,0),
-    mar = c(0, 0, 0, 0),
-    lend = 1  #rectangular line endings (trick for adding the rectangle to the legend)
-)
-
-#maps::map("world",fill = TRUE, col = "grey30", border = F)
-plot(region, col="#e5e5e5",border="#e5e5e5")
-### delta_t map #####
-
-
+dev.off()
 
