@@ -117,7 +117,7 @@ move_ls <- lapply(split(oversea_df,oversea_df$group),function(x){
 
 # ---------- STEP 3: generate alternative steps#####
 
-mycl <- makeCluster(3) 
+mycl <- makeCluster(7) 
 clusterExport(mycl, c("move_ls", "wgs", "meters_proj", "NCEP.loxodrome.na")) #define the variable that will be used within the function
 
 clusterEvalQ(mycl, {
@@ -132,13 +132,13 @@ clusterEvalQ(mycl, {
 
 (b <- Sys.time())
 
-used_av_ls_60_15 <- parLapply(mycl, move_ls, function(group){ #each group
+used_av_ls_90_30 <- parLapply(mycl, move_ls, function(group){ #each group
   
   sp_obj_ls <- lapply(split(group), function(track){
   
     #--STEP 1: thin the data to 1-hourly intervals
     track_th <- track %>%
-      thinTrackTime(interval = as.difftime(60, units='mins'),
+      thinTrackTime(interval = as.difftime(90, units='mins'),
                     tolerance = as.difftime(30, units='mins')) #the unselected bursts are the large gaps between the selected ones
     #--STEP 2: assign burst IDs (each chunk of track with 1 hour intervals is one burst... longer gaps will divide the brusts) 
     track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
@@ -206,7 +206,7 @@ used_av_ls_60_15 <- parLapply(mycl, move_ls, function(group){ #each group
   fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
   
   #plot
-  pdf(paste0("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/ssf_plots/",group@idData$group[1], ".pdf"))
+  pdf(paste0("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/ssf_plots/90_30/",group@idData$group[1], ".pdf"))
   par(mfrow=c(1,2))
   hist(sl,freq=F,main="",xlab = "Step length (km)")
   plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
@@ -272,12 +272,12 @@ used_av_ls_60_15 <- parLapply(mycl, move_ls, function(group){ #each group
   used_av_track
 })
 
-Sys.time() - b #1.368372 mins
+Sys.time() - b #6.3 mins
 
 stopCluster(mycl) 
   
   
-save(used_av_ls_60_30, file = "2021/ssf_input_all_60_30_150.RData")
+save(used_av_ls_90_30, file = "2021/ssf_input_all_90_30_150.RData")
 
 #remove alternative points over land, and randomly select 50 points from those that remain
 
@@ -293,15 +293,15 @@ save(used_av_ls_60_30, file = "2021/ssf_input_all_60_30_150.RData")
 
 # ---------- STEP 4: annotate#####
 
-load("2021/ssf_input_all_60_30_150.RData") #used_av_ls_60_30
+load("2021/ssf_input_all_90_30_150.RData") #used_av_ls_90_30
 
 #create one dataframe with movebank specs
-used_av_df_60_30 <- lapply(c(1:length(used_av_ls_60_30)), function(i){
+used_av_df_90_30 <- lapply(c(1:length(used_av_ls_90_30)), function(i){
   
-  data <- used_av_ls_60_30[[i]] %>% 
+  data <- used_av_ls_90_30[[i]] %>% 
     dplyr::select( c("date_time", "x", "y", "selected", "species",  "burst_id", "step_length", "turning_angle", "track", "step_id", "used", "heading")) %>% #later, add a unique step id: paste track, burst_id and step_id. lol
     mutate(timestamp = paste(as.character(date_time),"000",sep = "."),
-           group = names(used_av_ls_60_30)[[i]]) %>% 
+           group = names(used_av_ls_90_30)[[i]]) %>% 
     rowwise() %>% 
     mutate(ind = strsplit(track, "_")[[1]][1],
            stratum = paste(track, burst_id, step_id, sep = "_")) %>% 
@@ -309,7 +309,7 @@ used_av_df_60_30 <- lapply(c(1:length(used_av_ls_60_30)), function(i){
 }) %>% 
   reduce(rbind)
 
-save(used_av_df_60_30, file = "2021/ssf_input_all_df_60_30_150.RData")
+save(used_av_df_90_30, file = "2021/ssf_input_all_df_90_30_150.RData")
 
 
 # #have a look
@@ -328,12 +328,12 @@ save(used_av_df_60_30, file = "2021/ssf_input_all_df_60_30_150.RData")
 # points(used_av_all_2hr[used_av_all_2hr$used == 1,c("x","y")], pch = 16, cex = 0.4, col = "orange")
 
 #rename columns
-colnames(used_av_df_60_30)[c(2,3)] <- c("location-long","location-lat")
+colnames(used_av_df_90_30)[c(2,3)] <- c("location-long","location-lat")
 
-write.csv(used_av_df_60_30, "2021/ssf_input_df_60_30_150.csv")
+write.csv(used_av_df_90_30, "2021/ssf_input_df_90_30_150.csv")
 
 # summary stats
-used_av_df_60_30 %>% 
+used_av_df_90_30 %>% 
   #group_by(species) %>% 
   group_by(group) %>% 
   summarise(yrs_min = min(year(date_time)),
@@ -342,7 +342,7 @@ used_av_df_60_30 %>%
             n_tracks = n_distinct(track))
 
 #visual inspection
-data_sf <- used_av_df_60_30 %>% 
+data_sf <- used_av_df_90_30 %>% 
   filter(used == 1) %>% 
   st_as_sf(coords = c(2,3), crs = wgs)
 
@@ -708,10 +708,37 @@ all_data %>%
 
 # ---------- STEP 7: INLA #####
 
-load("2021/ssf_input_ann_cmpl_60_15.RData") #ann_cmpl
+load("2021/ssf_input_ann_cmpl_60_30.RData") #ann_cmpl
+
+#the dataset is too big. let's make the number of strata per species/group more manageable
+ann_cmpl %>% 
+  group_by(group) %>% 
+  summarise(n_str = n_distinct(stratum),
+            n_ind = n_distinct(ind))
+
+#select 10 individuals for EF_S and O_A
+sample_ids <- ann_cmpl %>%
+  filter(group %in% c("EF_S", "O_A")) %>% 
+  group_by(group) %>% 
+  summarise(ind_id = unique(ind)) %>% 
+  sample_n(10, replace = F)
+
+IDs_to_keep <- ann_cmpl %>% 
+  filter(!(group %in% c("EF_S", "O_A"))) %>% 
+  group_by(group) %>% 
+  summarise(ind_id = unique(ind)) %>% 
+  full_join(sample_ids)
+
+ann_cmpl_sample <- ann_cmpl %>% 
+filter(ind %in% IDs_to_keep$ind_id)
+
+ann_cmpl_sample %>% 
+  group_by(group) %>% 
+  summarise(n_str = n_distinct(stratum),
+            n_ind = n_distinct(ind))
 
 #correlation
-ann_cmpl %>% 
+ann_cmpl_sample %>% 
   dplyr::select(c("delta_t", "wind_speed", "wind_support", "wind_support_var", "abs_cross_wind", "delta_t_var")) %>% 
   correlate() %>% 
   stretch() %>% 
@@ -719,7 +746,7 @@ ann_cmpl %>%
 #correlated: wind support var & wind speed var and cross wind var, crosswind var and wind speed var.  delta-t var and wind support var!!! wind speed and abs_crosswind.
 
 #z-transform
-all_data <- ann_cmpl %>% 
+all_data <- ann_cmpl_sample %>% 
   #group_by(species) 
   mutate_at(c("delta_t", "wind_speed", "wind_support", "wind_support_var", "abs_cross_wind", "delta_t_var"),
             #list(z = ~scale(.)))
@@ -730,7 +757,7 @@ all_data <- ann_cmpl %>%
   ungroup() 
 
 
-save(all_data, file = "2021/ssf_input_ann_60_30_z.RData")
+save(all_data, file = "2021/ssf_input_ann_60_30_sampled_z.RData")
 
 
 #check to make sure each stratum has one lat zone value
@@ -741,7 +768,8 @@ all_data %>%
   filter(n > 1)
 
 
-load("2021/ssf_input_ann_60_30_z.RData") #all_data
+load("2021/ssf_input_ann_60_30_sampled_z.RData") #all_data
+
 
 #repeat variabels that will be used as random slopes
 all_data <- all_data %>% 
@@ -773,29 +801,24 @@ all_data <- all_data %>%
 mean.beta <- 0
 prec.beta <- 1e-4 
 
-
-formulaM1 <- used ~ -1 + delta_t_z * wind_speed_z + delta_t_var_z + delta_t_z * wind_support_z + wind_support_var_z +
+formulaM1 <- used ~ -1 + delta_t_z * wind_support_z + delta_t_var_z + wind_support_var_z + #killed when both interactions of dt and wspt and wspd. also when only interaction of dt and wspt. so, remove wind speed
   f(stratum, model = "iid", 
     hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
   f(species1, delta_t_z, model = "iid", 
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
-  f(species2, wind_speed_z,  model = "iid",
+  f(species2, wind_support_z,  model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species3, wind_support_z,  model = "iid",
+  f(species3, delta_t_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species4, delta_t_var_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species5, wind_support_var_z, model = "iid",
+  f(species4, wind_support_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(ind1, delta_t_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
-  f(ind2, wind_speed_z,  model = "iid",
+  f(ind2, wind_support_z,  model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind3, wind_support_z,  model = "iid",
+  f(ind3, delta_t_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind4, delta_t_var_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind5, wind_support_var_z, model = "iid",
+  f(ind4, wind_support_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
 
 (b <- Sys.time())
@@ -805,11 +828,11 @@ M1 <- inla(formula = formulaM1, family ="Poisson",
              prec = list(default = prec.beta)),
            data = all_data,
            num.threads = 10,
-           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T))
+           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = F))
 
 Sys.time() - b #3.3 hours
 
-save(M1, file = "2021/inla_models/m1.RData")
+save(M1, file = "2021/inla_models/m1_60_30.RData")
 
 
 summary(M1)#
@@ -843,7 +866,7 @@ M2a <- inla(formulaM2a, family ="Poisson",
              prec = list(default = prec.beta)),
            data = all_data,
            num.threads = 10,
-           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = T))
+           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = F))
 
 save(M2a, file = "2021/inla_models/m2a.RData")
 
@@ -1081,7 +1104,7 @@ for(i in 1:length(variables)){
           boxwex = 0.25, at = 1:length(unique(ann_cmpl[ann_cmpl$used == 1 , "species"])) + 0.15)
   
 }
-mtext("instantaneous values at each step", side = 3, outer = T, cex = 1.3)
+mtext("Instantaneous values at each step", side = 3, outer = T, cex = 1.3)
 
 for(i in 1:length(v_variables)){
   
