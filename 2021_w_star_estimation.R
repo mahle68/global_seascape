@@ -54,6 +54,9 @@ save(ann, file = "R_files/2021/df_for_w_star.RData")
 #blh: boundary layer height (m)
 #t2m: 2m temperature
 
+CubeRoot<-function(x){
+  sign(x)*abs(x)^(1/3)
+}
 
 w_star <- function(g = 9.81, blh, T2m, s_flux, m_flux) {
   
@@ -61,20 +64,26 @@ w_star <- function(g = 9.81, blh, T2m, s_flux, m_flux) {
   T_k_2m <- T2m
   T_c_2m <- T_k_2m - 273.15
   Thetav_k_z <- (T_k_2m) + 0.006 * z
-  wT <- s_flux / 1013 / 1.2
-  wq <- m_flux *1000 /1.2
+  wT <- (s_flux * -1) / 1013 / 1.2 #reverse the sign. ECMWF upward fluxes are negative
+  wq <- (m_flux * -1) *1000 /1.2 #reverse the sign. ECMWF upward fluxes are negative
   
   wthetav <- wT + 0.61 * T_c_2m * wq
   
-  w_star <- as.complex(g*z*(wthetav/Thetav_k_z)) ^ (1/3)
+  #w_star <- as.complex(g*z*(wthetav/Thetav_k_z)) ^ (1/3)
+  w_star <- CubeRoot(g*z*(wthetav/Thetav_k_z))
   
   return(w_star)
   
 }
 
 
-ann$w_star <- w_star(blh = ann$blh, T2m = ann$t2m, 
-                     s_flux = ann$s_flux, m_flux = ann$m_flux)
+load("R_files/2021/df_for_w_star.RData")
+
+pos_dt <- ann %>% 
+  filter(delta_t >= 0)
+
+pos_dt$w_star <- w_star(blh = pos_dt$blh, T2m = pos_dt$t2m, 
+                     s_flux = pos_dt$s_flux, m_flux = pos_dt$m_flux)
 
 
   
@@ -118,36 +127,35 @@ conf_interval <- predict(fit_2, newdata = data.frame(delta_t = newx), interval =
                          level = 0.95)
 
 
-X11(width = 7, height = 6)
 
-pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/w_star.pdf", width = 7, height = 6)
+X11(width = 4, height = 3)
+pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/w_star.pdf", width = 4, height = 3)
 
 par(mfrow=c(1,1), 
     bty = "l",
-    font.axis = 3,
+    cex.axis = 0.7,
     font.lab = 3,
-    font = 3,
-    cex.axis = 0.8,
-    mgp=c(2.5,1,0) #margin line for the axis titles
-)
+    cex.lab = 0.9,
+    mgp=c(2,0.5,0), #margin line for the axis titles
+    mar = c(3.5,3.5,0.5,0.5))
 
-plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(0,8.5), ylim = c(0.3,2.5), xlab = expression(italic(paste(Delta,"T", "(°C)"))), ylab = "w* (m/s)")
+plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(0,8.3), ylim = c(0.3,2.5), xlab = expression(italic(paste(Delta,"T", "(°C)"))), ylab = "w* (m/s)")
 
-with(postive_dt,points(delta_t, w_star, col= as.character(data$color), pch = 20, cex = 0.7))
+with(postive_dt,points(delta_t, w_star, col= as.character(data$color), pch = 20, cex = 0.6))
 clip(0, max(data$delta_t), 0, 3)
 lines(newx, conf_interval[,2], col = alpha(rgb(0,0,0), 0.15), lwd = 5.5)
 lines(newx, conf_interval[,3], col = alpha(rgb(0,0,0), 0.15), lty = 1, lwd = 5.5)
 abline(fit_2, col = "black")
 
-axis(side = 1, at = c(0,2,4,6,8), line = -0, labels = c(0,2,4,6,8), 
-     tick = T , col.ticks = 1, col=NA, tck = -.015)
-axis(side= 2, at= c(0.5,1,1.5,2,2.5), line=0, labels= c(0.5,1,1.5,2,2.5),
-     tick=T , col.ticks = 1,col=NA, tck=-.015, 
+axis(side = 1, at = c(0,2,4,6,8), labels = c(0,2,4,6,8), 
+     tick = T , col.ticks = 1, col = NA, tck = -.015,lwd = 0, lwd.ticks = 1)
+axis(side= 2, at= c(0.5,1,1.5,2,2.5), labels= c(0.5,1,1.5,2,2.5),
+     tick=T , col.ticks = 1, col = NA, tck=-.015,
      las=2) # text perpendicular to axis label 
-legend(x = 6.5, y = 0.79, legend = c("daytime: high sun", "daytime: low sun", "night"), col = Cols, #coords indicate top-left
-       cex = 0.8, pt.cex = 0.9, bg = "white", bty = "n", pch = 20)
+legend(x = 5.5, y = 0.9, legend = c("daytime: high sun", "daytime: low sun", "night"), col = Cols, #coords indicate top-left
+       cex = 0.7, pt.cex = 0.9, bg = "white", bty = "n", pch = 20)
 
-text(7.2,0.8, "Time of day", cex = 0.9)
+text(6.5,0.95, "Time of day", cex = 0.7)
 
 dev.off()
 
