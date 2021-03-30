@@ -178,10 +178,10 @@ load("R_files/2021/all_spp_unfiltered_updated_lc_0_removed_new_track_id.RData") 
 sea_pts <- dataset %>%
   filter(year >= 2008 & season == "autumn" & sensor.type == "gps") %>% 
   drop_na(c("location.long", "location.lat")) %>% 
-  st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
-  st_difference(land_15km) #remove short sea-crossings already. 
+  st_as_sf(coords = c("location.long", "location.lat"), crs = wgs)  %>% 
+  st_difference(land_no_buffer) 
 
-save(sea_pts, file = "R_files/2021/sea_pts_15kmbuffer.RData")
+save(sea_pts, file = "R_files/2021/sea_pts.RData")
 
 ##### STEP 3: convert tracks to lines ##### 
 
@@ -230,32 +230,33 @@ save(segs, file = "R_files/2021/all_spp_2009_2020_filtered_segments.RData")
 
 #open data points and segments
 load("R_files/2021/all_spp_unfiltered_updated_lc_0_removed_new_track_id.RData") #called dataset
-load("R_files/2021/sea_pts_15kmbuffer.RData") #land_pts
+load("R_files/2021/sea_pts.RData") #sea_pts
 load("R_files/2021/all_spp_2009_2020_filtered_segments.RData") #segs
 
-dataset_no_NA <- dataset %>% 
-  drop_na(location.long)
 
+#try with sea_pts. previously, I used dataset, which ended up retaining a lot of points over land
+
+segs_m <- st_transform(segs,meters_proj)
 
 (b <- Sys.time())
 
-points_oversea <- lapply(split(dataset_no_NA, dataset_no_NA$track), function(x){
-
-  seg <- segs[segs$track == x$track[1],]
-
+points_oversea <- lapply(split(sea_pts, sea_pts$track), function(x){
+  
+  seg <- segs_m[segs_m$track == x$track[1],]
+  
   oversea <- x %>%
-    st_as_sf(coords = c("location.long","location.lat"), crs = wgs) %>%
-    st_intersection(st_buffer(seg, 0.1)) %>%
+    st_transform(meters_proj) %>% 
+    st_intersection(st_buffer(seg, 5000)) %>%
+    st_transform(wgs) %>% 
     dplyr::select(-c(track.1, zone.1, species.1))
-
+  
   oversea
 }) %>%
   reduce(rbind)
 
-Sys.time() - b #1.6 min
+Sys.time() - b #29 sec
 
-
-save(points_oversea, file = "R_files/2021/all_spp_2009_2020_overwater_points_updated.RData")
+save(points_oversea, file = "R_files/2021/all_spp_2009_2020_overwater_problematic_pts_removed.RData")
 
 ##### STEP 6: append eleonora's falcon from spain #####
 
@@ -280,7 +281,7 @@ EF_spain <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/data/Eleonor
 
 all_oversea <- rbind(points_oversea, EF_spain)
 
-save(all_oversea, file = "R_files/2021/all_2009_2020_overwater_points_updated.RData")
+save(all_oversea, file = "R_files/2021/all_2009_2020_overwater_probl_pts_removed.RData")
 
 
 ### some summary stats
