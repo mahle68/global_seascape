@@ -205,8 +205,7 @@ save(dataset_sea, file = "R_files/2021/all_spp_2009_2020_complete_lines.RData")
 
 ##### STEP 4: subset for tracks over the sea and assign segments ##### 
 
-load("R_files/2021/all_spp_2009_2020
-     _complete_lines.RData") #dataset_sea
+load("R_files/2021/all_spp_2009_2020_complete_lines.RData") #dataset_sea
 
 segs_filtered <- dataset_sea %>% 
   st_difference(land_no_buffer)

@@ -8,7 +8,7 @@ library(sp)
 library(sf)
 library(move)
 library(scales)
-library(jtools) #for effect_plots
+library(maptools)
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
 source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
@@ -44,6 +44,7 @@ more_than_one_point <- ann %>%
 ann <- ann %>% 
   filter(track %in% more_than_one_point$track)
 
+save(ann, file = "R_files/2021/df_for_w_star.RData")
 
 #with ECMWF ERA-interim data, units for "ECMWF Interim Full Daily SFC-FC Instantaneous Moisture Flux": kg m^-2 s^-1
 #units for "ECMWF Interim Full Daily SFC-FC Instantaneous Surface Heat Flux": J m^-2
@@ -119,11 +120,12 @@ conf_interval <- predict(fit_2, newdata = data.frame(delta_t = newx), interval =
 
 X11(width = 7, height = 6)
 
+pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/w_star.pdf", width = 7, height = 6)
 
 par(mfrow=c(1,1), 
     bty = "l",
-    #font.axis = 3,
-    #font.lab = 3,
+    font.axis = 3,
+    font.lab = 3,
     font = 3,
     cex.axis = 0.8,
     mgp=c(2.5,1,0) #margin line for the axis titles
@@ -145,70 +147,7 @@ axis(side= 2, at= c(0.5,1,1.5,2,2.5), line=0, labels= c(0.5,1,1.5,2,2.5),
 legend(x = 6.5, y = 0.79, legend = c("daytime: high sun", "daytime: low sun", "night"), col = Cols, #coords indicate top-left
        cex = 0.8, pt.cex = 0.9, bg = "white", bty = "n", pch = 20)
 
-text(7.2,0.8, "Time of day", cex = 0.8)
+text(7.2,0.8, "Time of day", cex = 0.9)
 
-###############################
-#D3D3D3
+dev.off()
 
-effect_plot(fit_2, delta_t, interval = T, plot.points = T, int.type = "confidence",int.width = .95, point.color = data$color)
-
-
-
-
-
-polygon(x = c(postive_dt$delta_t, rev(postive_dt$delta_t)), y = c(exp(wspd$ll95),rev(exp(wspd$ul95))), col = adjustcolor("grey", alpha.f = 0.3), border = NA)
-
-
-abline(fit_2$coefficients[1]+sd2,fit_2$coefficients[2])
-abline(fit_2$coefficients[1]-sd2,fit_2$coefficients[2])
-
-### plot
-
-par(mfrow=c(1,1), bty="n", #no box around the plot
-    cex.axis= 0.75, #x and y labels have 0.75% of the default size
-    font.axis= 3, #axis labels are in italics
-    cex.lab=1
-)
-
-
-plot(m,select=2, xlab="day of year",ylab="delta T", ylim= c(-2,2), shade=T, shade.col= "grey75",
-     scheme=0,se=12,bty="l",labels = FALSE, tck=0) #plot only the second smooth term
-
-
-###gggplot
-ggplot(data, aes(delta_t, w_star)) +
-  geom_point() +
-  geom_smooth(method = lm, se = TRUE)
-
-
-############################### play around
-#correlation
-
-fit_3 <- lm(w_star ~ delta_t + lat, data = postive_dt) 
-
-with(postive_dt,plot(delta_t, w_star, col= as.factor(species)))
-abline(fit_3)
-
-correlate(as.numeric(postive_dt$w_star), postive_dt$delta_t)
-
-gm1 <- gam(w_star ~ s(delta_t, k = 4), data = data)
-
-gm3 <- gamm(w_star ~ s(lat,lon, k = 100) +
-       s(delta_t) , method = "REML", data = data, 
-     weights = varPower(form = ~lat))
-
-
-gm2 <- gam(w_star ~ s(delta_t, k = 4),
-           weights = varPower(form = ~lat), data = data)
-
-par(mfrow=c(1,1), bty="n", #no box around the plot
-    cex.axis= 0.75, #x and y labels have 0.75% of the default size
-    font.axis= 3, #axis labels are in italics
-    cex.lab=1
-)
-
-
-plot(gm1, select = 1, xlab = expression(italic(paste(Delta,"T", "(°C)"))), ylab="w* (m/s)", ylim= c(0,5), shade=T, shade.col= "grey85",
-     scheme = 0, se = 12, bty="l",labels = FALSE, tck=0) #plot only the second smooth term
-
-with(data,points(delta_t, w_star, col= as.factor(species)))

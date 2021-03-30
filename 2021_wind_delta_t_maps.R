@@ -82,7 +82,7 @@ tags_dt <- c("< -5","-5 to -2","0 to 2","2 to 5", "> 5")
 
 Pal_p <- colorRampPalette(c("plum3",'slateblue4')) #colors for positive values
 Pal_n <- colorRampPalette(c('indianred1','tan1')) #colors for negative values
-Cols_w <- paste0(c(Pal_n(3),Pal_p(4)), "E6") #add transparency. 50% is "80". 70% is "B3". 80% is "CC". 90% is "E6"
+  Cols_w <- paste0(c(Pal_n(3),Pal_p(4)), "E6") #add transparency. 50% is "80". 70% is "B3". 80% is "CC". 90% is "E6"
 Cols_dt <- paste0(c(Pal_n(2),Pal_p(3)), "E6")
 
 

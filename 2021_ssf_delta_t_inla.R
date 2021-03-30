@@ -860,7 +860,7 @@ axis(side= 1, at= c(-5,0,5), labels= c("-5", "0", "5"),
      tick=T ,col = NA, col.ticks = 1, tck=-.015)
 
 axis(side= 2, at= c(1:6), #line=-4.8, 
-     labels= c(expression(paste(italic(paste(Delta,"T"))," : Wind speed")),
+     labels = c(expression(paste(italic(paste(Delta,"T"))," : Wind speed")),
                 "Wind support var","Wind support", expression(paste(italic(paste(Delta,"T"))," var")),
                 "Wind speed", expression(italic(paste(Delta,"T")))),
      tick=T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
