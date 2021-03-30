@@ -84,7 +84,7 @@ rsd <- function(x){
 
 # ---------- STEP 1: prepare the input data#####
 #open over water points prepared in 2021_all_data_prep_analyze.R
-load("2021/all_2009_2020_overwater_points_updated.RData") #all_oversea
+load("2021/all_2009_2020_overwater_probl_pts_removed.RData") #all_oversea
 #load("2021/ocean.RData") #ocean (prepared in 2021_all_data_prep_analyze.R)
 #load("2021/land_no_buffer.RData") #land_no_buffer
 
@@ -132,14 +132,14 @@ clusterEvalQ(mycl, {
 
 (b <- Sys.time())
 
-used_av_ls_90_15 <- parLapply(mycl, move_ls, function(group){ #each group
+used_av_ls_60_30 <- parLapply(mycl, move_ls, function(group){ #each group
   
   sp_obj_ls <- lapply(split(group), function(track){
   
     #--STEP 1: thin the data to 1-hourly intervals
     track_th <- track %>%
-      thinTrackTime(interval = as.difftime(90, units='mins'),
-                    tolerance = as.difftime(15, units='mins')) #the unselected bursts are the large gaps between the selected ones
+      thinTrackTime(interval = as.difftime(60, units='mins'),
+                    tolerance = as.difftime(30, units='mins')) #the unselected bursts are the large gaps between the selected ones
     #--STEP 2: assign burst IDs (each chunk of track with 1 hour intervals is one burst... longer gaps will divide the brusts) 
     track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
     track_th$burst_id <-c(1,rep(NA,nrow(track_th)-1)) #define value for first row
@@ -206,7 +206,7 @@ used_av_ls_90_15 <- parLapply(mycl, move_ls, function(group){ #each group
   fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
   
   #plot
-  pdf(paste0("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/ssf_plots/90_15/",group@idData$group[1], ".pdf"))
+  pdf(paste0("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/ssf_plots/60_30_new/",group@idData$group[1], ".pdf"))
   par(mfrow=c(1,2))
   hist(sl,freq=F,main="",xlab = "Step length (km)")
   plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
@@ -272,36 +272,25 @@ used_av_ls_90_15 <- parLapply(mycl, move_ls, function(group){ #each group
   used_av_track
 })
 
-Sys.time() - b #6.3 mins
+Sys.time() - b #5.22 mins
 
 stopCluster(mycl) 
   
   
-save(used_av_ls_90_15, file = "2021/ssf_input_all_90_15_150.RData")
-
-#remove alternative points over land, and randomly select 50 points from those that remain
-
-# points_water <- lapply(used_av_ls_1hr, function(x){
-#   
-#   pts <- x %>% 
-#     st_as_sf(coords = c("x","y"), crs = wgs) %>% 
-#     #st_intersection(ocean)
-#     st_difference(land_no_buffer)
-#   
-# })
+save(used_av_ls_60_30, file = "2021/ssf_input_all_60_30_150_updated.RData")
 
 
 # ---------- STEP 4: annotate#####
 
-load("2021/ssf_input_all_90_30_150.RData") #used_av_ls_90_30
+load("2021/ssf_input_all_60_30_150_updated.RData") #used_av_ls_60_30
 
 #create one dataframe with movebank specs
-used_av_df_90_30 <- lapply(c(1:length(used_av_ls_90_30)), function(i){
+used_av_df_60_30 <- lapply(c(1:length(used_av_ls_60_30)), function(i){
   
-  data <- used_av_ls_90_30[[i]] %>% 
+  data <- used_av_ls_60_30[[i]] %>% 
     dplyr::select( c("date_time", "x", "y", "selected", "species",  "burst_id", "step_length", "turning_angle", "track", "step_id", "used", "heading")) %>% #later, add a unique step id: paste track, burst_id and step_id. lol
     mutate(timestamp = paste(as.character(date_time),"000",sep = "."),
-           group = names(used_av_ls_90_30)[[i]]) %>% 
+           group = names(used_av_ls_60_30)[[i]]) %>% 
     rowwise() %>% 
     mutate(ind = strsplit(track, "_")[[1]][1],
            stratum = paste(track, burst_id, step_id, sep = "_")) %>% 
@@ -309,14 +298,14 @@ used_av_df_90_30 <- lapply(c(1:length(used_av_ls_90_30)), function(i){
 }) %>% 
   reduce(rbind)
 
-save(used_av_df_90_30, file = "2021/ssf_input_all_df_90_30_150.RData")
+save(used_av_df_60_30, file = "2021/ssf_input_all_df_60_30_150_updated.RData")
 
 
 # #have a look
 # X11();par(mfrow= c(2,1), mar = c(0,0,0,0), oma = c(0,0,0,0))
 # maps::map("world",fil = TRUE,col = "grey85", border=NA) 
-# points(used_av_df_60_15[used_av_df_60_15$used == 0,c("x","y")], pch = 16, cex = 0.2, col = "gray55")
-# points(used_av_df_60_15[used_av_df_60_15$used == 1,c("x","y")], pch = 16, cex = 0.2, col = "orange")
+# points(used_av_df_60_30[used_av_df_60_30$used == 0,c("x","y")], pch = 16, cex = 0.2, col = "gray55")
+# points(used_av_df_60_30[used_av_df_60_30$used == 1,c("x","y")], pch = 16, cex = 0.2, col = "orange")
 # 
 # maps::map("world",fil = TRUE,col = "grey85", border=NA) 
 # points(used_av_df_1hr2[used_av_df_1hr2$used == 0,c("x","y")], pch = 16, cex = 0.2, col = "gray55")
@@ -328,12 +317,12 @@ save(used_av_df_90_30, file = "2021/ssf_input_all_df_90_30_150.RData")
 # points(used_av_all_2hr[used_av_all_2hr$used == 1,c("x","y")], pch = 16, cex = 0.4, col = "orange")
 
 #rename columns
-colnames(used_av_df_90_30)[c(2,3)] <- c("location-long","location-lat")
+colnames(used_av_df_60_30)[c(2,3)] <- c("location-long","location-lat")
 
-write.csv(used_av_df_90_30, "2021/ssf_input_df_90_30_150.csv")
+write.csv(used_av_df_60_30, "2021/ssf_input_df_60_30_150_updated.csv")
 
 # summary stats
-used_av_df_90_30 %>% 
+used_av_df_60_30 %>% 
   #group_by(species) %>% 
   group_by(group) %>% 
   summarise(yrs_min = min(year(date_time)),
@@ -342,7 +331,7 @@ used_av_df_90_30 %>%
             n_tracks = n_distinct(track))
 
 #visual inspection
-data_sf <- used_av_df_90_30 %>% 
+data_sf <- used_av_df_60_30 %>% 
   filter(used == 1) %>% 
   st_as_sf(coords = c(2,3), crs = wgs)
 
@@ -350,7 +339,7 @@ mapview(data_sf, zcol = "species")
 
 # --- after movebank
 #open annotated data and add wind support and crosswind
-ann <- read.csv("2021/annotations/ssf_input_df_90_30_150.csv-5951845391466099179/ssf_input_df_90_30_150.csv-5951845391466099179.csv",
+ann <- read.csv("2021/annotations/ssf_input_df_60_30_150_updated.csv-1026815140198368052/ssf_input_df_60_30_150_updated.csv-1026815140198368052.csv",
                 stringsAsFactors = F) %>% 
   drop_na() 
           
@@ -400,11 +389,33 @@ ann_50 <- used_avail_50 %>%
   as.data.frame()
 
 
-save(ann_50, file = "2021/ssf_input_annotated_90_30_50.RData")
+save(ann_50, file = "2021/ssf_input_annotated_60_30_50_updated.RData")
+
+####
+#select 10 individuals for EF_S and O_A
+d <- ann_50 %>%
+  filter(group %in% c("EF_S", "O_A")) %>% 
+  group_by(group) %>% 
+  summarise(ind_id = unique(ind)) %>% 
+  sample_n(10, replace = F)
+
+IDs_to_keep <- ann_50 %>% 
+  filter(!(group %in% c("EF_S", "O_A"))) %>% 
+  group_by(group) %>% 
+  summarise(ind_id = unique(ind)) %>% 
+  full_join(d)
+
+ann_50_sample <- ann_50 %>% 
+  filter(ind %in% IDs_to_keep$ind_id)
+
+ann_50_sample %>% 
+  group_by(group) %>% 
+  summarise(n_str = n_distinct(stratum),
+            n_ind = n_distinct(ind))
 
 # long-term annotation data (40 year data)
 #prep a dataframe with 40 rows corresponding to 40 years (1981,2020), for each point. then i can calculate variance of delta t over 41 years for each point
-df_40 <- ann_50 %>% #make sure this is not grouped!
+df_40 <- ann_50_sample %>% #make sure this is not grouped!
   dplyr::select(-c(v925,u925,t2m,sst,delta_t)) %>% 
   slice(rep(row_number(),40)) %>% 
   group_by(row_id) %>% 
@@ -414,20 +425,20 @@ df_40 <- ann_50 %>% #make sure this is not grouped!
   as.data.frame()
 
 str_sub(df_40$timestamp,1,4) <- df_40$year #replace original year with years from 1979-2019
-colnames(df_40)[c(24,25)] <- c("location-long","location-lat") #rename columns to match movebank format
+colnames(df_40)[c(23,24)] <- c("location-long","location-lat") #rename columns to match movebank format
 
 #break up into two parts. over 1 million rows
 df_40_1 <- df_40 %>% 
   slice(1:999999)
-write.csv(df_40_1, "2021/ssf_40_all_spp_60_30_1.csv")
+write.csv(df_40_1, "2021/ssf_40_all_spp_60_30_1_updated.csv")
 
 df_40_2 <- df_40 %>% 
   slice(1000000:1999999)
-write.csv(df_40_2, "2021/ssf_40_all_spp_60_30_2.csv")
+write.csv(df_40_2, "2021/ssf_40_all_spp_60_30_2_updated.csv")
 
 df_40_3 <- df_40 %>% 
   slice(2000000 : 2999999)
-write.csv(df_40_3, "2021/ssf_40_all_spp_60_30_3.csv")
+write.csv(df_40_3, "2021/ssf_40_all_spp_60_30_3_updated.csv")
 
 df_40_4 <- df_40 %>% 
   slice(3000000 : 3999999)
