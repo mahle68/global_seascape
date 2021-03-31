@@ -574,7 +574,7 @@ load("2021/ssf_input_ann_cmpl_60_30_updated.RData") #ann_cmpl
 
 #correlation
 ann_cmpl %>% 
-  dplyr::select(c("delta_t", "wind_speed", "wind_support", "wind_support_var", "abs_cross_wind", "delta_t_var")) %>% 
+  dplyr::select(c("delta_t", "wind_speed", "wind_support", "wind_support_var", "abs_cross_wind", "delta_t_var","step_length")) %>% 
   correlate() %>% 
   stretch() %>% 
   filter(abs(r) > 0.6) #correlated: var_cw with location.lat and var_delta_t with location.lat. avg delta_t and delta_t. avg_ws and var_delta_t
@@ -659,7 +659,7 @@ formulaM1 <- used ~ -1 + delta_t_z * wind_support_z + wind_speed_z + wind_suppor
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
 
 (b <- Sys.time())
-M1 <- inla(formula = formulaM1a, family ="Poisson",  
+M1 <- inla(formula = formulaM1, family ="Poisson",  
            control.fixed = list(
              mean = mean.beta,
              prec = list(default = prec.beta)),
@@ -787,9 +787,10 @@ max<-max(graph$Upper,na.rm = T)
 
 graph$Factor_n <- as.numeric(graph$Factor)
 
-X11(width = 4.1, height = 3)
+X11(width = 4.1, height = 2.7)
 
-pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/coefficients_updated.pdf", width = 4.1, height = 3)
+pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/coefficients_updated.pdf", width = 4.1, height = 2.7)
+jpeg("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/coefficients_updated.jpeg", width = 4.1, height = 2.7, units = "in", res = 300)
 
 par(mfrow=c(1,1), bty="n", #no box around the plot
     #cex.axis= 0.75, #x and y labels have 0.75% of the default size
@@ -806,9 +807,9 @@ plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(-3,5.5), ylim = c(0.2,5.3)
 #add vertical line for zero
 abline(v = 0, col = "grey30",lty = 2)
 #add points and error bars
-points(graph[graph$Model == 1, "Estimate"], graph[graph$Model == 1,"Factor_n"] - 0.2, col = "steelblue1", pch = 20, cex = 1.3)
-arrows(graph[graph$Model == 1, "Lower"], graph[graph$Model == 1,"Factor_n"] - 0.2,
-       graph[graph$Model == 1, "Upper"], graph[graph$Model == 1,"Factor_n"] - 0.2,
+points(graph[graph$Model == 1, "Estimate"], graph[graph$Model == 1,"Factor_n"] - 0.25, col = "steelblue1", pch = 20, cex = 1.3)
+arrows(graph[graph$Model == 1, "Lower"], graph[graph$Model == 1,"Factor_n"] - 0.25,
+       graph[graph$Model == 1, "Upper"], graph[graph$Model == 1,"Factor_n"] - 0.25,
        col = "steelblue1", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
 
 points(graph[graph$Model == 2, c("Estimate","Factor")], col = "royalblue1", pch = 20, cex = 1.3)
@@ -816,9 +817,9 @@ arrows(graph[graph$Model == 2, "Lower"], graph[graph$Model == 2,"Factor_n"],
        graph[graph$Model == 2, "Upper"], graph[graph$Model == 2,"Factor_n"],
        col = "royalblue1", code = 3, length = 0.03, angle = 90)
 
-points(graph[graph$Model == 3, "Estimate"], graph[graph$Model == 3,"Factor_n"] + 0.2, col = "mediumblue", pch =20, cex = 1.3)
-arrows(graph[graph$Model == 3, "Lower"], graph[graph$Model == 3,"Factor_n"] + 0.2,
-       graph[graph$Model == 3, "Upper"], graph[graph$Model == 3,"Factor_n"] + 0.2,
+points(graph[graph$Model == 3, "Estimate"], graph[graph$Model == 3,"Factor_n"] + 0.25, col = "mediumblue", pch =20, cex = 1.3)
+arrows(graph[graph$Model == 3, "Lower"], graph[graph$Model == 3,"Factor_n"] + 0.25,
+       graph[graph$Model == 3, "Upper"], graph[graph$Model == 3,"Factor_n"] + 0.25,
        col = "mediumblue", code = 3, length = 0.03, angle = 90)
 #add axes
 axis(side= 1, at= c(-2,0,2,4), labels= c("-2", "0", "2", "4"), 
@@ -847,24 +848,16 @@ tab_dt <- data.frame(ID = as.factor(M3$summary.random$species1$ID),
                      IClower = M3$summary.random$species1[, 4],
                      ICupper = M3$summary.random$species1[, 6])
 
-tab_wspd <- data.frame(ID = as.factor(M3$summary.random$species2$ID),
+
+tab_wspt <- data.frame(ID = as.factor(M3$summary.random$species2$ID),
                        mean = M3$summary.random$species2$mean,
                        IClower = M3$summary.random$species2[, 4],
                        ICupper = M3$summary.random$species2[, 6])
 
-tab_wspt <- data.frame(ID = as.factor(M3$summary.random$species3$ID),
-                       mean = M3$summary.random$species3$mean,
-                       IClower = M3$summary.random$species3[, 4],
-                       ICupper = M3$summary.random$species3[, 6])
-
-tab_vdt <- data.frame(ID = as.factor(M3$summary.random$species4$ID),
-                       mean = M3$summary.random$species4$mean,
-                       IClower = M3$summary.random$species4[, 4],
-                       ICupper = M3$summary.random$species4[, 6])
 
 X11(width = 4, height = 3)
 
-pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/species_var.pdf", width = 4, height = 3)
+pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/species_var_updated.pdf", width = 4, height = 3)
 
 par(mfrow = c(1,1), bty="n", #no box around the plot
     #cex.axis= 0.75, #x and y labels have 0.75% of the default size
@@ -877,29 +870,19 @@ par(mfrow = c(1,1), bty="n", #no box around the plot
 )
 
 
-plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(-10,7), ylim = c(0,4.5), xlab = "", ylab = "")
+plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(-3,6), ylim = c(0,4.5), xlab = "", ylab = "")
 #add vertical line for zero
 abline(v = 0, col = "grey30",lty = 2)
 
-points(tab_dt$mean, as.numeric(tab_dt$ID) - 0.2, col = "burlywood3", pch = 19, cex = 1.3)
+points(tab_dt$mean, as.numeric(tab_dt$ID) - 0.2, col = "darkgoldenrod2", pch = 19, cex = 1.3)
 arrows(tab_dt$IClower, as.numeric(tab_dt$ID) - 0.2,
        tab_dt$ICupper, as.numeric(tab_dt$ID) - 0.2,
-       col = "burlywood3", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+       col = "darkgoldenrod2", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
 
-points(tab_wspd$mean, as.numeric(tab_wspd$ID), col = "darkseagreen", pch = 19, cex = 1.3)
-arrows(tab_wspd$IClower, as.numeric(tab_wspd$ID),
-       tab_wspd$ICupper, as.numeric(tab_wspd$ID),
-       col = "darkseagreen", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
-
-points(tab_wspt$mean, as.numeric(tab_wspt$ID) + 0.2, col = "lightpink2", pch = 19, cex = 1.3)
+points(tab_wspt$mean, as.numeric(tab_wspt$ID) + 0.2, col = "cornflowerblue", pch = 19, cex = 1.3)
 arrows(tab_wspt$IClower, as.numeric(tab_wspt$ID) + 0.2,
        tab_wspt$ICupper, as.numeric(tab_wspt$ID) + 0.2,
-       col = "lightpink2", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
-
-points(tab_vdt$mean, as.numeric(tab_vdt$ID) + 0.4, col = "ivory4", pch = 19, cex = 1.3)
-arrows(tab_vdt$IClower, as.numeric(tab_vdt$ID) + 0.4,
-       tab_vdt$ICupper, as.numeric(tab_vdt$ID) + 0.4,
-       col = "ivory4", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+       col = "cornflowerblue", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
 
 axis(side= 1, at= c(-4,-2,0,2,4), labels= c("-4","-2", "0", "2","4"), 
      tick=T ,col = NA, col.ticks = 1, tck=-.015)
@@ -911,9 +894,9 @@ axis(side= 2, at= c(1:4), #line = 6,
      las = 2) # text perpendicular to axis label 
 
 #add legend
-legend(x = -9.8 , y = 0.9, legend=c(expression(paste(italic(paste(Delta,"T"))," var")),"wind support", "wind speed", expression(italic(paste(Delta,"T")))), 
-       col = c("ivory4","lightpink2","darkseagreen","burlywood3"), #coords indicate top-left
-       pch = 19, bg="white",bty="n", cex = 0.8)
+legend(x = 3.6 , y = 0.7, legend = c("Wind support", expression(italic(paste(Delta,"T")))), 
+       col = c("cornflowerblue","darkgoldenrod1"), #coords indicate top-left
+       pch = 19, bg="white",bty="n", cex = 0.9)
 
 dev.off()
 
@@ -922,9 +905,11 @@ dev.off()
 
 X11(width = 9, height = 7)
 
-pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/boxplots.pdf", width = 9, height = 7)
+pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/boxplots_updated.pdf", width = 9, height = 7)
 
-par(mfrow= c(2,3), oma = c(0,0,3,0))
+par(mfrow= c(2,3), 
+    oma = c(0,0,3,0), 
+    las = 1)
 
 labels <- c(expression(italic(paste(Delta,"T"))), "Wind support", "Wind speed")
 variables <- c("delta_t", "wind_support", "wind_speed")
@@ -937,10 +922,10 @@ for(i in 1:length(variables)){
     legend("topleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
   }
   boxplot(ann_cmpl[ann_cmpl$used == 1, variables[i]] ~ ann_cmpl[ann_cmpl$used == 1,"species"], 
-          xaxt = "n", add = T, boxfill = "orange",
+          yaxt = "n", xaxt = "n", add = T, boxfill = "orange",
           boxwex = 0.25, at = 1:length(unique(ann_cmpl[ann_cmpl$used == 1, "species"])) - 0.15)
   boxplot(ann_cmpl[ann_cmpl$used == 0, variables[i]] ~ ann_cmpl[ann_cmpl$used == 0, "species"], 
-          xaxt = "n", add = T, boxfill = "grey",
+          yaxt = "n", xaxt = "n", add = T, boxfill = "grey",
           boxwex = 0.25, at = 1:length(unique(ann_cmpl[ann_cmpl$used == 1 , "species"])) + 0.15)
   
 }
@@ -953,10 +938,10 @@ for(i in 1:length(v_variables)){
     legend("topleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
   }
   boxplot(ann_cmpl[ann_cmpl$used == 1,v_variables[i]] ~ ann_cmpl[ann_cmpl$used == 1,"species"], 
-          xaxt = "n", add = T, boxfill = "orange",
+          yaxt = "n",xaxt = "n", add = T, boxfill = "orange",
           boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) - 0.15)
   boxplot(ann_cmpl[ann_cmpl$used == 0,v_variables[i]] ~ ann_cmpl[ann_cmpl$used == 0,"species"], 
-          xaxt = "n", add = T, boxfill = "grey",
+          yaxt = "n",xaxt = "n", add = T, boxfill = "grey",
           boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) + 0.15)
 } 
 

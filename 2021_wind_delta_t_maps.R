@@ -18,7 +18,7 @@ wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
 #open sea-crossing points, prepared in 2021_all_data_preo_analyze.R
-load("R_files/2021/all_2009_2020_overwater_points_updated.RData") #all_oversea
+load("R_files/2021/all_2009_2020_overwater_probl_pts_removed.RData") #all_oversea
 
 region <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") %>% 
   st_crop(xmin = -99, xmax = 144, ymin = -30, ymax = 71) %>%
@@ -33,7 +33,7 @@ mv <- all_oversea %>%
      
 colnames(mv)[c(12,13)] <- c("location-long","location-lat")
        
-write.csv(mv, "R_files/2021/raw_points_for_maps.csv")
+write.csv(mv, "R_files/2021/raw_points_for_maps_updated.csv")
        
 
 #annotated data
