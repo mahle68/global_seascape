@@ -11,8 +11,8 @@ library(sf)
 library(move)
 library(scales)
 
-setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
-source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
+setwd("/home/mahle68/ownCloud/Work/Projects/delta_t")
+source("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 
 wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
@@ -20,7 +20,7 @@ meters_proj <- CRS("+proj=moll +ellps=WGS84")
 #open sea-crossing points, prepared in 2021_all_data_preo_analyze.R
 load("R_files/2021/all_2009_2020_overwater_probl_pts_removed.RData") #all_oversea
 
-region <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") %>% 
+region <- st_read("/home/mahle68/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") %>% 
   st_crop(xmin = -99, xmax = 144, ymin = -30, ymax = 71) %>%
   st_union()
 
@@ -37,7 +37,7 @@ write.csv(mv, "R_files/2021/raw_points_for_maps_updated.csv")
        
 
 #annotated data
-ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/annotations/raw_points_for_maps/era5/raw_points_for_maps.csv-8853543643507767873.csv") %>% 
+ann <- read.csv("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files/2021/annotations/raw_points_for_maps/era5/raw_points_for_maps.csv-8853543643507767873.csv") %>% 
   mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
   rename(sst = ECMWF.ERA5.SL.Sea.Surface.Temperature,
          t2m = ECMWF.ERA5.SL.Temperature..2.m.above.Ground.,
@@ -71,6 +71,10 @@ mv$heading <- unlist(lapply(angle(mv), c, NA))
 save(mv, file = "R_files/2021/raw_sea_points_for_maps_mv.RData")
 
 
+#plot
+
+load("R_files/2021/raw_sea_points_for_maps_mv.RData") #mv
+
 #add a categorical variable for wind levels
 breaks_w <- c(-20,-10,-5,0,5,10,15,35)
 tags_w <- c("< -10","-10 to -5","-5 to 0","0 to 5","5 to 10","10 to 15", "> 15")
@@ -80,9 +84,10 @@ tags_dt <- c("< -5","-5 to -2","0 to 2","2 to 5", "> 5")
 
 #create color palettes and select colors for positive and negative values. same colors for delta t and wind?
 
-Pal_p <- colorRampPalette(c("plum3",'slateblue4')) #colors for positive values
-Pal_n <- colorRampPalette(c('indianred1','tan1')) #colors for negative values
-  Cols_w <- paste0(c(Pal_n(3),Pal_p(4)), "E6") #add transparency. 50% is "80". 70% is "B3". 80% is "CC". 90% is "E6"
+#Pal_p <- colorRampPalette(c("plum3",'slateblue4')) #colors for positive values
+Pal_n <- colorRampPalette(c('indianred1','darkgoldenrod2')) #colors for negative values
+Pal_p <- colorRampPalette(c('cornflowerblue',"mediumblue")) #colors for positive values
+Cols_w <- paste0(c(Pal_n(3),Pal_p(4)), "E6") #add transparency. 50% is "80". 70% is "B3". 80% is "CC". 90% is "E6"
 Cols_dt <- paste0(c(Pal_n(2),Pal_p(3)), "E6")
 
 
@@ -105,7 +110,7 @@ df_sp <- SpatialPointsDataFrame(coords = df[,c("location.long", "location.lat")]
 #plot
 X11(width = 12, height = 11.5) #make the window proportional to region
 
-pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/raw_wind_dt.pdf", width = 12, height = 11.5)
+pdf("/home/mahle68/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/raw_wind_dt.pdf", width = 12, height = 11.5)
 
 par(mfrow=c(2,1),
     #fig = c(0,1,0,1), #do this if you want to add the small plots as subplots

@@ -447,9 +447,11 @@ cuts <- seq(-1,5,0.01) #set breaks
 pal <- colorRampPalette(c("dodgerblue","darkturquoise", "goldenrod1","coral","firebrick1","firebrick4"))
 colpal <- pal(570)
   
-#pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/global_plot.pdf", width = 11, height = 6)
+#pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/global_plot.pdf", width = 11, height = 6) #for paper
+#pdf("/home/enourani/ownCloud/Work/conferences/MPI_YALE_2021/delta_t_global_plot.pdf", width = 22, height = 12) #larger image for presentation
 
 X11(width = 11, height = 6) #make the window proportional to region
+X11(width = 22, height = 12) #make the window proportional to region
 
 par(mfrow=c(1,1),
     fig = c(0,1,0,1), #do this if you want to add the small plots as subplots
@@ -546,10 +548,18 @@ plot(imaginary_r, legend.only = TRUE, breaks = cuts, col = colpal,
      legend.args = list(text = expression(italic(paste(Delta,"T", "(°C)"))), side = 3, font = 2, line = 0.1, cex = 0.7)
      )
 
-text(x = -118,y = 10, "Map legend", cex = 0.8)
+#for the paper:
+#text(x = -118,y = 10, "Map legend", cex = 0.8)
+#legend(-130,8, legend = c("Oriental honey buzzard", "Grey-faced buzzard", "Amur falcon", 
+#                                  "Eleonora's falcon", "Peregrine falcon", "Osprey"),
+#       lty = c(4,1,6,2,3,5), cex = 0.55, bty = "n", seg.len = 3)
+
+#for the slide
+text(x = -118,y = 10, "Map legend", cex = 1.3)
 legend(-130,8, legend = c("Oriental honey buzzard", "Grey-faced buzzard", "Amur falcon", 
-                                  "Eleonora's falcon", "Peregrine falcon", "Osprey"),
-       lty = c(4,1,6,2,3,5), cex = 0.55, bty = "n", seg.len = 3)
+                          "Eleonora's falcon", "Peregrine falcon", "Osprey"),
+       lty = c(4,1,6,2,3,5), cex = 1.2, bty = "n", seg.len = 3)
+
 
 legend(-45,-67, legend = c("sea-crossing period","High sun elevation", "Low sun elevation", "Night"),
        lty = c(1,1,2,3), lwd = c(9,1,1,1), col = c("#99CC0060", rep("black",3)),cex = 0.55, bty = "n", seg.len = 3, horiz = T)

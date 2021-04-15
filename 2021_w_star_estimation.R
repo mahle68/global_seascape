@@ -78,6 +78,8 @@ w_star <- function(g = 9.81, blh, T2m, s_flux, m_flux) {
 
 
 load("R_files/2021/df_for_w_star_updated.RData")
+load("R_files/2021/df_for_w_star.RData") #this one is reported in the paper. 
+
 
 pos_dt <- ann %>% 
   filter(delta_t >= 0)
@@ -106,7 +108,7 @@ abline(fit_2)
 #color
 #color palette
 Pal <- colorRampPalette(c("darkgoldenrod1","lightpink1", "mediumblue")) #colors for negative values
-Cols <- paste0(Pal(3), "B3") #add transparency. 50% is "80". 70% is "B3". 80% is "CC". 90% is "E6"
+Cols <- paste0(Pal(3), "E6") #add transparency. 50% is "80". 70% is "B3". 80% is "CC". 90% is "E6"
 
 #convert complex numbers to numerics
 data <- pos_dt
@@ -119,6 +121,10 @@ fit_2 <- lm(w_star ~ delta_t, data = data)
 
 summary(fit_2)
 
+#correlation ######
+data %>% 
+  dplyr::select(c("delta_t", "w_star")) %>% 
+  correlate() 
 
 
 #plot in base r #############
@@ -158,6 +164,58 @@ legend(x = 5.3, y = 1.5, legend = c("daytime: high sun", "daytime: low sun", "ni
        cex = 0.7, pt.cex = 0.9, bg = "white", bty = "n", pch = 20)
 
 text(6.2,1.51, "Time of day", cex = 0.7)
+
+dev.off()
+
+
+
+#plot with different shapes for species #############
+
+#new data for predictions
+newx <- seq(min(data$delta_t), 9, by = 0.05)
+conf_interval <- predict(fit_2, newdata = data.frame(delta_t = newx), interval = "confidence",
+                         level = 0.95)
+
+data$shape <- as.factor(data$species)
+levels(data$shape) <- c(0,1,2,3,4,5)
+
+X11(width = 5.2, height = 3)
+pdf("/home/mahle68/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/w_star_spp.pdf", width = 5.2, height = 3)
+
+par(mfrow=c(1,1), 
+    bty = "l",
+    cex.axis = 0.7,
+    font.lab = 3,
+    cex.lab = 0.9,
+    mgp=c(2,0.5,0), #margin line for the axis titles
+    mar = c(3.5,3.5,0.5,6.35),
+    #oma = c(0,0,0,4),
+    xpd=  TRUE) # allows drawing legend in outer margins
+
+plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(0,8.3), ylim = c(0.5,5), xlab = expression(italic(paste(Delta,"T", "(°C)"))), ylab = "w* (m/s)")
+
+with(pos_dt,points(delta_t, w_star, col= as.character(data$color), pch = as.numeric(data$shape), cex = 0.5))
+clip(0, max(data$delta_t), 0, 8.3)
+lines(newx, conf_interval[,2], col = alpha(rgb(0,0,0), 0.15), lwd = 5.5)
+lines(newx, conf_interval[,3], col = alpha(rgb(0,0,0), 0.15), lty = 1, lwd = 5.5)
+abline(fit_2, col = "black")
+
+axis(side = 1, at = c(0,2,4,6,8), labels = c(0,2,4,6,8), 
+     tick = T , col.ticks = 1, col = NA, tck = -.015,lwd = 0, lwd.ticks = 1)
+axis(side= 2, at= seq(1,5,1), labels= seq(1,5,1),
+     tick=T , col.ticks = 1, col = NA, tck=-.015,
+     las=2) # text perpendicular to axis label 
+
+text(9.8,4.6, "Time of day", cex = 0.7)
+legend(x = 8.7, y = 4.5, legend = c("daytime: high sun", "daytime: low sun", "night"), col = Cols, #coords indicate top-left
+       cex = 0.7, pt.cex = 0.9, bg = "white", bty = "n", pch = 20)
+
+
+text(9.5,3, "Species", cex = 0.7)
+legend(x = 8.7, y = 2.9, legend = c("Pernis ptilorhynchus", "Pandion haliaetus","Butastur indicus", "Falco peregrinus", "F. eleonorae"), #species : unique(data$species), #coords indicate top-left
+       cex = 0.7, pt.cex = 0.5, bg = "white", bty = "n", pch = as.numeric(unique(data$shape)),
+       text.font = 3)
+
 
 dev.off()
 

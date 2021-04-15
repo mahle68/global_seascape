@@ -1,7 +1,7 @@
 #script to estimate the step selection function for water-crossing raptors.
 #mostly copied from ssf_delta_t_inla2.R. For previous steps, see 2021_all_data_prep_analyze.R
 #Feb 22. 2021. Radolfzell, Germany. Elham Nourani, PhD.
-#decided to use only two alternative models. Model 3's mlik is not too different from model 2.... but accessible in the older versions on github
+#data prepped in 2021_ssf_delta_t_inla.R
 
 library(tidyverse)
 library(move)
@@ -82,346 +82,46 @@ rsd <- function(x){
   return(rsd)
 }
 
-# ---------- STEP 1: prepare the input data#####
-#open over water points prepared in 2021_all_data_prep_analyze.R
-load("2021/all_2009_2020_overwater_probl_pts_removed.RData") #all_oversea
-#load("2021/ocean.RData") #ocean (prepared in 2021_all_data_prep_analyze.R)
-#load("2021/land_no_buffer.RData") #land_no_buffer
+CubeRoot<-function(x){
+  sign(x)*abs(x)^(1/3)
+}
 
-# ---------- STEP 2: create move object#####
-
-#remove duplicated points
-oversea_df <- all_oversea %>%
-  mutate(group = ifelse(species == "OHB", "OHB",
-                        ifelse(species == "O" & st_coordinates(.)[,1] < -30, "O_A",
-                               ifelse(species == "O" & st_coordinates(.)[,1] > -30, "O_E",
-                                      ifelse(species == "EF" & st_coordinates(.)[,2] > 0, "EF_G",
-                                             ifelse(species == "EF" & st_coordinates(.)[,2] < 0, "EF_S",
-                                                     ifelse(species == "PF" & st_coordinates(.)[,1] < -30, "PF_A",
-                                                            "PF_E")))))))  %>% 
-  arrange(track,date_time) %>% 
-  as("Spatial") %>% 
-  as.data.frame() %>% 
-  rename(x = coords.x1,
-         y = coords.x2)
+w_star <- function(g = 9.81, blh, T2m, s_flux, m_flux) {
   
-rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(oversea_df$track),timestamps = oversea_df$date_time),"[",-1)) #get all but the first row of each set of duplicate rows
-oversea_df <- oversea_df[-rows_to_delete,]
-
-#create a mov object. one per group. this will lead to more accurrate estimation of step lengths and turning angles
-move_ls <- lapply(split(oversea_df,oversea_df$group),function(x){
-  x <- as.data.frame(x)
-  mv <- move(x = x$x, y = x$y, time = x$date_time, data = x, animal = x$track, proj = wgs)
-  mv
-})
-
-# ---------- STEP 3: generate alternative steps#####
-
-mycl <- makeCluster(7) 
-clusterExport(mycl, c("move_ls", "wgs", "meters_proj", "NCEP.loxodrome.na")) #define the variable that will be used within the function
-
-clusterEvalQ(mycl, {
-  library(sf)
-  library(sp)
-  library(tidyverse)
-  library(move)
-  library(CircStats)
-  library(circular)
-  library(fitdistrplus)
-})
-
-(b <- Sys.time())
-
-used_av_ls_60_30 <- parLapply(mycl, move_ls, function(group){ #each group
+  z <- blh
+  T_k_2m <- T2m
+  T_c_2m <- T_k_2m - 273.15
+  Thetav_k_z <- (T_k_2m) + 0.006 * z
+  wT <- (s_flux * -1) / 1013 / 1.2 #reverse the sign. ECMWF upward fluxes are negative
+  wq <- (m_flux * -1) *1000 /1.2 #reverse the sign. ECMWF upward fluxes are negative
   
-  sp_obj_ls <- lapply(split(group), function(track){
+  wthetav <- wT + 0.61 * T_c_2m * wq
   
-    #--STEP 1: thin the data to 1-hourly intervals
-    track_th <- track %>%
-      thinTrackTime(interval = as.difftime(60, units='mins'),
-                    tolerance = as.difftime(30, units='mins')) #the unselected bursts are the large gaps between the selected ones
-    #--STEP 2: assign burst IDs (each chunk of track with 1 hour intervals is one burst... longer gaps will divide the brusts) 
-    track_th$selected <- c(as.character(track_th@burstId),NA) #assign selected as a variable
-    track_th$burst_id <-c(1,rep(NA,nrow(track_th)-1)) #define value for first row
-    
-    if(nrow(track_th@data) == 1){
-      track_th@data$burst_id <- track_th$burst_id
-    } else {for(i in 2:nrow(track_th@data)){
-      
-      if(i== nrow(track_th@data)){
-        track_th@data$burst_id[i] <- NA
-      } else
-        if(track_th@data[i-1,"selected"] == "selected"){
-          track_th@data$burst_id[i] <- track_th@data[i-1,"burst_id"]
-        } else {
-          track_th@data$burst_id[i] <- track_th@data[i-1,"burst_id"] + 1
-        }
-    }
-    }
-    #convert back to a move object (from move burst)
-    track_th <- as(track_th,"Move")
-    
-    #--STEP 3: calculate step lengths and turning angles 
-    #sl_ and ta_ calculations should be done for each burst. converting to a move burst doesnt make this automatic. so just split manually
-    burst_ls <- split(track_th, track_th$burst_id)
-    burst_ls <- Filter(function(x) length(x) >= 3, burst_ls) #remove bursts with less than 3 observations
-    
-    burst_ls <- lapply(burst_ls, function(burst){
-      burst$step_length <- c(distance(burst),NA) 
-      burst$turning_angle <- c(NA,turnAngleGc(burst),NA)
-      burst
-    })
-    
-    #put burst_ls into one dataframe
-    bursted_sp <- do.call(rbind, burst_ls)
-    
-    #reassign values
-    
-    if(length(bursted_sp) >= 1){
-      bursted_sp$track<-track@idData$track
-      bursted_sp$species<-track@idData$species
-    }
-    
-    #bursted_sp$track<-track@idData$seg_id 
-    
-    bursted_sp
-    
-  }) %>% 
-    Filter(function(x) length(x) > 1, .) #remove segments with no observation
+  #w_star <- as.complex(g*z*(wthetav/Thetav_k_z)) ^ (1/3)
+  w_star <- CubeRoot(g*z*(wthetav/Thetav_k_z))
   
-  #--STEP 4: estimate step length and turning angle distributions
-  #put everything in one df
-  bursted_df <- sp_obj_ls %>%  
-    reduce(rbind) %>% 
-    as.data.frame() %>% 
-    dplyr::select(-c("coords.x1","coords.x2"))
+  return(w_star)
   
-  #estimate von Mises parameters for turning angles
-  #calculate the averages (mu).steps: 1) convert to radians. step 2) calc mean of the cosines and sines. step 3) take the arctan.OR use circular::mean.circular
-  mu <- mean.circular(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]))
-  kappa <- est.kappa(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]))
-  
-  #estimate gamma distribution for step lengths and CONVERT TO KM!!! :p
-  sl <- bursted_df$step_length[complete.cases(bursted_df$step_length) & bursted_df$step_length > 0]/1000 #remove 0s and NAs
-  fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
-  
-  #plot
-  pdf(paste0("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/ssf_plots/60_30_new/",group@idData$group[1], ".pdf"))
-  par(mfrow=c(1,2))
-  hist(sl,freq=F,main="",xlab = "Step length (km)")
-  plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
-                          rate = fit.gamma1$estimate[[2]]), add = TRUE, from = 0.1, to = 150, col = "blue")
-  
-  hist(rad(bursted_df$turning_angle[complete.cases(bursted_df$turning_angle)]),freq=F,main="",xlab="Turning angles (radians)")
-  plot(function(x) dvonmises(x, mu = mu, kappa = kappa), add = TRUE, from = -3.5, to = 3.5, col = "red")
-  dev.off()
-  
-  #--STEP 5: produce alternative steps
-  used_av_track <- lapply(sp_obj_ls, function(track){ #for each trackment
-    
-    lapply(split(track,track$burst_id),function(burst){ #for each burst,
-      
-      #assign unique step id
-      burst$step_id <- 1:nrow(burst)
-      
-      lapply(c(2:(length(burst)-1)), function(this_point){ #first point has no bearing to calc turning angle, last point has no used endpoint.
-        
-        current_point<- burst[this_point,]
-        previous_point <- burst[this_point-1,] #this is the previous point, for calculating turning angle.
-        used_point <- burst[this_point+1,] #this is the next point. the observed end-point of the step starting from the current_point
-        
-        #randomly generate 50 step lengths and turning angles
-        rta <- as.vector(rvonmises(n = 150, mu = mu, kappa = kappa)) #generate random turning angles with von mises distribution (in radians)
-        rsl <- rgamma(n = 150, shape=fit.gamma1$estimate[[1]], rate = fit.gamma1$estimate[[2]]) * 1000  #generate random step lengths from the gamma distribution. make sure unit is meters
-        
-        #calculate bearing of previous point
-        #prev_bearing<-bearing(previous_point,current_point) #am I allowing negatives?... no, right? then use NCEP.loxodrome
-        prev_bearing <- NCEP.loxodrome.na(previous_point@coords[,2], current_point@coords[,2],
-                                          previous_point@coords[,1], current_point@coords[,1])
-        
-        #find the gepgraphic location of each alternative point; calculate bearing to the next point: add ta to the bearing of the previous point
-        current_point_m <- spTransform(current_point, meters_proj) #convert to meters proj
-        rnd <- data.frame(lon = current_point_m@coords[,1] + rsl*cos(rta),lat = current_point_m@coords[,2] + rsl*sin(rta)) #for this to work, lat and lon should be in meters as well. boo. coordinates in meters?
-        
-        #covnert back to lat-lon proj
-        rnd_sp <- rnd
-        coordinates(rnd_sp) <- ~lon+lat
-        proj4string(rnd_sp) <- meters_proj
-        rnd_sp <- spTransform(rnd_sp, wgs)
-        
-        #put used and available points together
-        df <- used_point@data %>%  
-          slice(rep(row_number(),151)) %>% #paste each row 150 times for the used and alternative steps
-          mutate(x = c(head(x,1),rnd_sp@coords[,1]),
-                 y = c(head(y,1),rnd_sp@coords[,2]),
-                 used = c(1,rep(0,150)))  %>%
-          rowwise() %>% 
-          mutate(heading = NCEP.loxodrome.na(lat1 = current_point$y, lat2 = y, lon1 = current_point$x, lon2 = x)) %>% 
-          as.data.frame()
-        
-        df
-        
-      }) %>% 
-        reduce(rbind)
-      
-    }) %>% 
-      reduce(rbind)
-    
-  }) %>% 
-    reduce(rbind)
-  used_av_track
-})
-
-Sys.time() - b #5.22 mins
-
-stopCluster(mycl) 
-  
-  
-save(used_av_ls_60_30, file = "2021/ssf_input_all_60_30_150_updated.RData")
+}
 
 
-# ---------- STEP 4: annotate#####
+# --- 50 alt. data
+load("2021/ssf_input_annotated_60_30_50_updated_sample.RData") #ann_50_sample
 
-load("2021/ssf_input_all_60_30_150_updated.RData") #used_av_ls_60_30
-
-#create one dataframe with movebank specs
-used_av_df_60_30 <- lapply(c(1:length(used_av_ls_60_30)), function(i){
-  
-  data <- used_av_ls_60_30[[i]] %>% 
-    dplyr::select( c("date_time", "x", "y", "selected", "species",  "burst_id", "step_length", "turning_angle", "track", "step_id", "used", "heading")) %>% #later, add a unique step id: paste track, burst_id and step_id. lol
-    mutate(timestamp = paste(as.character(date_time),"000",sep = "."),
-           group = names(used_av_ls_60_30)[[i]]) %>% 
-    rowwise() %>% 
-    mutate(ind = strsplit(track, "_")[[1]][1],
-           stratum = paste(track, burst_id, step_id, sep = "_")) %>% 
-    as.data.frame()
-}) %>% 
-  reduce(rbind)
-
-save(used_av_df_60_30, file = "2021/ssf_input_all_df_60_30_150_updated.RData")
+colnames(ann_50_sample)[c(28,29)] <- c("location-long","location-lat")
+ann_50_sample$timestamp <- paste(as.character(ann_50_sample$date_time),"000",sep = ".")
 
 
-# #have a look
-# X11();par(mfrow= c(2,1), mar = c(0,0,0,0), oma = c(0,0,0,0))
-# maps::map("world",fil = TRUE,col = "grey85", border=NA) 
-# points(used_av_df_60_30[used_av_df_60_30$used == 0,c("x","y")], pch = 16, cex = 0.2, col = "gray55")
-# points(used_av_df_60_30[used_av_df_60_30$used == 1,c("x","y")], pch = 16, cex = 0.2, col = "orange")
-# 
-# maps::map("world",fil = TRUE,col = "grey85", border=NA) 
-# points(used_av_df_1hr2[used_av_df_1hr2$used == 0,c("x","y")], pch = 16, cex = 0.2, col = "gray55")
-# points(used_av_df_1hr2[used_av_df_1hr2$used == 1,c("x","y")], pch = 16, cex = 0.2, col = "orange")
-# 
-# 
-# maps::map("world",fil = TRUE,col = "grey85", border=NA) 
-# points(used_av_all_2hr[used_av_all_2hr$used == 0,c("x","y")], pch = 16, cex = 0.4, col = "gray55")
-# points(used_av_all_2hr[used_av_all_2hr$used == 1,c("x","y")], pch = 16, cex = 0.4, col = "orange")
+write.csv(ann_50_sample, file = "2021/annotate_for_wstar.csv")
 
-#rename columns
-colnames(used_av_df_60_30)[c(2,3)] <- c("location-long","location-lat")
 
-write.csv(used_av_df_60_30, "2021/ssf_input_df_60_30_150_updated.csv")
-
-# summary stats
-used_av_df_60_30 %>% 
-  #group_by(species) %>% 
-  group_by(group) %>% 
-  summarise(yrs_min = min(year(date_time)),
-            yrs_max = max(year(date_time)),
-            n_ind = n_distinct(ind),
-            n_tracks = n_distinct(track))
-
-#visual inspection
-data_sf <- used_av_df_60_30 %>% 
-  filter(used == 1) %>% 
-  st_as_sf(coords = c(2,3), crs = wgs)
-
-mapview(data_sf, zcol = "species")
-
-# --- after movebank
-#open annotated data and add wind support and crosswind
-ann <- read.csv("2021/annotations/ssf_input_df_60_30_150_updated.csv-1026815140198368052/ssf_input_df_60_30_150_updated.csv-1026815140198368052.csv",
+#open annotated data
+ann <- read.csv("2021/annotations/ssf_with_wstar/annotate_for_wstar.csv-6423878732846278525/annotate_for_wstar.csv-6423878732846278525.csv",
                 stringsAsFactors = F) %>% 
-  drop_na() 
-          
-#extract startum IDs for those that have less than 50 alternative points over the sea
-less_than_50 <- ann %>% 
-  filter(used == 0) %>% 
-  group_by(stratum) %>% 
-  summarise(n = n()) %>% 
-  filter(n < 50) #all are EF from Spain. It doesnt hurt to have less of that 
-
-# retain 50 alternative steps per stratum
-used <- ann %>% 
-  filter(!(stratum %in% less_than_50$stratum)) %>% 
-  filter(used == 1)
-
-used_avail_50 <- ann %>% 
-  filter(!(stratum %in% less_than_50$stratum)) %>% 
-  filter(used == 0) %>% 
-  group_by(stratum) %>% 
-  sample_n(50, replace = F) %>% 
-  ungroup() %>% 
-  full_join(used) #append the used levels
-
-#make sure all strata have 51 points
-no_used <- used_avail_50 %>% 
-  summarise(n = n()) %>% 
-  filter(n < 51) # should be zero, and is! ;)
-
-ann_50 <- used_avail_50 %>%
-  filter(!(stratum %in% no_used$stratum)) %>% 
-  mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
-  rename(sst = ECMWF.ERA5.SL.Sea.Surface.Temperature,
-         t2m = ECMWF.ERA5.SL.Temperature..2.m.above.Ground.,
-         u925 = ECMWF.ERA5.PL.U.Wind,
-         v925 = ECMWF.ERA5.PL.V.wind) %>%
-  mutate(row_id = row_number(),
-         delta_t = sst - t2m,
-         wind_support= wind_support(u = u925,v = v925,heading=heading),
-         cross_wind= cross_wind(u=u925,v=v925,heading=heading),
-         wind_speed = sqrt(u925^2 + v925^2),
-         abs_cross_wind = abs(cross_wind(u = u925, v = v925, heading = heading))) %>% 
-  st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
-  mutate(s_elev_angle = solarpos(st_coordinates(.), timestamp, proj4string=CRS("+proj=longlat +datum=WGS84"))[,2]) %>% #calculate solar elevation angle
-  mutate(sun_elev = ifelse(s_elev_angle < -6, "night", #create a categorical variable for teh position of the sun
-                           ifelse(s_elev_angle > 40, "high", "low"))) %>% 
-  as("Spatial") %>% 
-  as.data.frame()
-
-
-save(ann_50, file = "2021/ssf_input_annotated_60_30_50_updated.RData")
-
-####
-#select 10 individuals for EF_S and O_A
-d <- ann_50 %>%
-  filter(group %in% c("EF_S", "O_A")) %>% 
-  group_by(group) %>% 
-  summarise(ind_id = unique(ind)) %>% 
-  sample_n(10, replace = F)
-
-IDs_to_keep <- ann_50 %>% 
-  filter(!(group %in% c("EF_S", "O_A"))) %>% 
-  group_by(group) %>% 
-  summarise(ind_id = unique(ind)) %>% 
-  full_join(d)
-
-ann_50_sample <- ann_50 %>% 
-  filter(ind %in% IDs_to_keep$ind_id)
-
-ann_50_sample %>% 
-  mutate(year = year(timestamp)) %>% 
-  #group_by(species) %>% 
-  group_by(group) %>%
-  summarise(min_year = min(year),
-            max_year = max(year),
-            n_ind = n_distinct(ind),
-            n_tracks = n_distinct(track),
-            n_str = n_distinct(stratum)) %>% 
-  
-  summarise(sum_ind = sum(n_ind),
-            sum_tracks = sum(n_tracks))
-
-save(ann_50_sample, file = "2021/ssf_input_annotated_60_30_50_updated_sample.RData")
+  mutate(blh = ECMWF.Interim.Full.Daily.SFC.FC.Boundary.Layer.Height,
+         s_flux = ECMWF.Interim.Full.Daily.SFC.FC.Instantaneous.Surface.Heat.Flux,
+         m_flux = ECMWF.Interim.Full.Daily.SFC.FC.Instantaneous.Moisture.Flux) %>% 
+  mutate(wstar = w_star(blh = blh, T2m = t2m, s_flux = s_flux, m_flux = m_flux))
 
 # long-term annotation data (40 year data)
 #prep a dataframe with 40 rows corresponding to 40 years (1981,2020), for each point. then i can calculate variance of delta t over 41 years for each point
