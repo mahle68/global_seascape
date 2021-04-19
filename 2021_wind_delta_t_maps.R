@@ -188,7 +188,7 @@ dev.off()
 
 #color palette
 Pal <- colorRampPalette(c("darkgoldenrod1","lightpink1", "mediumblue")) #colors for negative values
-Cols <- paste0(Pal(3), "B3") #add transparency. 50% is "80". 70% is "B3". 80% is "CC". 90% is "E6"
+Cols <- paste0(Pal(3), "80") #add transparency. 50% is "80". 70% is "B3". 80% is "CC". 90% is "E6"
 
 
 
@@ -228,7 +228,7 @@ levels(starts_all$group) <- c("EF (Greece)", "EF (Spain)", "GFB", "Osprey (Ameri
 
 variables <- c("wind_support", "delta_t")
 
-pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/initiation_boxplots.pdf", width = 9.3, height = 6)
+pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/initiation_boxplots.pdf", width = 9.35, height = 6)
 
 X11(width = 9.3, height = 6)
 
@@ -251,33 +251,31 @@ for(i in 1:length(variables)){
   #if(i == 1){
   #  legend("topleft", legend = c("high","low", "night"), fill = c("orange","gray"), bty = "n")
   #}
+  points(jitter((as.numeric(starts_all[starts_all$sun_elev == "high","group"]) -0.3),0.3), starts_all[starts_all$sun_elev == "high", variables[i]], 
+         yaxt = "n", xaxt = "n", pch = 20, cex = 0.8, col = alpha("black", 0.6))
+  
   boxplot(starts_all[starts_all$sun_elev == "high", variables[i]] ~ starts_all[starts_all$sun_elev == "high","group"], 
           yaxt = "n", xaxt = "n", add = T, boxfill = Cols[1], outline=FALSE, lwd = 0.5, 
           boxwex = 0.25, at = 1:length(unique(starts_all$group)) - 0.3)
   
-  points((as.numeric(starts_all[starts_all$sun_elev == "high","group"]) -0.3), starts_all[starts_all$sun_elev == "high", variables[i]], 
+  points(jitter(as.numeric(starts_all[starts_all$sun_elev == "low","group"]),0.3), starts_all[starts_all$sun_elev == "low", variables[i]], 
          yaxt = "n", xaxt = "n", pch = 20, cex = 0.8, col = alpha("black", 0.6))
   
   boxplot(starts_all[starts_all$sun_elev == "low", variables[i]] ~ starts_all[starts_all$sun_elev == "low", "group"], 
           yaxt = "n", xaxt = "n", add = T, boxfill = Cols[2], outline = FALSE,  lwd = 0.5, 
           boxwex = 0.25, at = 1:length(unique(starts_all$group))+ 0)
   
-  points(as.numeric(starts_all[starts_all$sun_elev == "low","group"]), starts_all[starts_all$sun_elev == "low", variables[i]], 
+  points(jitter((as.numeric(starts_all[starts_all$sun_elev == "night","group"]) +0.3),0.3), starts_all[starts_all$sun_elev == "night", variables[i]], 
          yaxt = "n", xaxt = "n", pch = 20, cex = 0.8, col = alpha("black", 0.6))
-  
   
   boxplot(starts_all[starts_all$sun_elev == "night", variables[i]] ~ starts_all[starts_all$sun_elev == "night", "group"], 
           yaxt = "n", xaxt = "n", add = T, boxfill = Cols[3], outline=FALSE,  lwd = 0.5, 
           boxwex = 0.25, at = 1:length(unique(starts_all$group))+ 0.3)
   
-  points((as.numeric(starts_all[starts_all$sun_elev == "night","group"]) +0.3), starts_all[starts_all$sun_elev == "night", variables[i]], 
-         yaxt = "n", xaxt = "n", pch = 20, cex = 0.8, col = alpha("black", 0.6))
-  
-  
+
   if(i == length(variables)){
     axis(side = 1, at = 1:length(levels(starts_all$group)), labels = levels(starts_all$group), 
          tick = T , col.ticks = 1, col = NA, tck = -.015,lwd = 0, lwd.ticks = 1)
-    
   }
   
   if(i == 1){
