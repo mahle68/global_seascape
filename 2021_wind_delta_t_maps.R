@@ -10,12 +10,17 @@ library(sp)
 library(sf)
 library(move)
 library(scales)
+library(maptools)
+library(mapview)
 
-setwd("/home/mahle68/ownCloud/Work/Projects/delta_t")
-source("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
+setwd("/home/enourani/ownCloud/Work/Projects/delta_t")
+source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.R")
 
 wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
+
+
+#maps ############
 
 #open sea-crossing points, prepared in 2021_all_data_preo_analyze.R
 load("R_files/2021/all_2009_2020_overwater_probl_pts_removed.RData") #all_oversea
@@ -177,4 +182,218 @@ legend(x = -100, y = -1, legend = levels(df_sp$binned_dt), col =Cols_dt, pch = 2
 mtext(bquote(italic('Bio-logging data annotated with' ~ Delta *"T")), 3, outer = F, cex = 1.3, line = -1)
 
 dev.off()
+
+
+#initiation plots ############
+
+#color palette
+Pal <- colorRampPalette(c("darkgoldenrod1","lightpink1", "mediumblue")) #colors for negative values
+Cols <- paste0(Pal(3), "B3") #add transparency. 50% is "80". 70% is "B3". 80% is "CC". 90% is "E6"
+
+
+
+load("R_files/2021/raw_sea_points_for_maps_mv.RData") #mv from higher up.... this is all the data, before filtering
+
+
+starts_all <- mv %>% 
+  as.data.frame() %>% 
+  drop_na(c("heading","delta_t")) %>% 
+  mutate(wind_support= wind_support(u = u925,v = v925,heading = heading),
+         cross_wind= cross_wind(u = u925,v = v925,heading = heading)) %>% 
+  mutate(group = ifelse(species == "OHB", "OHB",
+                        ifelse(species == "GFB", "GFB",
+                        ifelse(species == "O" & location.long < -30, "O_A",
+                               ifelse(species == "O" & location.long > -30, "O_E",
+                                      ifelse(species == "EF" & location.lat > 0, "EF_G",
+                                             ifelse(species == "EF" & location.lat < 0, "EF_S",
+                                                    ifelse(species == "PF" & location.long < -30, "PF_A",
+                                                           "PF_E"))))))))  %>% 
+  group_by(track) %>% 
+  arrange(timestamp) %>% 
+  slice(1) %>%
+  ungroup() %>% 
+  st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
+  mutate(s_elev_angle = solarpos(st_coordinates(.), timestamp, proj4string = CRS("+proj=longlat +datum=WGS84"))[,2]) %>% #calculate solar elevation angle
+  mutate(sun_elev = ifelse(s_elev_angle < -6, "night", #create a categorical variable for teh position of the sun
+                           ifelse(s_elev_angle > 40, "high", "low"))) %>% 
+  as("Spatial") %>% 
+  as.data.frame() %>% 
+  mutate(group = as.factor(group)) %>% 
+  as.data.frame()
+
+
+
+
+labels <- c(expression(italic(paste(Delta,"T"))), "Wind support")
+variables <- c("delta_t", "wind_support")
+
+pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/boxplots_updated.pdf", width = 9, height = 7)
+
+X11(width = 9, height = 5)
+
+par(mfrow= c(2,1), 
+    oma = c(2,0,0,0), 
+    mar = c(0.2,4,0.2,0.2),
+    las = 1,
+    bty = "l",
+    font = 3)
+
+
+
+for(i in 1:length(variables)){
+  
+  boxplot(starts_all[,variables[i]] ~ starts_all[,"group"], data = starts_all, boxfill = NA, border = NA, xlab = "", ylab = "", xaxt = "n")
+  abline(h = 0, lty = 2, col = alpha("black", 0.6), lwd = 0.3)
+  #if(i == 1){
+  #  legend("topleft", legend = c("high","low", "night"), fill = c("orange","gray"), bty = "n")
+  #}
+  boxplot(starts_all[starts_all$sun_elev == "high", variables[i]] ~ starts_all[starts_all$sun_elev == "high","group"], 
+          yaxt = "n", xaxt = "n", add = T, boxfill = Cols[1], outline=FALSE, lwd = 0.7, 
+          boxwex = 0.25, at = 1:length(unique(starts_all$group)) - 0.3)
+  
+  points((as.numeric(starts_all[starts_all$sun_elev == "high","group"]) -0.3), starts_all[starts_all$sun_elev == "high", variables[i]], 
+         yaxt = "n", xaxt = "n", pch = 20, cex = 0.8, col = alpha("black", 0.6))
+  
+  boxplot(starts_all[starts_all$sun_elev == "low", variables[i]] ~ starts_all[starts_all$sun_elev == "low", "group"], 
+          yaxt = "n", xaxt = "n", add = T, boxfill = Cols[2], outline = FALSE,  lwd = 0.7, 
+          boxwex = 0.25, at = 1:length(unique(starts_all$group))+ 0)
+  
+  points(as.numeric(starts_all[starts_all$sun_elev == "low","group"]), starts_all[starts_all$sun_elev == "low", variables[i]], 
+         yaxt = "n", xaxt = "n", pch = 20, cex = 0.8, col = alpha("black", 0.6))
+  
+  
+  boxplot(starts_all[starts_all$sun_elev == "night", variables[i]] ~ starts_all[starts_all$sun_elev == "night", "group"], 
+          yaxt = "n", xaxt = "n", add = T, boxfill = Cols[3], outline=FALSE,  lwd = 0.7, 
+          boxwex = 0.25, at = 1:length(unique(starts_all$group))+ 0.3)
+  
+  points((as.numeric(starts_all[starts_all$sun_elev == "night","group"]) +0.3), starts_all[starts_all$sun_elev == "night", variables[i]], 
+         yaxt = "n", xaxt = "n", pch = 20, cex = 0.8, col = alpha("black", 0.6))
+  
+  
+  if(i == length(variables)){
+    axis(side = 1, at = 1:length(levels(starts_all$group)), labels = levels(starts_all$group), 
+         tick = T , col.ticks = 1, col = NA, tck = -.015,lwd = 0, lwd.ticks = 1)
+    
+  }
+  
+  if(variables[i] == "wind_support"){
+    mtext("Wind support (m/s)", side = 2, las = 3, line = 2.5)
+  }
+  
+  if(variables[i] == "delta_t"){
+    mtext(expression(italic(paste(Delta,"T", "(°C)"))), side = 2, las = 3, line = 2.5)
+  }
+  
+}
+mtext("Instantaneous values at each step", side = 3, outer = T, cex = 1.3)
+
+## ssf input
+load("R_files/2021/ssf_input_ann_cmpl_60_30_updated.RData") #ann_cmpl
+
+starts_ssf <- ann_cmpl %>% 
+  group_by(track) %>% 
+  arrange(timestamp) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  mutate(group = factor(group, levels = str_sort(unique(group)))) %>% 
+  as.data.frame()
+
+
+X11(width = 9, height = 5)
+
+par(mfrow= c(2,1),
+    oma = c(2,0,0,0), 
+    mar = c(0.2,4,0.2,0.2),
+    las = 1,
+    bty = "l",
+    font = 3)
+
+
+
+for(i in 1:length(variables)){
+  
+  boxplot(starts_ssf[,variables[i]] ~ starts_ssf[,"group"], data = starts_ssf, boxfill = NA, border = NA, xlab = "", ylab = "", xaxt = "n")
+  #if(i == 1){
+  #  legend("topleft", legend = c("high","low", "night"), fill = c("orange","gray"), bty = "n")
+  #}
+  boxplot(starts_ssf[starts_ssf$sun_elev == "high", variables[i]] ~ starts_ssf[starts_ssf$sun_elev == "high","group"], 
+          yaxt = "n", xaxt = "n", add = T, boxfill = Cols[1],
+          boxwex = 0.25, at = 1:length(levels(starts_ssf$group)) - 0.3)
+  
+  points((as.numeric(starts_ssf[starts_ssf$sun_elev == "high","group"]) -0.3), starts_ssf[starts_ssf$sun_elev == "high", variables[i]], 
+         yaxt = "n", xaxt = "n", pch = 20)
+  
+  boxplot(starts_ssf[starts_ssf$sun_elev == "low", variables[i]] ~ starts_ssf[starts_ssf$sun_elev == "low", "group"], 
+          yaxt = "n", xaxt = "n", add = T, boxfill = Cols[2],
+          boxwex = 0.25, at = 1:length(levels(starts_ssf$group))+ 0)
+  
+  points(as.numeric(starts_ssf[starts_ssf$sun_elev == "low","group"]), starts_ssf[starts_ssf$sun_elev == "low", variables[i]], 
+         yaxt = "n", xaxt = "n", pch = 20)
+  
+  
+  boxplot(starts_ssf[starts_ssf$sun_elev == "night", variables[i]] ~ starts_ssf[starts_ssf$sun_elev == "night", "group"], 
+          yaxt = "n", xaxt = "n", add = T, boxfill = Cols[3],
+          boxwex = 0.25, at = 1:length(levels(starts_ssf$group))+ 0.3)
+  
+  points((as.numeric(starts_ssf[starts_ssf$sun_elev == "night","group"]) +0.3), starts_ssf[starts_ssf$sun_elev == "night", variables[i]], 
+         yaxt = "n", xaxt = "n", pch = 20)
+  
+  
+  if(i == length(variables)){
+    axis(side = 1, at = 1:length(levels(starts_ssf$group)), labels = levels(starts_ssf$group), 
+         tick = T , col.ticks = 1, col = NA, tck = -.015,lwd = 0, lwd.ticks = 1)
+    
+  }
+  
+  if(variables[i] == "wind_support"){
+    mtext("Wind support (m/s)", side = 2, las = 3, line = 2.5)
+  }
+  
+  if(variables[i] == "delta_t"){
+    mtext(expression(italic(paste(Delta,"T", "(°C)"))), side = 2, las = 3, line = 2.5)
+  }
+  
+}
+mtext("Instantaneous values at each step", side = 3, outer = T, cex = 1.3)
+
+
+
+#attempt raincloud plots
+# source("/home/enourani/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/R_rainclouds.R")
+# source("/home/enourani/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/summarySE.R")
+# source("/home/enourani/ownCloud/Work/R_source_codes/RainCloudPlots-master/tutorial_R/simulateData.R")
+
+
+#restructure the dataframe
+delta_t_var <- dataset_env_alt_var %>% 
+  dplyr::select(-c(av_u_var,av_v_var)) %>% 
+  mutate(variable = "delta_t") %>% 
+  dplyr::rename(score = av_delta_t_var)
+wind_u_var <- dataset_env_alt_var %>% 
+  dplyr::select(-c(av_delta_t_var,av_v_var)) %>% 
+  mutate(variable = "wind_u_925") %>% 
+  dplyr::rename(score = av_u_var)
+wind_v_var <- dataset_env_alt_var %>% 
+  dplyr::select(-c(av_delta_t_var,av_u_var)) %>% 
+  mutate(variable = "wind_v_925") %>% 
+  dplyr::rename(score = av_v_var)
+
+new_data_var <- rbind(delta_t_var,wind_u_var,wind_v_var)
+
+X11()
+plot_variances <- ggplot(new_data_var, aes(x = variable, y = score, fill = zone)) +
+  ylim(0,150) +
+  geom_flat_violin(aes(fill = zone),position = position_nudge(x = .1, y = 0), adjust = 1.5, trim = FALSE, alpha = .5, colour = NA)+
+  geom_point(aes(x = as.numeric(factor(variable))-.15, y = score, colour = zone),position = position_jitter(width = .05), size = 1, shape = 19, alpha = 0.1)+
+  geom_boxplot(aes(x = variable, y = score, fill = zone),outlier.shape = NA, alpha = .5, width = .1, colour = "black")+
+  scale_colour_brewer(palette = "Dark2")+
+  scale_fill_brewer(palette = "Dark2")+
+  theme_classic(base_size = 20) +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank())+
+  facet_grid(season~.)
+
+ggsave("rain_cloud_plot_variances.tiff",plot = plot_variances, dpi = 500,
+       path = "/home/enourani/ownCloud/Work/safi_lab_meeting/presentation_jan17")
+
 
