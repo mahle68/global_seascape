@@ -88,20 +88,45 @@ pos_dt$w_star <- w_star(blh = pos_dt$blh, T2m = pos_dt$t2m,
                      s_flux = pos_dt$s_flux, m_flux = pos_dt$m_flux)
 
 
-#plot
-fit_1 <- lm(w_star~ log(delta_t+1),data = pos_dt) 
+#model
+
+fit_1 <- lm(w_star ~ delta_t, data = pos_dt) 
 
 summary(fit_1)
-
-with(pos_dt,plot(log(delta_t+1), w_star, col= as.factor(sun_elev)))
-abline(fit_1)
-
-fit_2 <- lm(w_star ~ delta_t, data = data) 
-
-summary(fit_2)
+AIC(fit_1) #37143.27
 
 with(pos_dt,plot(delta_t, w_star, col= as.factor(sun_elev)))
-abline(fit_2)
+abline(fit_1)
+
+
+fit_2 <- lm(w_star ~ I(delta_t^2), data = pos_dt) 
+
+summary(fit_2)
+AIC(fit_2) #37542.73
+
+with(pos_dt,plot(delta_t, w_star, col= as.factor(sun_elev)))
+curve(predict(fit_2, newdata = data.frame(delta_t = x)), add = T)
+
+
+
+fit_3 <- lm(w_star ~ log(delta_t), data = pos_dt)
+curve(predict(fit_3, newdata = data.frame(delta_t = x)), add = T)
+
+#gam
+fit_4 <- gam(w_star ~ s(log(delta_t), k = -1), data = pos_dt)
+fit_4 <- gam(w_star ~ s(delta_t, bs = "cr", k = 5), data = pos_dt)
+fit_5 <- gam(w_star ~ s(delta_t, k = 8, bs = "cs"), data = pos_dt)
+fit_5 <- gam(w_star ~ s(delta_t, bs = "cs"), data = pos_dt)
+
+fit_6 <- gam(w_star ~ s(delta_t,lat), data = pos_dt)
+
+
+with(pos_dt,plot(delta_t, w_star, col= as.factor(sun_elev)))
+curve(predict(fit_5, newdata = data.frame(delta_t = x)), add = T, col = "purple", lwd = 2.5)
+curve(predict(fit_6, newdata = data.frame(delta_t = x)), add = T, col = "purple", lwd = 2.5)
+
+
+
 
 # serious plot
 
@@ -126,8 +151,10 @@ data %>%
   dplyr::select(c("delta_t", "w_star")) %>% 
   correlate() 
 
+cor.test(data$delta_t, data$w_star)
 
-#plot in base r #############
+
+#plot #############
 
 #new data for predictions
 newx <- seq(min(data$delta_t), 9, by = 0.05)
