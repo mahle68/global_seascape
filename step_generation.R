@@ -1,5 +1,5 @@
 # Scripts for generating alternative steps for sea-crossing tracks
-# This is script 1 of x for reproducing the results of Nourani et al 2021, ProcB.
+# This is script 1 of 6 for reproducing the results of Nourani et al 2021, ProcB.
 # Elham Nourani, PhD. Jun.10. 2021
 #-----------------------------------------------------------------
 

@@ -1,5 +1,5 @@
 # Scripts for step selection function analysis
-# This is script 2 of x for reproducing the results of Nourani et al 2021, ProcB.
+# This is script 2 of 6 for reproducing the results of Nourani et al 2021, ProcB.
 # Elham Nourani, PhD. Jun.10. 2021
 #-----------------------------------------------------------------
 
