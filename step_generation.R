@@ -1,14 +1,19 @@
 # Scripts for generating alternative steps for sea-crossing tracks
-# Nourani et al 2021. ProcB
+# This is script 1 of x for reproducing the results of Nourani et al 2021, ProcB.
 # Elham Nourani, PhD. Jun.10. 2021
 #-----------------------------------------------------------------
 
+#to do: add the wind support functions to functions.R
 
 library(tidyverse)
 library(lubridate)
 library(move)
+library(sp)
 library(sf)
 library(parallel)
+library(maptools)
+
+setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/")
 
 # ---------- STEP 1: load data #####
 
@@ -16,13 +21,13 @@ library(parallel)
 load("2021/public/move_ls.RData") #move_ls; this list contains one move object for each unique species-flyway
 
 wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
-meters_proj <- CRS("+proj=moll +ellps = WGS84") #Mollweide projection (in meters) for accurate calculation of length
+meters_proj <- CRS("+proj=moll +ellps=WGS84")#Mollweide projection (in meters) for accurate calculation of length
 
 source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/global_seascape/functions.R")
 
 # ---------- STEP 2: generate alternative steps #####
 
-hr <- 120 #minutes; determine the sub-sampling interval
+hr <- 60 #minutes; determine the sub-sampling interval
 tolerance <- 15 #minutes; tolerance for sub-samplling
 n_alt <- 150 #number of alternative steps.
 
@@ -59,10 +64,9 @@ used_av_ls <- parLapply(mycl, move_ls, function(group){ # for each group (ie. un
     if(nrow(track_th@data) == 1){
       track_th@data$burst_id <- track_th$burst_id
     } else {for(i in 2:nrow(track_th@data)){
-      
-      if(i== nrow(track_th@data)){
-        track_th@data$burst_id[i] <- NA
-      } else
+      #if(i == nrow(track_th@data)){
+      #  track_th@data$burst_id[i] <- NA #why?!
+      #} else
         if(track_th@data[i-1,"selected"] == "selected"){
           track_th@data$burst_id[i] <- track_th@data[i-1,"burst_id"]
         } else {
@@ -177,6 +181,7 @@ used_av_ls <- parLapply(mycl, move_ls, function(group){ # for each group (ie. un
                  turning_angle = c(head(turning_angle,1),deg(rnd_sp$turning_angle)),
                  step_length = c(head(step_length,1),rnd_sp$step_length),
                  used = c(1,rep(0,n_alt)))  %>%
+          dplyr::select(-c("x","y")) %>% 
           rowwise() %>% 
           mutate(heading = NCEP.loxodrome.na(lat1 = current_point@coords[,2], lat2 = location.lat, lon1 = current_point@coords[,1], lon2 = location.long)) %>% 
           as.data.frame()
@@ -199,4 +204,220 @@ Sys.time() - b #5.22 mins
 stopCluster(mycl) 
 
 
-#save(used_av_ls, file = "2021/ssf_input_all_60_30_150_updated.RData")
+save(used_av_ls, file = "2021/public/ssf_input_all_60_15_150.RData")
+
+# ---------- STEP 3: annotation#####
+
+#to submit the data for annotation on Movebank, we need to create csv files with nrow() < 1e6. The timestamps should have miliseconds, and lat and lon columns should be names according to the Movebank requirements.
+
+#create one dataframe with movebank specifications
+used_av_df <- lapply(c(1:length(used_av_ls)), function(i){
+  
+  data <- used_av_ls[[i]] %>% 
+    dplyr::select( c("date_time", "location.lat", "location.long", "selected", "species",  "burst_id", "step_length", "turning_angle", "track", "step_id", "used", "heading")) %>% 
+    mutate(timestamp = paste(as.character(date_time),"000",sep = "."), #the movebank
+           group = names(used_av_ls)[[i]]) %>% 
+    rowwise() %>% 
+    mutate(ind = strsplit(track, "_")[[1]][1], #create variable for individua id
+           stratum = paste(track, burst_id, step_id, sep = "_")) %>% #create unique stratum id
+    as.data.frame()
+}) %>% 
+  reduce(rbind)
+
+save(used_av_df, file = "2021/public/ssf_input_all_df_60_15_150.RData")
+
+
+# #have a look
+# X11();par(mfrow= c(2,1), mar = c(0,0,0,0), oma = c(0,0,0,0))
+# maps::map("world",fil = TRUE,col = "grey85", border=NA) 
+# points(used_av_ls[used_av_ls$used == 0,c("x","y")], pch = 16, cex = 0.2, col = "gray55")
+# points(used_av_ls[used_av_ls$used == 1,c("x","y")], pch = 16, cex = 0.2, col = "orange")
+# 
+# maps::map("world",fil = TRUE,col = "grey85", border=NA) 
+# points(used_av_df_1hr2[used_av_df_1hr2$used == 0,c("x","y")], pch = 16, cex = 0.2, col = "gray55")
+# points(used_av_df_1hr2[used_av_df_1hr2$used == 1,c("x","y")], pch = 16, cex = 0.2, col = "orange")
+# 
+# 
+# maps::map("world",fil = TRUE,col = "grey85", border=NA) 
+# points(used_av_all_2hr[used_av_all_2hr$used == 0,c("x","y")], pch = 16, cex = 0.4, col = "gray55")
+# points(used_av_all_2hr[used_av_all_2hr$used == 1,c("x","y")], pch = 16, cex = 0.4, col = "orange")
+
+#rename lat and lon columns
+colnames(used_av_df)[c(2,3)] <- c("location-lat", "location-long")
+
+write.csv(used_av_df, "2021/public/ssf_input_df_60_15_150.csv") 
+
+#submit this file to movebank and annotate with the following variables:
+#   Name: ECMWF ERA5 PL U Wind
+# Description: Velocity of the east-west (zonal) component of wind. Positive values indicate west to east flow.
+# Unit: m/s
+# No data values: NaN (interpolated)
+# Interpolation: bilinear
+# Z-Dimension: 925.0
+# 
+# Name: ECMWF ERA5 PL V wind
+# Description: Velocity of the north-south (meridional) component of wind. Positive values indicate south to north flow.
+# Unit: m/s
+# No data values: NaN (interpolated)
+# Interpolation: bilinear
+# Z-Dimension: 925.0
+# 
+# Name: ECMWF ERA5 SL Sea Surface Temperature
+# Description: The temperature of sea water near the surface (SST). In this product (ECMWF ERA5), this parameter is a foundation SST, which means there are no variations due to the daily cycle of the sun (diurnal variations). Before September 2007, SST from the HadISST2 dataset is used and from September 2007 onwards, the OSTIA dataset is used.
+# Unit: K
+# No data values: NaN (interpolated)
+# Interpolation: nearest-neighbour
+# 
+# Name: ECMWF ERA5 SL Temperature (2 m above Ground)
+# Description: Air temperature 2 m above the ground or water surface. Calculated by interpolating between the lowest model level and the earth's surface, taking account of the atmospheric conditions.
+# Unit: K
+# No data values: NaN (interpolated)
+# Interpolation: nearest-neighbour
+
+#remove for public
+# summary stats
+used_av_df %>% 
+  #group_by(species) %>% 
+  group_by(group) %>% 
+  summarise(yrs_min = min(year(date_time)),
+            yrs_max = max(year(date_time)),
+            n_ind = n_distinct(ind),
+            n_tracks = n_distinct(track))
+
+#visual inspection
+data_sf <- used_av_df %>% 
+  filter(used == 1) %>% 
+  st_as_sf(coords = c(3,2), crs = wgs)
+
+mapview(data_sf, zcol = "species")
+
+
+#---- after annotation in movebank, download the annotated file and read into R
+ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/annotation/ssf_input_df_60_15_150.csv-2201090471065357181/ssf_input_df_60_15_150.csv-2201090471065357181.csv",
+                stringsAsFactors = F) %>% 
+  drop_na() 
+
+#extract startum IDs for those that have less than 50 alternative points over the sea
+less_than_50 <- ann %>% 
+  filter(used == 0) %>% 
+  group_by(stratum) %>% 
+  summarise(n = n()) %>% 
+  filter(n < 50) #all are EF from Spain. It doesnt hurt to have less of that 
+
+# retain 50 alternative steps per stratum
+used <- ann %>% 
+  filter(!(stratum %in% less_than_50$stratum)) %>% 
+  filter(used == 1)
+
+used_avail_50 <- ann %>% 
+  filter(!(stratum %in% less_than_50$stratum)) %>% 
+  filter(used == 0) %>% 
+  group_by(stratum) %>% 
+  sample_n(50, replace = F) %>% 
+  ungroup() %>% 
+  full_join(used) #append the used levels
+
+#make sure all strata have 51 points
+no_used <- used_avail_50 %>% 
+  summarise(n = n()) %>% 
+  filter(n < 51) # should be zero, and is! ;)
+
+ann_50 <- used_avail_50 %>%
+  filter(!(stratum %in% no_used$stratum)) %>% 
+  mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
+  rename(sst = ECMWF.ERA5.SL.Sea.Surface.Temperature,
+         t2m = ECMWF.ERA5.SL.Temperature..2.m.above.Ground.,
+         u925 = ECMWF.ERA5.PL.U.Wind,
+         v925 = ECMWF.ERA5.PL.V.wind) %>%
+  mutate(row_id = row_number(),
+         delta_t = sst - t2m,
+         wind_support= wind_support(u = u925,v = v925,heading=heading),
+         cross_wind= cross_wind(u=u925,v=v925,heading=heading),
+         wind_speed = sqrt(u925^2 + v925^2),
+         abs_cross_wind = abs(cross_wind(u = u925, v = v925, heading = heading))) %>% 
+  st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
+  mutate(s_elev_angle = solarpos(st_coordinates(.), timestamp, proj4string=CRS("+proj=longlat +datum=WGS84"))[,2]) %>% #calculate solar elevation angle
+  mutate(sun_elev = ifelse(s_elev_angle < -6, "night", #create a categorical variable for teh position of the sun
+                           ifelse(s_elev_angle > 40, "high", "low"))) %>% 
+  as("Spatial") %>% 
+  as.data.frame()
+
+
+save(ann_50, file = "2021/public/ssf_input_annotated_60_15_50.RData")
+
+# long-term annotation (40 year variances)
+
+#prep a dataframe with 40 rows corresponding to 40 years (1981,2020), for each point
+df_40 <- ann_50 %>%# make sure this is not grouped!
+  dplyr::select(-c(v925,u925,t2m,sst,delta_t)) %>% 
+  slice(rep(row_number(),40)) %>% 
+  group_by(row_id) %>% 
+  mutate(year = c(1981:2020)) %>%
+  ungroup() %>%
+  mutate(timestamp = paste(as.character(date_time),"000",sep = ".")) %>% #add miliseconds per Movebank's requirements
+  as.data.frame()
+
+str_sub(df_40$timestamp,1,4) <- df_40$year #replace original year with years from 1981-2020
+colnames(df_40)[c(23,24)] <- c("location-long","location-lat") #rename columns to match movebank format
+
+
+#Movebank track annotation service has a limit of one million rows per file.
+#break up the dataframe into chunks with max 1 million rows
+n_chunks <- ceiling(nrow(df_40)/1e6)
+nrow_chunks <- round(nrow(df_40)/n_chunks)
+
+r <- rep(1: n_chunks,  each = nrow_chunks)
+
+chunks <- split(df_40, r)
+
+#save as csv
+lapply(c(1:length(chunks)), function(i){
+  
+  write.csv(chunks[[i]], paste0("2021/public/ssf_input_40yr_60_15_50_", i, "_.csv"))
+  
+})
+
+
+#---- after annotation in movebank, download the annotated file and append to the file with instantaneous annotations
+
+load("2021/ssf_input_annotated_60_30_50_updated_sample.RData") #ann_50_sample
+
+ann_50_sample <- ann_50_sample %>% 
+  mutate(abs_cross_wind = abs(cross_wind(u = u925, v = v925, heading = heading)))
+
+#calculate long-term metrics and merge with previously annotated data
+ann_40_ls <- list.files("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/annotations/40_yrs_60_30_updated/",pattern = ".csv", recursive = T,full.names = T) 
+
+ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>% 
+  reduce(full_join) %>% 
+  rename(sst = ECMWF.ERA5.SL.Sea.Surface.Temperature,
+         t2m = ECMWF.ERA5.SL.Temperature..2.m.above.Ground.,
+         u925 = ECMWF.ERA5.PL.U.Wind,
+         v925 = ECMWF.ERA5.PL.V.wind) %>% 
+  mutate(delta_t = sst - t2m,
+         wind_support= wind_support(u = u925, v = v925, heading = heading),
+         cross_wind= cross_wind(u = u925, v = v925, heading = heading),
+         abs_cross_wind = abs(cross_wind(u = u925, v = v925, heading = heading)),
+         wind_speed = sqrt(u925^2 + v925^2)) %>% 
+  group_by(row_id) %>% 
+  summarise_at(c("delta_t", "wind_speed", "wind_support", "abs_cross_wind", "u925", "v925"), #before calculating these, investigate why/if we have NAs??
+               list(avg = ~mean(., na.rm = T), var = ~var(., na.rm = T), rsd = ~rsd(.))) %>% 
+  ungroup() %>% 
+  full_join(ann_50_sample, by = "row_id") %>% 
+  rename(location.long = coords.x1,
+         location.lat = coords.x2) %>% 
+  rowwise() %>% 
+  mutate(species = strsplit(group, "_")[[1]][1],
+         zone = ifelse(between(location.lat, 0, 30) | between(location.lat, 0, -30), "tradewind",
+                       ifelse(between(location.lat, 30,60) | between(location.lat, -30,-60), "temperate",
+                              ifelse(between(location.lat, -30,30), "tropical",
+                                     "arctic")))) %>% 
+  ungroup() %>% 
+  as.data.frame()
+
+save(ann_cmpl, file = "2021/ssf_input_ann_cmpl_60_15.RData")
+
+
+
+
+
