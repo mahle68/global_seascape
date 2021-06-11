@@ -88,44 +88,21 @@ pos_dt$w_star <- w_star(blh = pos_dt$blh, T2m = pos_dt$t2m,
                      s_flux = pos_dt$s_flux, m_flux = pos_dt$m_flux)
 
 
-#model
+#color palette
+Pal <- colorRampPalette(c("darkgoldenrod1","lightpink1", "mediumblue")) #colors for negative values
+Cols <- paste0(Pal(3), "80") #add transparency. 50% is "80". 70% is "B3". 80% is "CC". 90% is "E6"
 
-fit_1 <- lm(w_star ~ delta_t, data = pos_dt) 
+#convert complex numbers to numerics
+data <- pos_dt
+data$w_star <- as.numeric(data$w_star)
+data$color <- as.factor(data$sun_elev)
+levels(data$color) <- Cols
 
-summary(fit_1)
-AIC(fit_1) #37143.27
+data$shape <- as.factor(data$species)
+levels(data$shape) <- c(0,1,2,3,4,5)
 
-with(pos_dt,plot(delta_t, w_star, col= as.factor(sun_elev)))
-abline(fit_1)
-
-
-fit_2 <- lm(w_star ~ delta_t + I(delta_t^2), data = pos_dt) 
-
-summary(fit_2)
-AIC(fit_2) #37542.73
-
-with(pos_dt,plot(delta_t, w_star, col= as.factor(sun_elev)))
-curve(predict(fit_2, newdata = data.frame(delta_t = x)), add = T)
-
-
-
-fit_3 <- lm(w_star ~ log(delta_t+1), data = pos_dt)
-curve(predict(fit_3, newdata = data.frame(delta_t = x)), add = T)
-
-#gam
-fit_4 <- gam(w_star ~ s(log(delta_t), k = -1), data = pos_dt)
-fit_4 <- gam(w_star ~ s(delta_t, bs = "cr", k = 5), data = pos_dt)
-fit_5 <- gam(w_star ~ s(delta_t, k = 8, bs = "cs"), data = pos_dt)
-fit_5 <- gam(w_star ~ s(delta_t, bs = "cs"), data = pos_dt)
-
+#model and confidence intervals (https://rforge.wordpress.com/2009/08/11/gam-plot-with-95-confidence-shade/)
 fit_5 <- gam(w_star ~ s(delta_t, bs = "cr", k = 10), data = pos_dt)
-
-
-with(pos_dt,plot(delta_t, w_star, col= as.factor(sun_elev)))
-curve(predict(fit_5, newdata = data.frame(delta_t = x)), add = T, col = "purple", lwd = 2.5)
-curve(predict(fit_6, newdata = data.frame(delta_t = x)), add = T, col = "purple", lwd = 2.5)
-
-#confidence intervals (https://rforge.wordpress.com/2009/08/11/gam-plot-with-95-confidence-shade/)
 fit <- predict(fit_5, se = T)$fit
 se <- predict(fit_5, se = T)$se.fit
 
@@ -138,48 +115,6 @@ i.back <- order( data$delta_t , decreasing = TRUE )
 x.polygon <- c(data$delta_t[i.for] , data$delta_t[i.back])
 y.polygon <- c(ucl[i.for] , lcl[i.back])
 
-
-polygon(x.polygon , y.polygon , col = "#A6CEE3" , border = NA)
-
-lines(data$delta_t[i.for] , fit[i.for], col = "#1F78B4" , lwd = 3)
-
-##ggplot2
-ggplot(data, aes(delta_t, w_star)) +
-  geom_point(colour = data$color) + 
-  geom_smooth(colour = "black") +
-  las(x = , y = )
-  theme(
-    # Hide panel borders and remove grid lines
-    panel.border = element_blank(),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    # Change axis line
-    axis.line = element_line(colour = "black"),
-    panel.background = element_blank()
-  ) 
-
-
-
-# serious plot
-
-#color
-#color palette
-Pal <- colorRampPalette(c("darkgoldenrod1","lightpink1", "mediumblue")) #colors for negative values
-Cols <- paste0(Pal(3), "80") #add transparency. 50% is "80". 70% is "B3". 80% is "CC". 90% is "E6"
-
-#convert complex numbers to numerics
-data <- pos_dt
-data$w_star <- as.numeric(data$w_star)
-data$color <- as.factor(data$sun_elev)
-levels(data$color) <- Cols
-
-
-fit_2 <- lm(w_star ~ delta_t, data = data) 
-
-summary(fit_2)
-
-
-
 #correlation ######
 data %>% 
   dplyr::select(c("delta_t", "w_star")) %>% 
@@ -190,10 +125,10 @@ cor.test(data$delta_t, data$w_star)
 
 #plot #############
 
-#new data for predictions
-newx <- seq(min(data$delta_t), 9, by = 0.05)
-conf_interval <- predict(fit_2, newdata = data.frame(delta_t = newx), interval = "confidence",
-                         level = 0.95)
+# #new data for predictions
+# newx <- seq(min(data$delta_t), 9, by = 0.05)
+# conf_interval <- predict(fit_2, newdata = data.frame(delta_t = newx), interval = "confidence",
+#                          level = 0.95)
 
 
 X11(width = 4, height = 3)
@@ -209,29 +144,21 @@ par(mfrow=c(1,1),
 
 plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(0,8.3), ylim = c(0.5,5), xlab = expression(italic(paste(Delta,"T", "(°C)"))), ylab = "w* (m/s)")
 
-plot(fit_5, select=1, shade=F, pch = 16, residuals = T, col = as.character(data$color),
-     scheme=0, se=12, bty="l", labels = FALSE, tck=0) 
+with(pos_dt,points(delta_t, w_star, col= as.character(data$color), pch = as.numeric(data$shape), cex = 0.5)) #add points
 
-plot(fit_5, select=1, shade=T, shade.col= alpha("grey55", 0.5), pch = 16, residuals = T, col = as.character(data$color),
-     scheme=0, se=12, bty="l", labels = T, tck=0, add = T) 
+polygon(x.polygon , y.polygon , col = alpha("grey", 0.5) , border = NA) #confidence intervals
 
-
-with(pos_dt,points(delta_t, w_star, col= as.character(data$color), pch = 20, cex = 0.6))
-
-curve(predict(fit_5, newdata = data.frame(delta_t = x)), add = T, col = "purple", lwd = 2.5)
-
-#clip(0, max(data$delta_t), 0, 8.3)
-lines(newx, conf_interval[,2], col = alpha(rgb(0,0,0), 0.15), lwd = 5.5)
-lines(newx, conf_interval[,3], col = alpha(rgb(0,0,0), 0.15), lty = 1, lwd = 5.5)
-abline(fit_2, col = "black")
+lines(data$delta_t[i.for] , fit[i.for], col = "black" , lwd = 1.1)
 
 axis(side = 1, at = c(0,2,4,6,8), labels = c(0,2,4,6,8), 
      tick = T , col.ticks = 1, col = NA, tck = -.015,lwd = 0, lwd.ticks = 1)
 axis(side= 2, at = seq(1,5,1), labels= seq(1,5,1),
      tick=T , col.ticks = 1, col = NA, tck=-.015,
      las=2) # text perpendicular to axis label 
-legend(x = 5.3, y = 1.5, legend = c("daytime: high sun", "daytime: low sun", "night"), col = Cols, #coords indicate top-left
-       cex = 0.7, pt.cex = 0.9, bg = "white", bty = "n", pch = 20)
+
+legend(x = 8.7, y = 2.9, legend = c("Pernis ptilorhynchus", "Pandion haliaetus","Butastur indicus", "Falco peregrinus", "F. eleonorae"), #species : unique(data$species), #coords indicate top-left
+       cex = 0.7, pt.cex = 0.5, bg = "white", bty = "n", pch = as.numeric(unique(data$shape)),
+       text.font = 3)
 
 text(6.2,1.51, "Time of day", cex = 0.7)
 
@@ -250,7 +177,7 @@ data$shape <- as.factor(data$species)
 levels(data$shape) <- c(0,1,2,3,4,5)
 
 X11(width = 5.2, height = 3)
-pdf("/home/mahle68/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/w_star_spp.pdf", width = 5.2, height = 3)
+pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/w_star_spp_gam.pdf", width = 5.2, height = 3)
 
 par(mfrow=c(1,1), 
     bty = "l",
@@ -265,10 +192,10 @@ par(mfrow=c(1,1),
 plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(0,8.3), ylim = c(0.5,5), xlab = expression(italic(paste(Delta,"T", "(°C)"))), ylab = "w* (m/s)")
 
 with(pos_dt,points(delta_t, w_star, col= as.character(data$color), pch = as.numeric(data$shape), cex = 0.5))
-clip(0, max(data$delta_t), 0, 8.3)
-lines(newx, conf_interval[,2], col = alpha(rgb(0,0,0), 0.15), lwd = 5.5)
-lines(newx, conf_interval[,3], col = alpha(rgb(0,0,0), 0.15), lty = 1, lwd = 5.5)
-abline(fit_2, col = "black")
+
+polygon(x.polygon , y.polygon , col = alpha("grey", 0.5) , border = NA) #confidence intervals
+
+lines(data$delta_t[i.for] , fit[i.for], col = "black" , lwd = 1.1)
 
 axis(side = 1, at = c(0,2,4,6,8), labels = c(0,2,4,6,8), 
      tick = T , col.ticks = 1, col = NA, tck = -.015,lwd = 0, lwd.ticks = 1)

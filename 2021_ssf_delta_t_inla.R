@@ -115,6 +115,9 @@ move_ls <- lapply(split(oversea_df,oversea_df$group),function(x){
   mv
 })
 
+save(move_ls, file = "2021/public/move_ls.RData")
+
+
 # ---------- STEP 3: generate alternative steps#####
 
 mycl <- makeCluster(7) 
@@ -581,6 +584,8 @@ ann_cmpl %>%
 #correlated: wind support var & wind speed var and cross wind var, crosswind var and wind speed var.  delta-t var and wind support var!!! wind speed and abs_crosswind.
 #with the sampled dataset, variance of delta t is correlated with delta t and variance of wind support
 
+#corr test to include in the paper
+cor.test(ann_cmpl$delta_t, ann_cmpl$delta_t_var)
 
 #z-transform
 all_data <- ann_cmpl %>% 
@@ -666,9 +671,14 @@ M1 <- inla(formula = formulaM1, family ="Poisson",
            control.inla = list(force.diagonal = T),
            data = all_data,
            num.threads = 10,
-           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = F))
+           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = T))
 
 Sys.time() - b #2.3 min
+
+
+#Eextract cpo and waic
+-sum(log(M1$cpo$cpo))
+M1$waic$waic
 
 save(M1, file = "2021/inla_models/m1_60_30.RData")
 
@@ -701,14 +711,14 @@ M2 <- inla(formulaM2, family ="Poisson",
            control.inla = list(force.diagonal = T),
            data = all_data,
            num.threads = 10,
-           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = F))
+           control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = T))
 Sys.time() - b #1.3 min
 
-
+#Eextract cpo and waic
+-sum(log(M2$cpo$cpo))
+M2$waic$waic
 
 save(M2, file = "2021/inla_models/m2_60_30.RData")
-
-
   
 #remove wind speed and delta t
 formulaM3 <- used ~ -1 + delta_t_z * wind_support_z +
@@ -732,13 +742,14 @@ M3 <- inla(formulaM3, family ="Poisson",
            control.inla = list(force.diagonal = T),
             data = all_data,
             num.threads = 10,
-            control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = F))
+            control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = T))
 Sys.time() - b #37 sec
 
 
 save(M3, file = "2021/inla_models/m3_60_30.RData")
 
-
+-sum(log(M3$cpo$cpo))
+M3$waic$waic
 
 # ---------- STEP 7: plots #####
 

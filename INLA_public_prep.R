@@ -1,23 +1,26 @@
 #preapring the input and codes to submit for full submission to eLife
 #Nov 4, 2020. Elham Nourani. Radolfzell, Germany
+#update for ProcB
 
 library(tidyverse)
 library(INLA)
 
 # DATA PREP ####
 #load annotated dataset prepared for step selection function
-load("ssf_input_ann_cmpl_1hr.RData") #ann_cmpl
-
+#load("ssf_input_ann_cmpl_1hr.RData") #ann_cmpl
+load("2021/ssf_input_ann_cmpl_60_30_updated.RData") #ann_cmpl
 
 #prep the annotation data
 annotated_data <- ann_cmpl %>% 
   rowwise() %>% 
   mutate(ind = strsplit(track, "_")[[1]][1]) %>% 
   dplyr::select(c("location.long", "location.lat","timestamp", "used","delta_t","wind_speed","wind_support","wind_support_var","delta_t_var",
-                  "species", "ind", "stratum")) %>% 
+                  "species", "ind", "group", "stratum")) %>% 
   data.frame()
 
-save(annotated_data, file = "INLA_input_public.RData")
+write.csv(annotated_data, "/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/procB/ESM2_ssf_input.csv")
+
+#save(annotated_data, file = "INLA_input_public.RData")
 
 #z-transform
 z_data <- annotated_data %>% 

@@ -204,8 +204,8 @@ starts_all <- mv %>%
                         ifelse(species == "GFB", "GFB",
                         ifelse(species == "O" & location.long < -30, "O_A",
                                ifelse(species == "O" & location.long > -30, "O_E",
-                                      ifelse(species == "EF" & location.lat > 0, "EF_G",
-                                             ifelse(species == "EF" & location.lat < 0, "EF_S",
+                                      ifelse(species == "EF" & location.lat > 0, "EF_med",
+                                             ifelse(species == "EF" & location.lat < 0, "EF_moz",
                                                     ifelse(species == "PF" & location.long < -30, "PF_A",
                                                            "PF_E"))))))))  %>% 
   group_by(track) %>% 
@@ -222,25 +222,23 @@ starts_all <- mv %>%
   as.data.frame()
 
 
-
-
-levels(starts_all$group) <- c("EF (Greece)", "EF (Spain)", "GFB", "Osprey (America)", "Osprey (Europe)", "OHB", "PF (America)", "PF (Europe)")
+labels <- c("EF \n (Mediterranean)", "EF \n (Mozambique)", "GFB \n", "Osprey \n (America)", "Osprey \n (Europe)", "OHB \n ", "PF \n (America)", "PF \n (Europe)")
 
 variables <- c("wind_support", "delta_t")
 
-pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/initiation_boxplots.pdf", width = 9.35, height = 6)
+pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/initiation_boxplots_EF_fixed.pdf", width = 10.3, height = 6)
 
-X11(width = 9.3, height = 6)
+X11(width = 10.2, height = 6)
 
 par(mfrow= c(2,1), 
     oma = c(1.7,0,2.5,0), 
-    mar = c(0.2,4,0.2,0.2),
+    mar = c(0.5,4,0.2,0.2),
     las = 1,
     bty = "l",
-    cex.axis = 0.7,
+    cex.axis = 0.8,
     font.axis = 3,
     tck = -0.015,
-    mgp=c(1,0.5,0))
+    mgp=c(1,1,0))
 
 
 
@@ -274,8 +272,8 @@ for(i in 1:length(variables)){
   
 
   if(i == length(variables)){
-    axis(side = 1, at = 1:length(levels(starts_all$group)), labels = levels(starts_all$group), 
-         tick = T , col.ticks = 1, col = NA, tck = -.015,lwd = 0, lwd.ticks = 1)
+    axis(side = 1, at = 1:length(levels(starts_all$group)), labels = labels, 
+         tick = T , col.ticks = 1, col = NA, tck = -.015, lwd = 0, lwd.ticks = 1, cex = 0.9)
   }
   
   if(i == 1){
@@ -293,5 +291,6 @@ for(i in 1:length(variables)){
   
 }
 mtext("Atmospheric conditions at the start of sea-crossing tracks", side = 3, outer = T, cex = 1.2, font = 1, line = 0.7)
+
 
 dev.off()
