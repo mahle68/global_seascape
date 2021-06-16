@@ -380,13 +380,10 @@ lapply(c(1:length(chunks)), function(i){
 
 #---- after annotation in movebank, download the annotated file and append to the file with instantaneous annotations
 
-load("2021/ssf_input_annotated_60_30_50_updated_sample.RData") #ann_50_sample
-
-ann_50_sample <- ann_50_sample %>% 
-  mutate(abs_cross_wind = abs(cross_wind(u = u925, v = v925, heading = heading)))
+load("2021/public/ssf_input_annotated_60_15_50.RData") #ann_50
 
 #calculate long-term metrics and merge with previously annotated data
-ann_40_ls <- list.files("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/annotations/40_yrs_60_30_updated/",pattern = ".csv", recursive = T,full.names = T) 
+ann_40_ls <- list.files("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/annotation/40yr/",pattern = ".csv", recursive = T, full.names = T) 
 
 ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>% 
   reduce(full_join) %>% 
@@ -401,9 +398,9 @@ ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>%
          wind_speed = sqrt(u925^2 + v925^2)) %>% 
   group_by(row_id) %>% 
   summarise_at(c("delta_t", "wind_speed", "wind_support", "abs_cross_wind", "u925", "v925"), #before calculating these, investigate why/if we have NAs??
-               list(avg = ~mean(., na.rm = T), var = ~var(., na.rm = T), rsd = ~rsd(.))) %>% 
+               list(var = ~var(., na.rm = T))) %>% 
   ungroup() %>% 
-  full_join(ann_50_sample, by = "row_id") %>% 
+  full_join(ann_50, by = "row_id") %>% 
   rename(location.long = coords.x1,
          location.lat = coords.x2) %>% 
   rowwise() %>% 
@@ -415,7 +412,7 @@ ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>%
   ungroup() %>% 
   as.data.frame()
 
-save(ann_cmpl, file = "2021/ssf_input_ann_cmpl_60_15.RData")
+save(ann_cmpl, file = "2021/public/ssf_input_ann_cmpl_60_15.RData")
 
 
 
