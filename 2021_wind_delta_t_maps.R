@@ -42,7 +42,7 @@ write.csv(mv, "R_files/2021/raw_points_for_maps_updated.csv")
        
 
 #annotated data
-ann <- read.csv("/home/mahle68/ownCloud/Work/Projects/delta_t/R_files/2021/annotations/raw_points_for_maps/era5/raw_points_for_maps.csv-8853543643507767873.csv") %>% 
+ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/annotations/raw_points_for_maps/era5/raw_points_for_maps.csv-8853543643507767873.csv") %>% 
   mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
   rename(sst = ECMWF.ERA5.SL.Sea.Surface.Temperature,
          t2m = ECMWF.ERA5.SL.Temperature..2.m.above.Ground.,

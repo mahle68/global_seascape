@@ -9,6 +9,7 @@ library(tidyverse)
 library(lubridate)
 library(INLA)
 library(corrr)
+library(raster)
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/")
 
@@ -55,15 +56,42 @@ all_data <- all_data %>%
 mean.beta <- 0
 prec.beta <- 1e-4 
 
-# Model 1:
-formulaM1 <- used ~ -1 + delta_t_z * wind_support_z + wind_speed_z + wind_support_var_z +
+#prepare new data to be used for predictions (for effect plots)
+#see Gómez-Rubio 2020 for details of prediction with INLA models (i.e. imputation of missing values)
+
+
+#for the new data, randomly select 4 species and one stratum per species
+set.seed(222)
+n <- 816
+inds <- all_data %>% 
+  group_by(species) %>%
+  summarize(ind = sample(ind, 2))
+strata <- all_data %>% 
+  filter(ind %in% c(inds$ind)) %>% 
+  group_by(ind) %>% 
+  summarise(stratum = sample(stratum, 2))
+
+new <-  data.frame(used = rep(NA,n),
+                   delta_t_z = sample(seq(min(all_data$delta_t_z),max(all_data$delta_t_z), length.out = 10), n, replace = T), #regular intervals for wind support and delta t, so we can make a raster later on
+                   wind_support_z = sample(seq(min(all_data$wind_support_z),max(all_data$wind_support_z), length.out = 10), n, replace = T),
+                   stratum = factor(rep(strata$stratum, 51)),
+                   species1 = factor(rep(inds$species, 51)),
+                   ind1 = factor(rep(inds$ind, 51))) %>% 
+  mutate(species2 = species1,
+         species4 = species1,
+         ind2 = ind1,
+         ind4 = ind1) 
+new_data <- new %>% 
+  full_join(all_data)
+
+
+#Model formula
+formulaM <- used ~ -1 + delta_t_z * wind_support_z + wind_support_var_z +
   f(stratum, model = "iid", 
     hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
   f(species1, delta_t_z, model = "iid", 
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
   f(species2, wind_support_z,  model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species3, wind_speed_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(species4, wind_support_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
@@ -71,35 +99,50 @@ formulaM1 <- used ~ -1 + delta_t_z * wind_support_z + wind_speed_z + wind_suppor
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
   f(ind2, wind_support_z,  model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind3, wind_speed_z, model = "iid",
-    hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(ind4, wind_support_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
 
-    (b <- Sys.time())
-    M1 <- inla(formula = formulaM1, family ="Poisson",  
-               control.fixed = list(
-                 mean = mean.beta,
-                 prec = list(default = prec.beta)),
-               control.inla = list(force.diagonal = T),
-               data = all_data,
-               num.threads = 10, #run the analysis on 10 cores. adjust according to your machine
-               control.compute = list(openmp.strategy = "huge", config = TRUE, mlik = T, waic = T, cpo = T))
-    
-    Sys.time() - b #51.78011 mins
+#Model
+(b <- Sys.time())
+M_pred <- inla(formulaM, family = "Poisson", 
+                    control.fixed = list(
+                      mean = mean.beta,
+                      prec = list(default = prec.beta)),
+                    data = new_data, 
+                    num.threads = 10,
+                    control.predictor = list(compute = TRUE), #this means that NA values will be predicted. link can also be set. but will make the predictions Inf (response is binary but family is poisson.. what is the correct link!!??) # “apply the first link function to everything”.
+                    control.compute = list(openmp.strategy = "huge", config = TRUE))#, mlik = T, waic = T)) 
+Sys.time() - b #1.376956 hours
+#with link = 1, all NaN and Inf values
+
+#save(M2_pred_all, file = "2021/public/inla_models/M2_preds_all.RData")
+
+#extract predicted values
+used_na <- which(is.na(new_data$used))
+M_pred$summary.fitted.values[used_na,]
 
 
-#Eextract cpo and waic
--sum(log(M1$cpo$cpo))
-M1$waic$waic
-
-save(M1, file = "2021/public/inla_models/m1_60_15.RData")
-
-
-summary(M1)
+#create a raster of predictions
+preds <- data.frame(delta_t = new_data[is.na(new_data$used) ,"delta_t_z"],
+                    wind_support = new_data[is.na(new_data$used) ,"wind_support_z"],
+                    preds = M_pred$summary.fitted.values[used_na,"mean"]) %>% 
+  mutate(prob_pres = exp(preds)/(1+exp(preds)))
 
 
-#Model 2: remove wind speed
+plot(preds$delta_t, preds$wind_support, col = as.factor("preds"))
+
+
+avg_preds <- preds %>% 
+  group_by(delta_t, wind_support) %>% 
+  summarise(avg_pres = mean(prob_pres)) %>% 
+  as.data.frame()
+
+coordinates(avg_preds) <-~ delta_t + wind_support
+gridded(avg_preds) <- TRUE
+plot(raster(avg_preds),ylab = "wind speed (z)", xlab = "delta_t (z)")
+
+
+#Model
 formulaM2 <- used ~ -1 + delta_t_z * wind_support_z + wind_support_var_z +
   f(stratum, model = "iid", 
     hyper = list(theta = list(initial = log(1e-6),fixed = T))) + 
@@ -128,8 +171,8 @@ M2 <- inla(formulaM2, family ="Poisson",
 Sys.time() - b #44.05078 mins
 
 #Eextract cpo and waic
--sum(log(M2$cpo$cpo))
-M2$waic$waic
+#-sum(log(M2$cpo$cpo))
+#M2$waic$waic
 
 save(M2, file = "2021/public/inla_models/m2_60_15.RData")
 
@@ -180,43 +223,6 @@ new_data <- new %>%
 
 #method 1: (Virgilio's book section 12.3)
 
-(b <- Sys.time())
-M2_pred_all <- inla(formulaM2, family = "Poisson", 
-                   control.fixed = list(
-                     mean = mean.beta,
-                     prec = list(default = prec.beta)),
-                   data = new_data, #use the sample dataset 
-                   num.threads = 10,
-                   control.predictor = list(compute = TRUE), #this means that NA values will be predicted. link can also be set. but will make the predictions Inf (response is binary but family is poisson.. what is the correct link!!??) # “apply the first link function to everything”.
-                   control.compute = list(openmp.strategy = "huge", config = TRUE))#, mlik = T, waic = T)) 
-Sys.time() - b #1.376956 hours
-#with link =1, all NaN and Inf values
-
-save(M2_pred_all, file = "2021/public/inla_models/M2_preds_all.RData")
-
-#extract predicted values
-used_na <- which(is.na(new_data$used))
-M2_pred_all$summary.fitted.values[used_na,]
-
-
-#create a raster of predictions
-preds <- data.frame(delta_t = new_data[is.na(new_data$used) ,"delta_t_z"],
-                    wind_support = new_data[is.na(new_data$used) ,"wind_support_z"],
-                    preds = M2_pred_all$summary.fitted.values[used_na,"mean"]) %>% 
-  mutate(prob_pres = exp(preds)/(1+exp(preds)))
-
-
-plot(preds$delta_t, preds$wind_support, col = as.factor("preds"))
-
-
-avg_preds <- preds %>% 
-  group_by(delta_t, wind_support) %>% 
-  summarise(avg_pres = mean(prob_pres)) %>% 
-  as.data.frame()
-
-coordinates(avg_preds) <-~ delta_t + wind_support
-gridded(avg_preds) <- TRUE
-plot(raster(avg_preds),ylab = "wind speed (z)", xlab = "delta_t (z)")
 
 
 #transform marginals manually
