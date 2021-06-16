@@ -87,11 +87,9 @@ tags_w <- c("< -10","-10 to -5","-5 to 0","0 to 5","5 to 10","10 to 15", "> 15")
 breaks_dt <- c(-5,-2,0,2,5,10)
 tags_dt <- c("< -5","-5 to -2","0 to 2","2 to 5", "> 5")
 
-#create color palettes and select colors for positive and negative values. same colors for delta t and wind?
-
-#Pal_p <- colorRampPalette(c("plum3",'slateblue4')) #colors for positive values
-Pal_n <- colorRampPalette(c('indianred1','darkgoldenrod2')) #colors for negative values
-Pal_p <- colorRampPalette(c('cornflowerblue',"mediumblue")) #colors for positive values
+#create color palettes and select colors for positive and negative values.
+Pal_p <- colorRampPalette(c("darkgoldenrod2", "indianred1")) #colors for positive values
+Pal_n <- colorRampPalette(c("mediumblue", "cornflowerblue")) #colors for negative values
 Cols_w <- paste0(c(Pal_n(3),Pal_p(4)), "80") #add transparency. 50% is "80". 70% is "B3". 80% is "CC". 90% is "E6"
 Cols_dt <- paste0(c(Pal_n(2),Pal_p(3)), "80")
 
@@ -115,7 +113,7 @@ df_sp <- SpatialPointsDataFrame(coords = df[,c("location.long", "location.lat")]
 #plot
 X11(width = 12, height = 11.5) #make the window proportional to region
 
-pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/raw_wind_dt.pdf", width = 12, height = 11.5)
+pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/raw_wind_dt_updated.pdf", width = 12, height = 11.5)
 
 par(mfrow=c(2,1),
     #fig = c(0,1,0,1), #do this if you want to add the small plots as subplots

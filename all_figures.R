@@ -3,7 +3,10 @@
 # Elham Nourani, PhD. Jun.10. 2021
 #-----------------------------------------------------------------
 
+library(TeachingDemos) #for subplot
+library(itsadug) #for gam plots
 
+source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/global_seascape/functions.R")
 
 # ---------- Fig 1: w_star #####
 
@@ -61,55 +64,27 @@ dev.off()
 load("2021/predictions_regional_gam_map.RData") #preds_filt
 load("2021/models_ls_reg_GAMs.RData") #models_ls
 load("2021/timing_for_gam_preds.RData") #timing_areas
-
-#elements prepared in regional_gam.R
-load("tracks_for_global_map.RData") #sp_samples
-EF_S <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/EF_B2378_2017_autumn.csv") %>% 
-  mutate(dt,dt = as.POSIXct(strptime(dt,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
-  filter(dt <= "2017-11-15 14:00:00") %>% #remove wintering points
-  st_as_sf(coords = c("long","lat"), crs = wgs) %>% 
-  arrange(dt) %>% 
-  summarise(do_union = F) %>%
-  st_cast("LINESTRING")
-
-
-# AF <- readPNG("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/from_james/AF_1.png")
-# EF <- readPNG("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/from_james/Updated/EF-2.png")
-# GFB <- readPNG("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/from_james/Updated/GFB-2.png")
-# OHB <- readPNG("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/from_james/OHB_2.png")
-# OS_A <- readPNG("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/from_james/Updated/EO-A.png")
-# OS_E <- readPNG("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/from_james/Updated/EO-B.png") #mirrored
-# PF_A <- readPNG("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/from_james/Updated/EP-A.png")
-# PF_E <- readPNG("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/from_james/Updated/EP-B.png")
-
-
+load("2021/public/sample_tracks.RData") #sp_samples
 
 region <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") %>% 
   st_crop(xmin = -130, xmax = 158, ymin = -74, ymax = 71) %>%
   st_union()
 
-# create a plotting function for effect plots
+# names of regions
 names <- c("South-East Asia", "The Americas", "Indian Ocean", "Europe", "Mozambique Channel")
 
-
-###
 
 #imaginary raster for legend. I want the legend to go from -1 to 5 (range of values in the prediction rasters)
 imaginary_r<-preds_filt[[1]]
 imaginary_r@data@values[3:9]<- rep(5,7)
 imaginary_r@data@values[10:16]<- rep(-1,7)
 
-
 #create a color palette
 cuts <- seq(-1,5,0.01) #set breaks
 pal <- colorRampPalette(c("dodgerblue","darkturquoise", "goldenrod1","coral","firebrick1","firebrick4"))
 colpal <- pal(570)
 
-#pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/global_plot.pdf", width = 11, height = 6) #for paper
-#pdf("/home/enourani/ownCloud/Work/conferences/MPI_YALE_2021/delta_t_global_plot.pdf", width = 22, height = 12) #larger image for presentation
-
-X11(width = 11, height = 6) #make the window proportional to region
-X11(width = 22, height = 12) #make the window proportional to region
+X11(width = 11, height = 6) #in inches
 
 par(mfrow=c(1,1),
     fig = c(0,1,0,1), #do this if you want to add the small plots as subplots
@@ -118,12 +93,12 @@ par(mfrow=c(1,1),
     font = 3, #3: axis labels are in italics
     font.axis = 3,
     cex.lab = 0.6,
-    #cex = 0.5,
     oma = c(0,0,0,0),
     mar = c(0, 0, 0, 0),
     lend = 1  #rectangular line endings (trick for adding the rectangle to the legend)
 )
 
+#plot the background map
 plot(region, col="#e5e5e5",border="#e5e5e5")
 plot(preds_filt[[1]],axes = F, box=F, legend=FALSE,zlim=c(-1,5),breaks=cuts, col = colpal, add = T) 
 plot(preds_filt[[2]],axes = F, box=F, legend=FALSE,zlim=c(-1,5),breaks=cuts, col = colpal, add = T) 
@@ -140,14 +115,13 @@ plot(st_geometry(sp_samples$O_sample), add= T, lty = 5, lwd = lwd, col = col)
 plot(st_geometry(sp_samples$OHB_sample), add= T, lty = 4, lwd = lwd, col = col)
 plot(st_geometry(sp_samples$GFB_sample), add= T, lty = 1, lwd = lwd, col = col)
 plot(st_geometry(sp_samples$AF_sample), add= T, lty = 6, lwd = lwd, col = col)
-plot(st_geometry(sp_samples$EF_sample), add = T, lty = 2, lwd = lwd, col = col)
+plot(st_geometry(sp_samples$EF_S_sample), add = T, lty = 2, lwd = lwd, col = col)
 
-#add latitudes
+#add latitude lines
 clip(-130, 157, -50, 73)
 abline(h = 0, col = "grey70",lty = 2)
 abline(h = 30, col = "grey70",lty = 2)
 abline(h = 60, col = "grey70",lty = 2)
-#text(x = -125, y = c(2,32,62), labels = c("0° ", "30° N", "60° N"), cex = 0.6, col = "grey65")
 text(x = -125, y = c(32,62), labels = c("30° N", "60° N"), cex = 0.6, col = "grey65")
 
 #add a frame for the sub-plots and legend
@@ -165,8 +139,7 @@ rect(xleft = -130,
      col="white",
      border = NA)
 
-#add subplots...
-#centers_x <- c(124,-56,64,4) #distance between centers = 60
+#add subplots
 centers_x <- c(130,-102,72,-44,14) #distance between centers = 58
 
 for(i in 1:length(centers_x)){
@@ -182,9 +155,7 @@ for(i in 1:length(centers_x)){
 
 #add legend
 plot(imaginary_r, legend.only = TRUE, breaks = cuts, col = colpal, 
-     #legend.width = 0.3, legend.shrink = 0.3,
-     smallplot = c(0.04,0.15,0.37,.385),#c(0.059,0.169,0.145,0.16), #c(min % from left, max % from left, min % from bottom, max % from bottom)
-     #smallplot = c(0.06,0.17, 0.28,0.295),#c(0.06,0.17, 0.36,0.375), 
+     smallplot = c(0.04,0.15,0.37,.385), #c(min % from left, max % from left, min % from bottom, max % from bottom)
      axis.args = list(at = c(-1,0,2,4), #same arguments as any axis, to determine the length of the bar and tick marks and labels
                       labels = c(-1,0,2,4), 
                       col = NA, #make sure box type in par is set to n, otherwise axes will be drawn on the legend :p
@@ -194,23 +165,17 @@ plot(imaginary_r, legend.only = TRUE, breaks = cuts, col = colpal,
      legend.args = list(text = expression(italic(paste(Delta,"T", "(°C)"))), side = 3, font = 2, line = 0.1, cex = 0.7)
 )
 
-#for the paper:
-#text(x = -118,y = 10, "Map legend", cex = 0.8)
-#legend(-130,8, legend = c("Oriental honey buzzard", "Grey-faced buzzard", "Amur falcon", 
-#                                  "Eleonora's falcon", "Peregrine falcon", "Osprey"),
-#       lty = c(4,1,6,2,3,5), cex = 0.55, bty = "n", seg.len = 3)
 
-#for the slide
-text(x = -118,y = 10, "Map legend", cex = 1.3)
+text(x = -118,y = 10, "Map legend", cex = 0.8)
 legend(-130,8, legend = c("Oriental honey buzzard", "Grey-faced buzzard", "Amur falcon", 
-                          "Eleonora's falcon", "Peregrine falcon", "Osprey"),
-       lty = c(4,1,6,2,3,5), cex = 1.2, bty = "n", seg.len = 3)
+                                  "Eleonora's falcon", "Peregrine falcon", "Osprey"),
+       lty = c(4,1,6,2,3,5), cex = 0.55, bty = "n", seg.len = 3)
+
+ legend(-45,-67, legend = c("sea-crossing period","High sun elevation", "Low sun elevation", "Night"),
+        lty = c(1,1,2,3), lwd = c(9,1,1,1), col = c("#99CC0060", rep("black",3)),cex = 0.55, bty = "n", seg.len = 3, horiz = T)
 
 
-legend(-45,-67, legend = c("sea-crossing period","High sun elevation", "Low sun elevation", "Night"),
-       lty = c(1,1,2,3), lwd = c(9,1,1,1), col = c("#99CC0060", rep("black",3)),cex = 0.55, bty = "n", seg.len = 3, horiz = T)
 
-dev.off()
 # ---------- Fig S1: species-specific coefficients #####
 
 #SUPPLEMENTARY FIGURE 1: species-specific coefficients 
@@ -328,4 +293,208 @@ dev.off()
 
 # ---------- Fig S3: maps with annotated tracking points #####
 
+
+region <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") %>% 
+  st_crop(xmin = -99, xmax = 144, ymin = -30, ymax = 71) %>%
+  st_union()
+
+load("R_files/2021/raw_sea_points_for_maps_mv.RData") #mv
+
+#add a categorical variable for wind levels
+breaks_w <- c(-20,-10,-5,0,5,10,15,35)
+tags_w <- c("< -10","-10 to -5","-5 to 0","0 to 5","5 to 10","10 to 15", "> 15")
+#add a categorical variable for wind levels
+breaks_dt <- c(-5,-2,0,2,5,10)
+tags_dt <- c("< -5","-5 to -2","0 to 2","2 to 5", "> 5")
+
+#create color palettes and select colors for positive and negative values.
+Pal_p <- colorRampPalette(c("darkgoldenrod2", "indianred1")) #colors forpositive values
+Pal_n <- colorRampPalette(c("mediumblue", "cornflowerblue")) #colors for negative values
+Cols_w <- paste0(c(Pal_n(3),Pal_p(4)), "80") #add transparency. 50% is "80". 70% is "B3". 80% is "CC". 90% is "E6"
+Cols_dt <- paste0(c(Pal_n(2),Pal_p(3)), "80")
+
+
+
+df <- mv %>% 
+  as.data.frame() %>% 
+  drop_na(c("heading","delta_t")) %>% 
+  mutate(wind_support= wind_support(u = u925,v = v925,heading = heading),
+         cross_wind= cross_wind(u = u925,v = v925,heading = heading)) %>% 
+  mutate(binned_w = cut(wind_support,breaks = breaks_w, include.lowest = T, right = F, labels = tags_w),
+         binned_dt = cut(delta_t,breaks = breaks_dt, include.lowest = T, right = F, labels = tags_dt)) %>% 
+  mutate(cols_w = as.factor(binned_w),
+         cols_dt = as.factor(binned_dt)) 
+
+levels(df$cols_w) <- Cols_w
+levels(df$cols_dt) <- Cols_dt
+
+df_sp <- SpatialPointsDataFrame(coords = df[,c("location.long", "location.lat")], proj4string = wgs, data = df)
+
+#plot
+X11(width = 12, height = 11.5) #in inches
+par(mfrow=c(2,1),
+    bty="n", #no box around the plot
+    cex.axis= 0.6, #x and y labels have 0.75% of the default size
+    font.axis = 3,
+    cex.lab = 0.6,
+    #cex = 0.5,
+    oma = c(0,0,1.5,0),
+    mar = c(0, 0, 0.3, 0),
+    lend = 1  #rectangular line endings (trick for adding the rectangle to the legend)
+)
+
+
+plot(region, col="#e5e5e5",border="#e5e5e5")
+points(df_sp, pch = 1, col = as.character(df_sp$cols_w), cex = 0.2)
+
+#add latitudes
+clip(-99, 144, -30, 71)
+abline(h = 0, col = "grey70",lty = 2)
+abline(h = 30, col = "grey70",lty = 2)
+abline(h = 60, col = "grey70",lty = 2)
+#text(x = -125, y = c(2,32,62), labels = c("0° ", "30° N", "60° N"), cex = 0.6, col = "grey65")
+text(x = -95, y = c(32,62), labels = c("30° N", "60° N"), cex = 0.6, col = "grey65")
+
+
+#add a frame for the sub-plots and legend
+rect(xleft = -100,
+     xright = -71,
+     ybottom =  -30,
+     ytop = 2,
+     col="white",
+     border = NA)
+
+text(x = -85,y = 0, "Wind support (m/s)", cex = 0.8, font = 3)
+legend(x = -100, y = 0, legend = levels(df_sp$binned_w), col = Cols_w, pch = 20, 
+       bty = "n", cex = 0.8, text.font = 3)
+mtext("Sea-crossing tracks annotated with wind support", 3, outer = F, cex = 1.3, line = -0.5)
+
+plot(region, col="#e5e5e5",border="#e5e5e5")
+points(df_sp, pch = 1, col = as.character(df_sp$cols_dt), cex = 0.2)
+
+#add latitudes
+clip(-99, 144, -30, 71)
+abline(h = 0, col = "grey70",lty = 2)
+abline(h = 30, col = "grey70",lty = 2)
+abline(h = 60, col = "grey70",lty = 2)
+#text(x = -125, y = c(2,32,62), labels = c("0° ", "30° N", "60° N"), cex = 0.6, col = "grey65")
+text(x = -95, y = c(32,62), labels = c("30° N", "60° N"), cex = 0.6, col = "grey65")
+
+
+#add a frame for the sub-plots and legend
+rect(xleft = -100,
+     xright = -80,
+     ybottom =  -30,
+     ytop = 2,
+     col="white",
+     border = NA)
+
+text(x = -93,y = 0,  expression(italic(paste(Delta,"T", "(°C)"))), cex = 0.8)
+legend(x = -100, y = -1, legend = levels(df_sp$binned_dt), col =Cols_dt, pch = 20, 
+       bty = "n", cex = 0.8, text.font = 3)
+mtext(bquote(paste('Sea-crossing tracks annotated with', italic(~ Delta *"T"))), 3, outer = F, cex = 1.3, line = -0.5)
+
+
+
 # ---------- Fig S4: boxplots for conditions at sea-crossing initiation #####
+#color palette
+Pal <- colorRampPalette(c("darkgoldenrod1","lightpink1", "mediumblue")) #colors for negative values
+Cols <- paste0(Pal(3), "80") #add transparency. 50% is "80". 70% is "B3". 80% is "CC". 90% is "E6"
+
+load("R_files/2021/raw_sea_points_for_maps_mv.RData") #mv from higher up.... this is all the data, before filtering
+
+
+starts_all <- mv %>% 
+  as.data.frame() %>% 
+  drop_na(c("heading","delta_t")) %>% 
+  mutate(wind_support= wind_support(u = u925,v = v925, heading = heading),
+         cross_wind= cross_wind(u = u925,v = v925,heading = heading)) %>% 
+  mutate(group = ifelse(species == "OHB", "OHB",
+                        ifelse(species == "GFB", "GFB",
+                               ifelse(species == "O" & location.long < -30, "O_A",
+                                      ifelse(species == "O" & location.long > -30, "O_E",
+                                             ifelse(species == "EF" & location.lat > 0, "EF_med",
+                                                    ifelse(species == "EF" & location.lat < 0, "EF_moz",
+                                                           ifelse(species == "PF" & location.long < -30, "PF_A",
+                                                                  "PF_E"))))))))  %>% 
+  group_by(track) %>% 
+  arrange(timestamp) %>% 
+  slice(1) %>%
+  ungroup() %>% 
+  st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
+  mutate(s_elev_angle = solarpos(st_coordinates(.), timestamp, proj4string = CRS("+proj=longlat +datum=WGS84"))[,2]) %>% #calculate solar elevation angle
+  mutate(sun_elev = ifelse(s_elev_angle < -6, "night", #create a categorical variable for teh position of the sun
+                           ifelse(s_elev_angle > 40, "high", "low"))) %>% 
+  as("Spatial") %>% 
+  as.data.frame() %>% 
+  mutate(group = as.factor(group)) %>% 
+  as.data.frame()
+
+
+labels <- c("EF \n (Mediterranean)", "EF \n (Mozambique)", "GFB \n", "Osprey \n (America)", "Osprey \n (Europe)", "OHB \n ", "PF \n (America)", "PF \n (Europe)")
+
+variables <- c("wind_support", "delta_t")
+
+X11(width = 12, height = 5) #inches
+
+par(mfrow= c(2,1), 
+    oma = c(1.7,0,2.5,0), 
+    mar = c(0.5,4,0.2,0.2),
+    las = 1,
+    bty = "l",
+    cex.axis = 0.8,
+    font.axis = 3,
+    tck = -0.015,
+    mgp=c(1,1,0))
+
+
+
+for(i in 1:length(variables)){
+  
+  boxplot(starts_all[,variables[i]] ~ starts_all[,"group"], data = starts_all, boxfill = NA, border = NA, xlab = "", ylab = "", xaxt = "n")
+  abline(h = 0, lty = 2, col = alpha("black", 0.6), lwd = 0.3)
+
+  points(jitter((as.numeric(starts_all[starts_all$sun_elev == "high","group"]) -0.3),0.3), starts_all[starts_all$sun_elev == "high", variables[i]], 
+         yaxt = "n", xaxt = "n", pch = 20, cex = 0.8, col = alpha("black", 0.6))
+  
+  boxplot(starts_all[starts_all$sun_elev == "high", variables[i]] ~ starts_all[starts_all$sun_elev == "high","group"], 
+          yaxt = "n", xaxt = "n", add = T, boxfill = Cols[1], outline=FALSE, lwd = 0.5, 
+          boxwex = 0.25, at = 1:length(unique(starts_all$group)) - 0.3)
+  
+  points(jitter(as.numeric(starts_all[starts_all$sun_elev == "low","group"]),0.3), starts_all[starts_all$sun_elev == "low", variables[i]], 
+         yaxt = "n", xaxt = "n", pch = 20, cex = 0.8, col = alpha("black", 0.6))
+  
+  boxplot(starts_all[starts_all$sun_elev == "low", variables[i]] ~ starts_all[starts_all$sun_elev == "low", "group"], 
+          yaxt = "n", xaxt = "n", add = T, boxfill = Cols[2], outline = FALSE,  lwd = 0.5, 
+          boxwex = 0.25, at = 1:length(unique(starts_all$group))+ 0)
+  
+  points(jitter((as.numeric(starts_all[starts_all$sun_elev == "night","group"]) +0.3),0.3), starts_all[starts_all$sun_elev == "night", variables[i]], 
+         yaxt = "n", xaxt = "n", pch = 20, cex = 0.8, col = alpha("black", 0.6))
+  
+  boxplot(starts_all[starts_all$sun_elev == "night", variables[i]] ~ starts_all[starts_all$sun_elev == "night", "group"], 
+          yaxt = "n", xaxt = "n", add = T, boxfill = Cols[3], outline=FALSE,  lwd = 0.5, 
+          boxwex = 0.25, at = 1:length(unique(starts_all$group))+ 0.3)
+  
+  
+  if(i == length(variables)){
+    axis(side = 1, at = 1:length(levels(starts_all$group)), labels = labels, 
+         tick = T , col.ticks = 1, col = NA, tck = -.015, lwd = 0, lwd.ticks = 1, cex = 0.9)
+  }
+  
+  if(i == 1){
+    legend(x = 7.3, y = 19, legend = c("daytime: high sun", "daytime: low sun", "night"), col = Cols, #coords indicate top-left
+           cex = 0.78, pt.cex = 1.1, bg = "white", bty = "n", pch = 15)
+  }
+  
+  if(variables[i] == "wind_support"){
+    mtext("Wind support (m/s)", side = 2, las = 3, line = 2, font = 3)
+  }
+  
+  if(variables[i] == "delta_t"){
+    mtext(expression(italic(paste(Delta,"T", "(°C)"))), side = 2, las = 3, line = 2)
+  }
+  
+}
+mtext("Atmospheric conditions at the start of sea-crossing tracks", side = 3, outer = T, cex = 1.2, font = 1, line = 0.7)
+
+
