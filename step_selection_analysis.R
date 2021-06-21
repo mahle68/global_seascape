@@ -112,10 +112,10 @@ M_pred <- inla(formulaM, family = "Poisson",
                     num.threads = 10,
                     control.predictor = list(compute = TRUE), #this means that NA values will be predicted. link can also be set. but will make the predictions Inf (response is binary but family is poisson.. what is the correct link!!??) # “apply the first link function to everything”.
                     control.compute = list(openmp.strategy = "huge", config = TRUE))#, mlik = T, waic = T)) 
-Sys.time() - b #1.376956 hours
+Sys.time() - b #1.574914 hours
 #with link = 1, all NaN and Inf values
 
-#save(M2_pred_all, file = "2021/public/inla_models/M2_preds_all.RData")
+save(M_pred, file = "2021/public/inla_models/M_preds_all.RData")
 
 #extract predicted values
 used_na <- which(is.na(new_data$used))
