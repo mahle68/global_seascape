@@ -5,21 +5,58 @@
 
 library(TeachingDemos) #for subplot
 library(itsadug) #for gam plots
+library(mgcv)
+library(sf)
+library(move)
 
 source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/global_seascape/functions.R")
 
 # ---------- Fig 1: w_star #####
 
-#new data for predictions
-newx <- seq(min(data$delta_t), 9, by = 0.05)
-conf_interval <- predict(fit_2, newdata = data.frame(delta_t = newx), interval = "confidence",
-                         level = 0.95)
+#Here we build the GAM model and generate the resulting plot
+
+#load data (annotated sea-crossing points. available in the Dryad repository). This file contains annotations using ECMWF ERA5 (columns with _5 suffix) and ERA-interim (columns with _i suffix). 
+#For the w_star estimations, we use the ERA_interim data. The variables of interest wer not available from ERA5 via the Movebank annotation service at the time this study was conducted. 
+#We will use the ERA5 annotations later on for creating maps for Fig S3.
+
+load("annotated_points.RData") #ann_pts
+
+#only keep rows with positive delta_t
+data <- ann_pts %>% 
+  filter(delta_t_i >= 0)
+
+data$w_star <- w_star(blh = data$blh_i, T2m = data$t2m_i, 
+                        s_flux = data$s_flux_i, m_flux = data$m_flux_i)
+
+
+#model and estimate confidence intervals
+M <- gam(w_star ~ s(delta_t_i, bs = "cr", k = 10), data = data)
+fit <- predict(M, se = T)$fit
+se <- predict(M, se = T)$se.fit
+
+lcl <- fit - 1.96* se
+ucl <- fit + 1.96* se
+
+i.for <- order(data$delta_t_i)
+i.back <- order(data$delta_t_i , decreasing = TRUE)
+
+x.polygon <- c(data$delta_t_i[i.for] , data$delta_t_i[i.back])
+y.polygon <- c(ucl[i.for] , lcl[i.back])
+
+
+#create a color palette
+Pal <- colorRampPalette(c("darkgoldenrod1","lightpink1", "mediumblue")) 
+Cols <- paste0(Pal(3), "80")
+
+data$color <- as.factor(data$sun_elev)
+levels(data$color) <- Cols
 
 data$shape <- as.factor(data$species)
 levels(data$shape) <- c(0,1,2,3,4,5)
 
+
+#Plot
 X11(width = 5.2, height = 3)
-pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/w_star_spp_gam.pdf", width = 5.2, height = 3)
 
 par(mfrow=c(1,1), 
     bty = "l",
@@ -33,17 +70,17 @@ par(mfrow=c(1,1),
 
 plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(0,8.3), ylim = c(0.5,5), xlab = expression(italic(paste(Delta,"T", "(°C)"))), ylab = "w* (m/s)")
 
-with(pos_dt,points(delta_t, w_star, col= as.character(data$color), pch = as.numeric(data$shape), cex = 0.5))
+with(data,points(delta_t_i, w_star, col= as.character(data$color), pch = as.numeric(data$shape), cex = 0.6))
 
 polygon(x.polygon , y.polygon , col = alpha("grey", 0.5) , border = NA) #confidence intervals
 
-lines(data$delta_t[i.for] , fit[i.for], col = "black" , lwd = 1.1)
+lines(data$delta_t_i[i.for] , fit[i.for], col = "black" , lwd = 1.1)
 
 axis(side = 1, at = c(0,2,4,6,8), labels = c(0,2,4,6,8), 
      tick = T , col.ticks = 1, col = NA, tck = -.015,lwd = 0, lwd.ticks = 1)
 axis(side= 2, at= seq(1,5,1), labels= seq(1,5,1),
      tick=T , col.ticks = 1, col = NA, tck=-.015,
-     las=2) # text perpendicular to axis label 
+     las=2) 
 
 text(9.8,4.6, "Time of day", cex = 0.7)
 legend(x = 8.7, y = 4.5, legend = c("daytime: high sun", "daytime: low sun", "night"), col = Cols, #coords indicate top-left
@@ -56,28 +93,31 @@ legend(x = 8.7, y = 2.9, legend = c("Pernis ptilorhynchus", "Pandion haliaetus",
        text.font = 3)
 
 
-dev.off()
+
 
 # ---------- Fig 2: global seascape map #####
+
 #Bird figures are not included in this code for copyright reasons.
 
-load("2021/predictions_regional_gam_map.RData") #preds_filt
-load("2021/models_ls_reg_GAMs.RData") #models_ls
-load("2021/timing_for_gam_preds.RData") #timing_areas
-load("2021/public/sample_tracks.RData") #sp_samples
+#load the data  
+load("predictions_regional_gams.RData") #preds_filt; rasters of predictions using GAMs produced in seascape_GAM_analysis.R
+load("models_ls_reg_GAMs.RData") #models_ls; list of regional gams produced in seascape_GAM_analysis.R
+load("timing_for_gam_preds.RData") #timing_areas; timing of sea-crossing
+load("sample_tracks.RData") #sp_samples; sample tracks for each species to add to the map
 
-region <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") %>% 
+#load continents shapefile as the map background
+region <- st_read("continent_shapefile/continent.shp") %>% 
   st_crop(xmin = -130, xmax = 158, ymin = -74, ymax = 71) %>%
   st_union()
 
-# names of regions
+#names of regions
 names <- c("South-East Asia", "The Americas", "Indian Ocean", "Europe", "Mozambique Channel")
 
 
-#imaginary raster for legend. I want the legend to go from -1 to 5 (range of values in the prediction rasters)
-imaginary_r<-preds_filt[[1]]
-imaginary_r@data@values[3:9]<- rep(5,7)
-imaginary_r@data@values[10:16]<- rep(-1,7)
+#imaginary raster for legend. The legend should go from -1 to 5 (range of values in the prediction rasters)
+imaginary_r <- preds_filt[[1]]
+imaginary_r@data@values[3:9] <- rep(5,7)
+imaginary_r@data@values[10:16] <- rep(-1,7)
 
 #create a color palette
 cuts <- seq(-1,5,0.01) #set breaks
@@ -176,6 +216,82 @@ legend(-130,8, legend = c("Oriental honey buzzard", "Grey-faced buzzard", "Amur 
 
 
 
+ 
+ 
+# ---------- Fig 3: INLA results #####
+
+#load the model and data used to build it (produced in step_selection_analysis.R; also available on the Dryad repository)
+ 
+load("INLA_model.RData") #M_pred
+load("new_data_for_modeling.RData") #new_data
+ 
+ 
+#---------- Prep for 3a: posterior means of coefficients
+
+
+
+
+#----------Prep for 3b: interaction between wind support and delta-t
+
+#extract predicted values
+used_na <- which(is.na(new_data$used))
+M_pred$summary.fitted.values[used_na,]
+ 
+ 
+#create a raster of predictions
+preds <- data.frame(delta_t = new_data[is.na(new_data$used) ,"delta_t_z"],
+                     wind_support = new_data[is.na(new_data$used) ,"wind_support_z"],
+                     preds = M_pred$summary.fitted.values[used_na,"mean"]) %>% 
+   mutate(prob_pres = exp(preds)/(1+exp(preds)))
+ 
+ 
+ plot(preds$delta_t, preds$wind_support, col = as.factor("preds"))
+ 
+ 
+ avg_preds <- preds %>% 
+   group_by(delta_t, wind_support) %>% 
+   summarise(avg_pres = mean(prob_pres)) %>% 
+   ungroup() %>% 
+   mutate(wspt_backtr = wind_support * attr(all_data$wind_support_z, 'scaled:scale') + attr(all_data$wind_support_z, 'scaled:center'),
+          dt_backtr = delta_t * attr(all_data$delta_t_z, 'scaled:scale') + attr(all_data$delta_t_z, 'scaled:center')) %>% 
+   dplyr::select(-c("delta_t","wind_support")) %>% 
+   as.data.frame()
+ 
+ 
+ 
+ coordinates(avg_preds) <-~ dt_backtr + wspt_backtr 
+ gridded(avg_preds) <- TRUE
+ r <- raster(avg_preds)
+ 
+ 
+ plot(r, ylab = "wind support (m/s)", xlab = "delta_t (°C)")
+ 
+ avg <- preds %>% 
+   group_by(delta_t, wind_support) %>% 
+   summarise(avg_pres = mean(prob_pres)) %>% 
+   ungroup() %>% 
+   as.data.frame()
+ 
+ 
+ coordinates(avg) <-~ delta_t + wind_support 
+ gridded(avg) <- TRUE
+ rr <- raster(avg)
+ 
+ 
+ plot(rr, ylab = "wind support (m/s)", xlab = "delta_t (°C)")
+ 
+ #plot
+ 
+ #create a color palette
+ cuts <- seq(-1,5,0.01) #set breaks
+ #pal <- colorRampPalette(c("dodgerblue","darkturquoise","goldenrod1","coral","firebrick1"))
+ pal <- colorRampPalette(c("dodgerblue","darkturquoise", "goldenrod1","coral","firebrick1","firebrick4"))
+ colpal <- pal(570)
+ 
+ 
+ 
+#---------- put it all together
+ 
 # ---------- Fig S1: species-specific coefficients #####
 
 #SUPPLEMENTARY FIGURE 1: species-specific coefficients 
@@ -293,42 +409,48 @@ dev.off()
 
 # ---------- Fig S3: maps with annotated tracking points #####
 
+#load data: annotated sea-crossing points. This is the same file as used for Fig. 1: w_star; except now we will use the ERA5 data (columns with the _5 suffix)
+load("annotated_points.RData") #ann_pts
 
-region <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") %>% 
+#add shapefile as the map background
+region <- st_read("continent_shapefile/continent.shp") %>% 
   st_crop(xmin = -99, xmax = 144, ymin = -30, ymax = 71) %>%
   st_union()
 
-load("R_files/2021/raw_sea_points_for_maps_mv.RData") #mv
+#create a move object, to calculate heading using the angle function
+mv <- move(x = ann_pts$lon, y = ann_pts$lat, time = ann_pts$timestamp, data = ann_pts, animal = ann_pts$track, proj = wgs)
+mv$heading <- unlist(lapply(angle(mv), c, NA))
+
 
 #add a categorical variable for wind levels
 breaks_w <- c(-20,-10,-5,0,5,10,15,35)
 tags_w <- c("< -10","-10 to -5","-5 to 0","0 to 5","5 to 10","10 to 15", "> 15")
-#add a categorical variable for wind levels
+#add a categorical variable for delta_t levels
 breaks_dt <- c(-5,-2,0,2,5,10)
 tags_dt <- c("< -5","-5 to -2","0 to 2","2 to 5", "> 5")
 
 #create color palettes and select colors for positive and negative values.
-Pal_p <- colorRampPalette(c("darkgoldenrod2", "indianred1")) #colors forpositive values
+Pal_p <- colorRampPalette(c("darkgoldenrod2", "indianred1")) #colors for positive values
 Pal_n <- colorRampPalette(c("mediumblue", "cornflowerblue")) #colors for negative values
-Cols_w <- paste0(c(Pal_n(3),Pal_p(4)), "80") #add transparency. 50% is "80". 70% is "B3". 80% is "CC". 90% is "E6"
+Cols_w <- paste0(c(Pal_n(3),Pal_p(4)), "80") #add transparency
 Cols_dt <- paste0(c(Pal_n(2),Pal_p(3)), "80")
 
 
 
 df <- mv %>% 
   as.data.frame() %>% 
-  drop_na(c("heading","delta_t")) %>% 
-  mutate(wind_support= wind_support(u = u925,v = v925,heading = heading),
-         cross_wind= cross_wind(u = u925,v = v925,heading = heading)) %>% 
-  mutate(binned_w = cut(wind_support,breaks = breaks_w, include.lowest = T, right = F, labels = tags_w),
-         binned_dt = cut(delta_t,breaks = breaks_dt, include.lowest = T, right = F, labels = tags_dt)) %>% 
+  drop_na(c("heading","delta_t_5")) %>% 
+  mutate(wind_support= wind_support(u = u925_5, v = v925_5, heading = heading),
+         cross_wind= cross_wind(u = u925_5, v = v925_5, heading = heading)) %>% 
+  mutate(binned_w = cut(wind_support, breaks = breaks_w, include.lowest = T, right = F, labels = tags_w),
+         binned_dt = cut(delta_t_5, breaks = breaks_dt, include.lowest = T, right = F, labels = tags_dt)) %>% 
   mutate(cols_w = as.factor(binned_w),
          cols_dt = as.factor(binned_dt)) 
 
 levels(df$cols_w) <- Cols_w
 levels(df$cols_dt) <- Cols_dt
 
-df_sp <- SpatialPointsDataFrame(coords = df[,c("location.long", "location.lat")], proj4string = wgs, data = df)
+df_sp <- SpatialPointsDataFrame(coords = df[,c("coords.x1", "coords.x2")], proj4string = wgs, data = df)
 
 #plot
 X11(width = 12, height = 11.5) #in inches
@@ -337,7 +459,7 @@ par(mfrow=c(2,1),
     cex.axis= 0.6, #x and y labels have 0.75% of the default size
     font.axis = 3,
     cex.lab = 0.6,
-    #cex = 0.5,
+    cex = 0.9,
     oma = c(0,0,1.5,0),
     mar = c(0, 0, 0.3, 0),
     lend = 1  #rectangular line endings (trick for adding the rectangle to the legend)
@@ -364,12 +486,12 @@ rect(xleft = -100,
      col="white",
      border = NA)
 
-text(x = -85,y = 0, "Wind support (m/s)", cex = 0.8, font = 3)
+text(x = -87,y = 0, "Wind support (m/s)", cex = 0.8, font = 3)
 legend(x = -100, y = 0, legend = levels(df_sp$binned_w), col = Cols_w, pch = 20, 
        bty = "n", cex = 0.8, text.font = 3)
 mtext("Sea-crossing tracks annotated with wind support", 3, outer = F, cex = 1.3, line = -0.5)
 
-plot(region, col="#e5e5e5",border="#e5e5e5")
+plot(region, col = "#e5e5e5",border = "#e5e5e5")
 points(df_sp, pch = 1, col = as.character(df_sp$cols_dt), cex = 0.2)
 
 #add latitudes
@@ -379,7 +501,6 @@ abline(h = 30, col = "grey70",lty = 2)
 abline(h = 60, col = "grey70",lty = 2)
 #text(x = -125, y = c(2,32,62), labels = c("0° ", "30° N", "60° N"), cex = 0.6, col = "grey65")
 text(x = -95, y = c(32,62), labels = c("30° N", "60° N"), cex = 0.6, col = "grey65")
-
 
 #add a frame for the sub-plots and legend
 rect(xleft = -100,

@@ -3,13 +3,15 @@
 # Elham Nourani, PhD. Jun.10. 2021
 #-----------------------------------------------------------------
 
-
+library(mgcv)
+library(parallel)
+library(fields) #for Tps
 
 # ---------- STEP 1: load data #####
 # data was downloaded from the ECMWF Era-interim data set (see manuscript for details). 
 #In addition to sea-surface temperature, temperature at 2m above ground, sun elevation categories were assigned (see code w_star_estimation.R) 
 
-load("2021/data_ls_regional_gam.RData") #data_ls_sun. contains one list per region
+load("input_regional_gams.RData") #data_ls_sun. contains one list per region
 
 
 # ---------- STEP 2: Modeling #####
@@ -23,7 +25,7 @@ clusterEvalQ(mycl, {
 })
 
 (b <- Sys.time())
-models_ls <- lapply(data_ls_sun, function(x){
+models_ls <- lapply(data_ls_sun, function(x){ #one model per region
   
   x$sun_elev_f <- as.factor(x$sun_elev)
   
@@ -42,9 +44,8 @@ stopCluster(mycl)
 
 # ---------- STEP 3: Predictions #####
 
-load("2021/timing_for_gam_preds.RData") #timing_areas; contains information for migration timing (in julian dates) OVER THE SEA for each species
-load("2021/data_ls_regional_gam.RData") #data_ls_sun
-load("2021/models_ls_reg_GAMs.RData") #models_ls
+#load additonal data from the Dryad repository
+load("timing_for_gam_preds.RData") #timing_areas; contains information for migration timing (in julian dates) OVER THE SEA for each species
 
 
 (b <- Sys.time())
@@ -91,7 +92,7 @@ Sys.time() -b
 
 
 names(preds) <- names(models_ls)
-#save(preds, file = "2021/regional_gam_preds.RData")
 
 #mask the rasters with the relevant land layer (not shown)
-#the result is "2021/predictions_regional_gam_map.RData"
+#the result can be found in the Dryad repository under name: "predictions_regional_gams.RData"
+#see all_figures.R for plotting the seascape map (Fig. 2)

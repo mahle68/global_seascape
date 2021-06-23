@@ -122,7 +122,7 @@ used_av_ls <- parLapply(mycl, move_ls, function(group){ # for each group (ie. un
   fit.gamma1 <- fitdist(sl, distr = "gamma", method = "mle")
   
   #plot turning angle and step length distributions
-  pdf(paste0("your_path/", hr, "_", tolerance, "/",group@idData$group[1], ".pdf"))
+  pdf(paste0("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/ssf_plots/", hr, "_", tolerance, "/",group@idData$group[1], ".pdf"))
   par(mfrow=c(1,2))
   hist(sl, freq=F, main="", xlab = "Step length (km)")
   plot(function(x) dgamma(x, shape = fit.gamma1$estimate[[1]],
@@ -132,7 +132,7 @@ used_av_ls <- parLapply(mycl, move_ls, function(group){ # for each group (ie. un
   dev.off()
   
   #diagnostic plots for step length distribution
-  pdf(paste0("your_path", hr, "_", tolerance, "/",group@idData$group[1], "_diag.pdf"))
+  pdf(paste0("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/ssf_plots/", hr, "_", tolerance, "/",group@idData$group[1], "_diag.pdf"))
   plot(fit.gamma1)
   dev.off()
   
@@ -203,6 +203,8 @@ Sys.time() - b
 stopCluster(mycl) 
 
 
+save(used_av_ls, file = "2021/public/ssf_input_all_60_15_150.RData")
+
 # ---------- STEP 3: annotation#####
 
 #to submit the data for annotation on Movebank, we need to create csv files with nrow() < 1e6. The timestamps should have miliseconds, and lat and lon columns should be names according to the Movebank requirements.
@@ -221,10 +223,28 @@ used_av_df <- lapply(c(1:length(used_av_ls)), function(i){
 }) %>% 
   reduce(rbind)
 
+save(used_av_df, file = "2021/public/ssf_input_all_df_60_15_150.RData")
+
+
+# #have a look
+# X11();par(mfrow= c(2,1), mar = c(0,0,0,0), oma = c(0,0,0,0))
+# maps::map("world",fil = TRUE,col = "grey85", border=NA) 
+# points(used_av_ls[used_av_ls$used == 0,c("x","y")], pch = 16, cex = 0.2, col = "gray55")
+# points(used_av_ls[used_av_ls$used == 1,c("x","y")], pch = 16, cex = 0.2, col = "orange")
+# 
+# maps::map("world",fil = TRUE,col = "grey85", border=NA) 
+# points(used_av_df_1hr2[used_av_df_1hr2$used == 0,c("x","y")], pch = 16, cex = 0.2, col = "gray55")
+# points(used_av_df_1hr2[used_av_df_1hr2$used == 1,c("x","y")], pch = 16, cex = 0.2, col = "orange")
+# 
+# 
+# maps::map("world",fil = TRUE,col = "grey85", border=NA) 
+# points(used_av_all_2hr[used_av_all_2hr$used == 0,c("x","y")], pch = 16, cex = 0.4, col = "gray55")
+# points(used_av_all_2hr[used_av_all_2hr$used == 1,c("x","y")], pch = 16, cex = 0.4, col = "orange")
+
 #rename lat and lon columns
 colnames(used_av_df)[c(2,3)] <- c("location-lat", "location-long")
 
-write.csv(used_av_df, "your_path/file_name.csv") 
+write.csv(used_av_df, "2021/public/ssf_input_df_60_15_150.csv") 
 
 #submit this file to movebank and annotate with the following variables:
 #   Name: ECMWF ERA5 PL U Wind
@@ -253,19 +273,35 @@ write.csv(used_av_df, "your_path/file_name.csv")
 # No data values: NaN (interpolated)
 # Interpolation: nearest-neighbour
 
+#remove for public
+# summary stats
+used_av_df %>% 
+  #group_by(species) %>% 
+  group_by(group) %>% 
+  summarise(yrs_min = min(year(date_time)),
+            yrs_max = max(year(date_time)),
+            n_ind = n_distinct(ind),
+            n_tracks = n_distinct(track))
+
+#visual inspection
+data_sf <- used_av_df %>% 
+  filter(used == 1) %>% 
+  st_as_sf(coords = c(3,2), crs = wgs)
+
+mapview(data_sf, zcol = "species")
+
 
 #---- after annotation in movebank, download the annotated file and read into R
-ann <- read.csv("your_path/annotated_file.csv",
+ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/annotation/ssf_input_df_60_15_150.csv-2201090471065357181/ssf_input_df_60_15_150.csv-2201090471065357181.csv",
                 stringsAsFactors = F) %>% 
   drop_na() 
 
-#we generated 150 alternative steps, but we only need 50. randomly pick 50 that fall over the sea
 #extract startum IDs for those that have less than 50 alternative points over the sea
 less_than_50 <- ann %>% 
   filter(used == 0) %>% 
   group_by(stratum) %>% 
   summarise(n = n()) %>% 
-  filter(n < 50)
+  filter(n < 50) #all are EF from Spain. It doesnt hurt to have less of that 
 
 # retain 50 alternative steps per stratum
 used <- ann %>% 
@@ -283,7 +319,7 @@ used_avail_50 <- ann %>%
 #make sure all strata have 51 points
 no_used <- used_avail_50 %>% 
   summarise(n = n()) %>% 
-  filter(n < 51) # should have zero rows! ;)
+  filter(n < 51) # should be zero, and is! ;)
 
 ann_50 <- used_avail_50 %>%
   filter(!(stratum %in% no_used$stratum)) %>% 
@@ -300,12 +336,13 @@ ann_50 <- used_avail_50 %>%
          abs_cross_wind = abs(cross_wind(u = u925, v = v925, heading = heading))) %>% 
   st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
   mutate(s_elev_angle = solarpos(st_coordinates(.), timestamp, proj4string=CRS("+proj=longlat +datum=WGS84"))[,2]) %>% #calculate solar elevation angle
-  mutate(sun_elev = ifelse(s_elev_angle < -6, "night", #create a categorical variable for the position of the sun
+  mutate(sun_elev = ifelse(s_elev_angle < -6, "night", #create a categorical variable for teh position of the sun
                            ifelse(s_elev_angle > 40, "high", "low"))) %>% 
   as("Spatial") %>% 
   as.data.frame()
 
 
+save(ann_50, file = "2021/public/ssf_input_annotated_60_15_50.RData")
 
 # long-term annotation (40 year variances)
 
@@ -335,16 +372,17 @@ chunks <- split(df_40, r)
 #save as csv
 lapply(c(1:length(chunks)), function(i){
   
-  write.csv(chunks[[i]], paste0("your_path/", i, ".csv"))
+  write.csv(chunks[[i]], paste0("2021/public/ssf_input_40yr_60_15_50_", i, "_.csv"))
   
 })
 
 
 #---- after annotation in movebank, download the annotated file and append to the file with instantaneous annotations
 
+load("2021/public/ssf_input_annotated_60_15_50.RData") #ann_50
 
 #calculate long-term metrics and merge with previously annotated data
-ann_40_ls <- list.files("your_path/40_yr_annotations/",pattern = ".csv", recursive = T, full.names = T) #list all the files within the 40_yr_annotations folder
+ann_40_ls <- list.files("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/annotation/40yr/",pattern = ".csv", recursive = T, full.names = T) 
 
 ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>% 
   reduce(full_join) %>% 
@@ -358,7 +396,7 @@ ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>%
          abs_cross_wind = abs(cross_wind(u = u925, v = v925, heading = heading)),
          wind_speed = sqrt(u925^2 + v925^2)) %>% 
   group_by(row_id) %>% 
-  summarise_at(c("delta_t", "wind_speed", "wind_support", "abs_cross_wind", "u925", "v925"), 
+  summarise_at(c("delta_t", "wind_speed", "wind_support", "abs_cross_wind", "u925", "v925"), #before calculating these, investigate why/if we have NAs??
                list(var = ~var(., na.rm = T))) %>% 
   ungroup() %>% 
   full_join(ann_50, by = "row_id") %>% 
@@ -373,7 +411,7 @@ ann_cmpl <- lapply(ann_40_ls, read.csv, stringsAsFactors = F) %>%
   ungroup() %>% 
   as.data.frame()
 
-#The ann_cmpl file is available via the Dryad repository under name: annotated_steps.RData
+save(ann_cmpl, file = "2021/public/ssf_input_ann_cmpl_60_15.RData")
 
 
 

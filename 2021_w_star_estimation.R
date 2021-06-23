@@ -132,7 +132,7 @@ cor.test(data$delta_t, data$w_star)
 
 
 X11(width = 4, height = 3)
-pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/w_star.pdf", width = 4, height = 3)
+pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/w_star_updated.pdf", width = 5.2, height = 3) #the updated fig is drawn using all_figures.R code
 
 par(mfrow=c(1,1), 
     bty = "l",
