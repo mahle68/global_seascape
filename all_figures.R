@@ -222,13 +222,92 @@ legend(-130,8, legend = c("Oriental honey buzzard", "Grey-faced buzzard", "Amur 
 
 #load the model and data used to build it (produced in step_selection_analysis.R; also available on the Dryad repository)
  
+ 
+load("INLA_model") #M2
+ 
 load("INLA_model.RData") #M_pred
 load("new_data_for_modeling.RData") #new_data
  
  
 #---------- Prep for 3a: posterior means of coefficients
 
+#easy
+Efxplot(list(M1,M2,M3))
 
+#sophisticated
+#ModelList <- list(M1,M2,M3)
+#graphlist<-list()
+#for(i in 1:length(ModelList)){
+#  model<-ModelList[[i]]
+  
+  graph <- as.data.frame(summary(M2)$fixed)
+  colnames(graph)[which(colnames(graph)%in%c("0.025quant","0.975quant"))]<-c("Lower","Upper")
+  colnames(graph)[which(colnames(graph)%in%c("0.05quant","0.95quant"))]<-c("Lower","Upper")
+  colnames(graph)[which(colnames(graph)%in%c("mean"))]<-c("Estimate")
+  
+  #graph$Model<-i
+  graph$Factor <- rownames(graph)
+  
+#  graphlist[[i]]<-graph
+#}
+
+#graph <- bind_rows(graphlist)
+
+#graph$Sig <- with(graph, ifelse(Lower*Upper>0, "*", ""))
+
+#graph$Model <- as.factor(graph$Model)
+
+#position <- ifelse(length(unique(graph$Model))  ==  1, "none", "right")
+
+VarOrder <- rev(unique(graph$Factor))
+VarNames <- VarOrder
+
+graph$Factor <- factor(graph$Factor, levels = VarOrder)
+levels(graph$Factor) <- VarNames
+
+min <- min(graph$Lower,na.rm = T)
+max <- max(graph$Upper,na.rm = T)
+
+graph$Factor_n <- as.numeric(graph$Factor)
+
+X11(width = 9, height = 2.7)
+
+#pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/coefficients_updated.pdf", width = 4.1, height = 2.7)
+#jpeg("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/coefficients_updated.jpeg", width = 4.1, height = 2.7, units = "in", res = 300)
+
+par(mfrow=c(1,2), bty="n", #no box around the plot
+    #cex.axis= 0.75, #x and y labels have 0.75% of the default size
+    #font.axis= 0.75, #3: axis labels are in italics
+    #cex.lab = 0.75,
+    cex = 0.7,
+    oma = c(0,3.7,0,0),
+    mar = c(3, 4.1, 0.5, 1),
+    bty = "l"
+)
+
+plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(-2,3), ylim = c(0.2,4.3), xlab = "Estimate", ylab = "")
+
+#add vertical line for zero
+abline(v = 0, col = "grey30",lty = 2)
+#add points and error bars
+points(graph$Estimate, graph$Factor_n, col = "steelblue1", pch = 20, cex = 1.3)
+arrows(graph$Lower, graph$Factor_n,
+       graph$Upper, graph$Factor_n,
+       col = "steelblue1", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+
+#add axes
+axis(side= 1, at= c(-2,0,2,4), labels= c("-2", "0", "2", "4"), 
+     tick=T ,col = NA, col.ticks = 1, tck=-.015)
+
+axis(side= 2, at= c(1:4),
+     labels = c(expression(paste(italic(paste(Delta,"T"))," : Wind support")),
+                "Wind support var","Wind support", expression(italic(paste(Delta,"T")))),
+     tick=T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
+     tck=-.015 , #tick marks smaller than default by this proportion
+     las=2) # text perpendicular to axis label 
+
+
+#dev.off()
 
 
 #----------Prep for 3b: interaction between wind support and delta-t
@@ -294,24 +373,32 @@ preds <- data.frame(delta_t = new_data[is.na(new_data$used) ,"delta_t_z"],
  
 # ---------- Fig S1: species-specific coefficients #####
 
-#SUPPLEMENTARY FIGURE 1: species-specific coefficients 
-#for the best model (M1); original code by Virgilio Gomez-Rubio (Bayesian inference with INLA, 2020)
+#original code by Virgilio Gomez-Rubio (Bayesian inference with INLA, 2020)
+
+#load the INLA model
+load("INLA_model.RData") #M2
+
 #species
-species_names <- unique(all_data$species)
+species_names <- c("O", "PF", "EF", "OHB")
 
-tab_dt <- data.frame(ID = as.factor(M1$summary.random$species1$ID),
-                     mean = M1$summary.random$species1$mean,
-                     IClower = M1$summary.random$species1[, 4],
-                     ICupper = M1$summary.random$species1[, 6])
-
-
-tab_wspt <- data.frame(ID = as.factor(M1$summary.random$species2$ID),
-                       mean = M1$summary.random$species2$mean,
-                       IClower = M1$summary.random$species2[, 4],
-                       ICupper = M1$summary.random$species2[, 6])
+tab_dt <- data.frame(ID = as.factor(M2$summary.random$species1$ID),
+                     mean = M2$summary.random$species1$mean,
+                     IClower = M2$summary.random$species1[, 4],
+                     ICupper = M2$summary.random$species1[, 6])
 
 
-X11(width = 4, height = 3)
+tab_wspt <- data.frame(ID = as.factor(M2$summary.random$species2$ID),
+                       mean = M2$summary.random$species2$mean,
+                       IClower = M2$summary.random$species2[, 4],
+                       ICupper = M2$summary.random$species2[, 6])
+
+
+tab_wspt_var <- data.frame(ID = as.factor(M2$summary.random$species4$ID),
+                       mean = M2$summary.random$species4$mean,
+                       IClower = M2$summary.random$species4[, 4],
+                       ICupper = M2$summary.random$species4[, 6])
+
+X11(width = 4, height = 4)
 
 pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/species_var_updated.pdf", width = 4, height = 3)
 
@@ -326,19 +413,24 @@ par(mfrow = c(1,1), bty="n", #no box around the plot
 )
 
 
-plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(-3,6), ylim = c(0,4.5), xlab = "", ylab = "")
+plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(-2,3), ylim = c(0.5,4.5), xlab = "", ylab = "")
 #add vertical line for zero
 abline(v = 0, col = "grey30",lty = 2)
 
-points(tab_dt$mean, as.numeric(tab_dt$ID) - 0.2, col = "darkgoldenrod2", pch = 19, cex = 1.3)
-arrows(tab_dt$IClower, as.numeric(tab_dt$ID) - 0.2,
-       tab_dt$ICupper, as.numeric(tab_dt$ID) - 0.2,
+points(tab_dt$mean, as.numeric(tab_dt$ID) - 0.3, col = "darkgoldenrod2", pch = 19, cex = 1.3)
+arrows(tab_dt$IClower, as.numeric(tab_dt$ID) - 0.3,
+       tab_dt$ICupper, as.numeric(tab_dt$ID) - 0.3,
        col = "darkgoldenrod2", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
 
-points(tab_wspt$mean, as.numeric(tab_wspt$ID) + 0.2, col = "cornflowerblue", pch = 19, cex = 1.3)
-arrows(tab_wspt$IClower, as.numeric(tab_wspt$ID) + 0.2,
-       tab_wspt$ICupper, as.numeric(tab_wspt$ID) + 0.2,
+points(tab_wspt$mean, as.numeric(tab_wspt$ID) , col = "cornflowerblue", pch = 19, cex = 1.3)
+arrows(tab_wspt$IClower, as.numeric(tab_wspt$ID) ,
+       tab_wspt$ICupper, as.numeric(tab_wspt$ID) ,
        col = "cornflowerblue", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+
+points(tab_wspt_var$mean, as.numeric(tab_wspt_var$ID) + 0.3, col = "pink1", pch = 19, cex = 1.3)
+arrows(tab_wspt_var$IClower, as.numeric(tab_wspt_var$ID) + 0.3,
+       tab_wspt_var$ICupper, as.numeric(tab_wspt_var$ID) + 0.3,
+       col = "pink1", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
 
 axis(side= 1, at= c(-4,-2,0,2,4), labels= c("-4","-2", "0", "2","4"), 
      tick=T ,col = NA, col.ticks = 1, tck=-.015)
@@ -350,8 +442,8 @@ axis(side= 2, at= c(1:4), #line = 6,
      las = 2) # text perpendicular to axis label 
 
 #add legend
-legend(x = 3.6 , y = 0.7, legend = c("Wind support", expression(italic(paste(Delta,"T")))), 
-       col = c("cornflowerblue","darkgoldenrod1"), #coords indicate top-left
+legend(x = 1.4, y = 4.5, legend = c( "Wind support var", "Wind support", expression(italic(paste(Delta,"T")))), 
+       col = c("pink1", "cornflowerblue","darkgoldenrod1"), #coords indicate top-left
        pch = 19, bg="white",bty="n", cex = 0.9)
 
 dev.off()

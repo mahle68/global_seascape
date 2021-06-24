@@ -74,18 +74,22 @@ strata <- all_data %>%
 
 
 new <-  data.frame(used = rep(NA,n),
-                   delta_t_z = sample(seq(min(all_data$delta_t_z),max(all_data$delta_t_z), length.out = 5), n, replace = T), #regular intervals for wind support and delta t, so we can make a raster later on
+                   delta_t_z = sample(seq(min(all_data$delta_t_z),max(all_data$delta_t_z), length.out = 10), n, replace = T), #regular intervals for wind support and delta t, so we can make a raster later on
                    wind_support_z = sample(seq(min(all_data$wind_support_z),max(all_data$wind_support_z), length.out = 10), n, replace = T),
+                   wind_support_var_z = sample(seq(min(all_data$wind_support_var_z),max(all_data$wind_support_var_z), length.out = 10), n, replace = T),
                    stratum = factor(rep(strata$stratum, 51)),
                    species1 = factor(rep(inds$species, 51)),
                    ind1 = factor(rep(inds$ind, 51))) %>% 
   mutate(species2 = species1,
-         species4 = species1,
+         species3 = species1,
          ind2 = ind1,
-         ind4 = ind1) 
+         ind3 = ind1) 
 
-new_data <- new %>% 
-  full_join(all_data)
+new_data <- all_data %>%
+  dplyr::select(colnames(new)) %>% 
+  full_join(new)
+
+#save(new_data, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/new_data_jun24.RData")
 
 #The new_data dataframe is  available on the Dryad repository under name: new_data_for_modeling.RData
 
@@ -97,16 +101,30 @@ formulaM <- used ~ -1 + delta_t_z * wind_support_z + wind_support_var_z +
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
   f(species2, wind_support_z,  model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(species4, wind_support_var_z, model = "iid",
+  f(species3, wind_support_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
   f(ind1, delta_t_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) + 
   f(ind2, wind_support_z,  model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05)))) +
-  f(ind4, wind_support_var_z, model = "iid",
+  f(ind3, wind_support_var_z, model = "iid",
     hyper=list(theta=list(initial=log(1),fixed=F,prior="pc.prec",param=c(3,0.05))))
 
 #Model
+(b <- Sys.time())
+M <- inla(formulaM, family = "Poisson", 
+               control.fixed = list(
+                 mean = mean.beta,
+                 prec = list(default = prec.beta)),
+               data = all_data, 
+               num.threads = 10,
+               control.predictor = list(compute = TRUE), #this means that NA values will be predicted.
+               control.compute = list(openmp.strategy = "huge", config = TRUE, cpo = T))
+Sys.time() - b 
+
+save(M, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/inla_models/M_with_cpo.RData")
+
+#Model for predictions
 (b <- Sys.time())
 M_pred <- inla(formulaM, family = "Poisson", 
                control.fixed = list(
@@ -115,10 +133,10 @@ M_pred <- inla(formulaM, family = "Poisson",
                data = new_data, 
                num.threads = 10,
                control.predictor = list(compute = TRUE), #this means that NA values will be predicted.
-               control.compute = list(openmp.strategy = "huge", config = TRUE))#, mlik = T, waic = T)) 
+               control.compute = list(openmp.strategy = "huge", config = TRUE, cpo = T))
 Sys.time() - b 
 
-
+save(M_pred, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/inla_models/M_pred_with_cpo.RData")
 
 #model M_pred is saved as INLA_model.RData in the Dryad repository
 
