@@ -8,6 +8,7 @@ library(itsadug) #for gam plots
 library(mgcv)
 library(sf)
 library(move)
+library(scales)
 
 source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/global_seascape/functions.R")
 
@@ -23,24 +24,24 @@ load("annotated_points.RData") #ann_pts
 
 #only keep rows with positive delta_t
 data <- ann_pts %>% 
-  filter(delta_t_i >= 0)
+  filter(delta_t>= 0)
 
-data$w_star <- w_star(blh = data$blh_i, T2m = data$t2m_i, 
-                        s_flux = data$s_flux_i, m_flux = data$m_flux_i)
+data$w_star <- w_star(blh = data$blh, T2m = data$t2m, 
+                        s_flux = data$s_flux, m_flux = data$m_flux)
 
 
 #model and estimate confidence intervals
-M <- gam(w_star ~ s(delta_t_i, bs = "cr", k = 10), data = data)
+M <- gam(w_star ~ s(delta_t, bs = "cr", k = 10), data = data)
 fit <- predict(M, se = T)$fit
 se <- predict(M, se = T)$se.fit
 
 lcl <- fit - 1.96* se
 ucl <- fit + 1.96* se
 
-i.for <- order(data$delta_t_i)
-i.back <- order(data$delta_t_i , decreasing = TRUE)
+i.for <- order(data$delta_t)
+i.back <- order(data$delta_t, decreasing = TRUE)
 
-x.polygon <- c(data$delta_t_i[i.for] , data$delta_t_i[i.back])
+x.polygon <- c(data$delta_t[i.for] , data$delta_t[i.back])
 y.polygon <- c(ucl[i.for] , lcl[i.back])
 
 
@@ -70,11 +71,11 @@ par(mfrow=c(1,1),
 
 plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(0,8.3), ylim = c(0.5,5), xlab = expression(italic(paste(Delta,"T", "(°C)"))), ylab = "w* (m/s)")
 
-with(data,points(delta_t_i, w_star, col= as.character(data$color), pch = as.numeric(data$shape), cex = 0.6))
+with(data,points(delta_t, w_star, col= as.character(data$color), pch = as.numeric(data$shape), cex = 0.6))
 
 polygon(x.polygon , y.polygon , col = alpha("grey", 0.5) , border = NA) #confidence intervals
 
-lines(data$delta_t_i[i.for] , fit[i.for], col = "black" , lwd = 1.1)
+lines(data$delta_t[i.for] , fit[i.for], col = "black" , lwd = 1.1)
 
 axis(side = 1, at = c(0,2,4,6,8), labels = c(0,2,4,6,8), 
      tick = T , col.ticks = 1, col = NA, tck = -.015,lwd = 0, lwd.ticks = 1)
@@ -88,10 +89,9 @@ legend(x = 8.7, y = 4.5, legend = c("daytime: high sun", "daytime: low sun", "ni
 
 
 text(9.5,3, "Species", cex = 0.7)
-legend(x = 8.7, y = 2.9, legend = c("Pernis ptilorhynchus", "Pandion haliaetus","Butastur indicus", "Falco peregrinus", "F. eleonorae"), #species : unique(data$species), #coords indicate top-left
+legend(x = 8.7, y = 2.9, legend = c("Pernis ptilorhynchus", "Pandion haliaetus","Butastur indicus", "Falco peregrinus", "Falco eleonorae"), #species : unique(data$species), #coords indicate top-left
        cex = 0.7, pt.cex = 0.5, bg = "white", bty = "n", pch = as.numeric(unique(data$shape)),
        text.font = 3)
-
 
 
 
@@ -359,11 +359,9 @@ dev.off()
 
 # ---------- Fig S2: boxplot comparing used and available steps #####
 
-load("2021/public/ssf_input_ann_cmpl_60_15.RData") #ann_cmpl; This dataframe includes used and alternative steps and can be reproduced using step_generation.R
+load("annotated_steps.RData") #ann_cmpl; This dataframe includes used and alternative steps and can be reproduced using step_generation.R
 
 X11(width = 9, height = 7)
-
-pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/boxplots_60_15.pdf", width = 9, height = 7)
 
 par(mfrow= c(2,3), 
     oma = c(0,0,3,0), 
@@ -377,13 +375,13 @@ for(i in 1:length(variables)){
   
   boxplot(ann_cmpl[,variables[i]] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = labels[i], xlab = "", ylab = "")
   if(i == 1){
-    legend("topleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
+    legend("topleft", legend = c("used","available"), fill = c(alpha("darkgoldenrod1", 0.9),"gray"), bty = "n")
   }
-  boxplot(ann_cmpl[ann_cmpl$used == 1, variables[i]] ~ ann_cmpl[ann_cmpl$used == 1,"species"], 
-          yaxt = "n", xaxt = "n", add = T, boxfill = "orange",
+  boxplot(ann_cmpl[ann_cmpl$used == 1, variables[i]] ~ ann_cmpl[ann_cmpl$used == 1,"species"], outcol = alpha("black", 0.2),
+          yaxt = "n", xaxt = "n", add = T, boxfill = alpha("darkgoldenrod1", 0.9),  lwd = 0.7, outpch = 20, outcex = 0.8,
           boxwex = 0.25, at = 1:length(unique(ann_cmpl[ann_cmpl$used == 1, "species"])) - 0.15)
-  boxplot(ann_cmpl[ann_cmpl$used == 0, variables[i]] ~ ann_cmpl[ann_cmpl$used == 0, "species"], 
-          yaxt = "n", xaxt = "n", add = T, boxfill = "grey",
+  boxplot(ann_cmpl[ann_cmpl$used == 0, variables[i]] ~ ann_cmpl[ann_cmpl$used == 0, "species"], outcol = alpha("black", 0.2),
+          yaxt = "n", xaxt = "n", add = T, boxfill = "grey", lwd = 0.7, outpch = 20, outcex = 0.8,
           boxwex = 0.25, at = 1:length(unique(ann_cmpl[ann_cmpl$used == 1 , "species"])) + 0.15)
   
 }
@@ -393,34 +391,28 @@ for(i in 1:length(v_variables)){
   
   boxplot(ann_cmpl[,v_variables[i]] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = labels[i], xlab = "", ylab = "")
   if(i == 1){
-    legend("topleft", legend = c("used","available"), fill = c("orange","gray"), bty = "n")
+    legend("topleft", legend = c("used","available"), fill = c(alpha("darkgoldenrod1", 0.9),"gray"), bty = "n")
   }
-  boxplot(ann_cmpl[ann_cmpl$used == 1,v_variables[i]] ~ ann_cmpl[ann_cmpl$used == 1,"species"], 
-          yaxt = "n",xaxt = "n", add = T, boxfill = "orange",
+  boxplot(ann_cmpl[ann_cmpl$used == 1,v_variables[i]] ~ ann_cmpl[ann_cmpl$used == 1,"species"], outcol = alpha("black", 0.2),
+          yaxt = "n",xaxt = "n", add = T, boxfill = alpha("darkgoldenrod1", 0.9), lwd = 0.7,  outpch = 20, outcex = 0.8,
           boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) - 0.15)
-  boxplot(ann_cmpl[ann_cmpl$used == 0,v_variables[i]] ~ ann_cmpl[ann_cmpl$used == 0,"species"], 
-          yaxt = "n",xaxt = "n", add = T, boxfill = "grey",
+  boxplot(ann_cmpl[ann_cmpl$used == 0,v_variables[i]] ~ ann_cmpl[ann_cmpl$used == 0,"species"], outcol = alpha("black", 0.2),
+          yaxt = "n",xaxt = "n", add = T, boxfill = "grey", lwd = 0.7, outpch = 20, outcex = 0.8,
           boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) + 0.15)
 } 
 
 mtext("40-year variances at each step", side = 3, outer = T, cex = 1.3, line = -25)
 
-dev.off()
 
 # ---------- Fig S3: maps with annotated tracking points #####
 
-#load data: annotated sea-crossing points. This is the same file as used for Fig. 1: w_star; except now we will use the ERA5 data (columns with the _5 suffix)
-load("annotated_points.RData") #ann_pts
+#load data: annotated sea-crossing points as a move object
+load("raw_sea_points_for_maps_mv.RData") #mv
 
 #add shapefile as the map background
 region <- st_read("continent_shapefile/continent.shp") %>% 
   st_crop(xmin = -99, xmax = 144, ymin = -30, ymax = 71) %>%
   st_union()
-
-#create a move object, to calculate heading using the angle function
-mv <- move(x = ann_pts$lon, y = ann_pts$lat, time = ann_pts$timestamp, data = ann_pts, animal = ann_pts$track, proj = wgs)
-mv$heading <- unlist(lapply(angle(mv), c, NA))
-
 
 #add a categorical variable for wind levels
 breaks_w <- c(-20,-10,-5,0,5,10,15,35)
@@ -439,11 +431,11 @@ Cols_dt <- paste0(c(Pal_n(2),Pal_p(3)), "80")
 
 df <- mv %>% 
   as.data.frame() %>% 
-  drop_na(c("heading","delta_t_5")) %>% 
-  mutate(wind_support= wind_support(u = u925_5, v = v925_5, heading = heading),
-         cross_wind= cross_wind(u = u925_5, v = v925_5, heading = heading)) %>% 
+  drop_na(c("heading","delta_t")) %>% 
+  mutate(wind_support= wind_support(u = u925, v = v925, heading = heading),
+         cross_wind= cross_wind(u = u925, v = v925, heading = heading)) %>% 
   mutate(binned_w = cut(wind_support, breaks = breaks_w, include.lowest = T, right = F, labels = tags_w),
-         binned_dt = cut(delta_t_5, breaks = breaks_dt, include.lowest = T, right = F, labels = tags_dt)) %>% 
+         binned_dt = cut(delta_t, breaks = breaks_dt, include.lowest = T, right = F, labels = tags_dt)) %>% 
   mutate(cols_w = as.factor(binned_w),
          cols_dt = as.factor(binned_dt)) 
 
@@ -519,19 +511,15 @@ mtext(bquote(paste('Sea-crossing tracks annotated with', italic(~ Delta *"T"))),
 
 # ---------- Fig S4: boxplots for conditions at sea-crossing initiation #####
 
-#load data: annotated sea-crossing points. This is the same file as used for Fig. 1 and Fig. S3: we will use the ERA5 data (columns with the _5 suffix)
-load("annotated_points.RData") #ann_pts
-
-#create a move object, to calculate heading using the angle function (same as Fig. S3)
-mv <- move(x = ann_pts$lon, y = ann_pts$lat, time = ann_pts$timestamp, data = ann_pts, animal = ann_pts$track, proj = wgs)
-mv$heading <- unlist(lapply(angle(mv), c, NA))
+#load data: annotated sea-crossing points. This is the same file as used in Fig. S3.
+load("raw_sea_points_for_maps_mv.RData") #mv
 
 #extract first point of each track
 starts_all <- mv %>% 
   as.data.frame() %>% 
-  drop_na(c("heading","delta_t_5")) %>% 
-  mutate(wind_support = wind_support(u = u925_5, v = v925_5, heading = heading),
-         cross_wind = cross_wind(u = u925_5, v = v925_5, heading = heading)) %>% 
+  drop_na(c("heading","delta_t")) %>% 
+  mutate(wind_support = wind_support(u = u925, v = v925, heading = heading),
+         cross_wind = cross_wind(u = u925, v = v925, heading = heading)) %>% 
   mutate(group = ifelse(species == "OHB", "OHB",
                         ifelse(species == "GFB", "GFB",
                                ifelse(species == "O" & coords.x1 < -30, "O_A",
@@ -553,26 +541,31 @@ starts_all <- mv %>%
   mutate(group = as.factor(group)) %>% 
   as.data.frame()
 
+#relevel the group variable, for nice plots; longitudinal order
+starts_all$group <- fct_relevel(starts_all$group, c("O_A", "PF_A", "O_E", "PF_E", "EF_med", "EF_moz", "GFB", "OHB"))
 
 #color palette
 Pal <- colorRampPalette(c("darkgoldenrod1","lightpink1", "mediumblue")) 
 Cols <- paste0(Pal(3), "80") #add transparency.
 
-labels <- c("EF \n (Mediterranean)", "EF \n (Mozambique)", "GFB \n", "Osprey \n (America)", "Osprey \n (Europe)", "OHB \n ", "PF \n (America)", "PF \n (Europe)")
+#labels <- c("EF \n (Mediterranean)", "EF \n (Mozambique)", "GFB \n", "Osprey \n (America)", "Osprey \n (Europe)", "OHB \n ", "PF \n (America)", "PF \n (Europe)")
 
-variables <- c("wind_support", "delta_t_5")
+labels <- c("Pandion haliaetus \n (America)", "Falco peregrinus \n (America)", "Pandion haliaetus \n (Europe)", "Falco peregrinus \n (Europe)",
+            "Falco eleonorae \n (Mediterranean)",  "Falco eleonorae \n (Mozambique)", "Butastur indicus \n" ,"Pernis ptilorhynchus \n")
 
-X11(width = 12, height = 5) #inches
+variables <- c("wind_support", "delta_t")
+
+X11(width = 12, height = 5.5) #inches
 
 par(mfrow= c(2,1), 
-    oma = c(1.7,0,2.5,0), 
+    oma = c(3,0,2.5,0), 
     mar = c(0.5,4,0.2,0.2),
     las = 1,
     bty = "l",
     cex.axis = 0.8,
     font.axis = 3,
     tck = -0.015,
-    mgp=c(1,1,0))
+    mgp = c(1,1,0))
 
 
 
@@ -585,7 +578,7 @@ for(i in 1:length(variables)){
          yaxt = "n", xaxt = "n", pch = 20, cex = 0.8, col = alpha("black", 0.6))
   
   boxplot(starts_all[starts_all$sun_elev == "high", variables[i]] ~ starts_all[starts_all$sun_elev == "high","group"], 
-          yaxt = "n", xaxt = "n", add = T, boxfill = Cols[1], outline=FALSE, lwd = 0.5, 
+          yaxt = "n", xaxt = "n", add = T, boxfill = Cols[1], outline = FALSE, lwd = 0.5, 
           boxwex = 0.25, at = 1:length(unique(starts_all$group)) - 0.3)
   
   points(jitter(as.numeric(starts_all[starts_all$sun_elev == "low","group"]),0.3), starts_all[starts_all$sun_elev == "low", variables[i]], 
@@ -608,20 +601,16 @@ for(i in 1:length(variables)){
          tick = T , col.ticks = 1, col = NA, tck = -.015, lwd = 0, lwd.ticks = 1, cex = 0.9)
   }
   
-  if(i == 1){
-    legend(x = 7.3, y = 19, legend = c("daytime: high sun", "daytime: low sun", "night"), col = Cols, #coords indicate top-left
-           cex = 0.78, pt.cex = 1.1, bg = "white", bty = "n", pch = 15)
-  }
-  
   if(variables[i] == "wind_support"){
     mtext("Wind support (m/s)", side = 2, las = 3, line = 2, font = 3)
   }
   
-  if(variables[i] == "delta_t_5"){
+  if(variables[i] == "delta_t"){
     mtext(expression(italic(paste(Delta,"T", "(°C)"))), side = 2, las = 3, line = 2)
   }
   
 }
 mtext("Atmospheric conditions at the start of sea-crossing tracks", side = 3, outer = T, cex = 1.2, font = 1, line = 0.7)
 
-
+legend(x = 7.5, y = 21.6, legend = c("daytime: high sun", "daytime: low sun", "night"), col = Cols,
+       cex = 0.78, pt.cex = 1.1, bg = "white", bty = "n", pch = 15, horiz = F, xpd = NA)

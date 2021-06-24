@@ -224,7 +224,7 @@ labels <- c("EF \n (Mediterranean)", "EF \n (Mozambique)", "GFB \n", "Osprey \n 
 
 variables <- c("wind_support", "delta_t")
 
-pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/initiation_boxplots_EF_fixed.pdf", width = 10.3, height = 6)
+pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/initiation_boxplots_updated.pdf", width = 12, height = 5.5)
 
 X11(width = 10.2, height = 6)
 

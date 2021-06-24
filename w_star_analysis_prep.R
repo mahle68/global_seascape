@@ -12,6 +12,8 @@ source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/wind_support_Kami.
 wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
+#The annotation file was prepped in xyz
+
 #annotated data.(prepped in 2021_wind_delta_t_maps.R)
 ann <- read.csv("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/annotation/raw_points_for_maps_updated.csv-3143330181669857741/raw_points_for_maps_updated.csv-3143330181669857741.csv") %>% 
   mutate(timestamp,timestamp = as.POSIXct(strptime(timestamp,format = "%Y-%m-%d %H:%M:%S"),tz = "UTC")) %>%
@@ -52,5 +54,16 @@ rows_to_delete <- unlist(sapply(getDuplicatedTimestamps(x = as.factor(ann$track)
 ann_pts <- ann[-rows_to_delete,]
 
 
+
+save(ann_pts, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/Dryad/annotated_points.RData")
+
+
+#-------------------------------------------------------------------------------------------------
+###IMPORTSNT UPDATE:
+
+#the updated annotations don't have GFB for some reason. use the old one
+load("R_files/2021/df_for_w_star.RData") #ann
+
+ann_pts <- ann
 
 save(ann_pts, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/Dryad/annotated_points.RData")

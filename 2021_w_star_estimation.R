@@ -44,7 +44,7 @@ more_than_one_point <- ann %>%
 ann <- ann %>% 
   filter(track %in% more_than_one_point$track)
 
-save(ann, file = "R_files/2021/df_for_w_star_updated.RData")
+save(ann, file = "R_files/2021/df_for_w_star_updated.RData")  #for some reason the updated version doesn't have GFB. use the non-updated one for paper
 
 #with ECMWF ERA-interim data, units for "ECMWF Interim Full Daily SFC-FC Instantaneous Moisture Flux": kg m^-2 s^-1
 #units for "ECMWF Interim Full Daily SFC-FC Instantaneous Surface Heat Flux": J m^-2
