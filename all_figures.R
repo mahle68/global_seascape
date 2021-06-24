@@ -518,31 +518,33 @@ mtext(bquote(paste('Sea-crossing tracks annotated with', italic(~ Delta *"T"))),
 
 
 # ---------- Fig S4: boxplots for conditions at sea-crossing initiation #####
-#color palette
-Pal <- colorRampPalette(c("darkgoldenrod1","lightpink1", "mediumblue")) #colors for negative values
-Cols <- paste0(Pal(3), "80") #add transparency. 50% is "80". 70% is "B3". 80% is "CC". 90% is "E6"
 
-load("R_files/2021/raw_sea_points_for_maps_mv.RData") #mv from higher up.... this is all the data, before filtering
+#load data: annotated sea-crossing points. This is the same file as used for Fig. 1 and Fig. S3: we will use the ERA5 data (columns with the _5 suffix)
+load("annotated_points.RData") #ann_pts
 
+#create a move object, to calculate heading using the angle function (same as Fig. S3)
+mv <- move(x = ann_pts$lon, y = ann_pts$lat, time = ann_pts$timestamp, data = ann_pts, animal = ann_pts$track, proj = wgs)
+mv$heading <- unlist(lapply(angle(mv), c, NA))
 
+#extract first point of each track
 starts_all <- mv %>% 
   as.data.frame() %>% 
-  drop_na(c("heading","delta_t")) %>% 
-  mutate(wind_support= wind_support(u = u925,v = v925, heading = heading),
-         cross_wind= cross_wind(u = u925,v = v925,heading = heading)) %>% 
+  drop_na(c("heading","delta_t_5")) %>% 
+  mutate(wind_support = wind_support(u = u925_5, v = v925_5, heading = heading),
+         cross_wind = cross_wind(u = u925_5, v = v925_5, heading = heading)) %>% 
   mutate(group = ifelse(species == "OHB", "OHB",
                         ifelse(species == "GFB", "GFB",
-                               ifelse(species == "O" & location.long < -30, "O_A",
-                                      ifelse(species == "O" & location.long > -30, "O_E",
-                                             ifelse(species == "EF" & location.lat > 0, "EF_med",
-                                                    ifelse(species == "EF" & location.lat < 0, "EF_moz",
-                                                           ifelse(species == "PF" & location.long < -30, "PF_A",
+                               ifelse(species == "O" & coords.x1 < -30, "O_A",
+                                      ifelse(species == "O" & coords.x1 > -30, "O_E",
+                                             ifelse(species == "EF" & coords.x2 > 0, "EF_med",
+                                                    ifelse(species == "EF" & coords.x2 < 0, "EF_moz",
+                                                           ifelse(species == "PF" & coords.x1 < -30, "PF_A",
                                                                   "PF_E"))))))))  %>% 
   group_by(track) %>% 
   arrange(timestamp) %>% 
   slice(1) %>%
   ungroup() %>% 
-  st_as_sf(coords = c("location.long", "location.lat"), crs = wgs) %>% 
+  st_as_sf(coords = c("coords.x1", "coords.x2"), crs = wgs) %>% 
   mutate(s_elev_angle = solarpos(st_coordinates(.), timestamp, proj4string = CRS("+proj=longlat +datum=WGS84"))[,2]) %>% #calculate solar elevation angle
   mutate(sun_elev = ifelse(s_elev_angle < -6, "night", #create a categorical variable for teh position of the sun
                            ifelse(s_elev_angle > 40, "high", "low"))) %>% 
@@ -552,9 +554,13 @@ starts_all <- mv %>%
   as.data.frame()
 
 
+#color palette
+Pal <- colorRampPalette(c("darkgoldenrod1","lightpink1", "mediumblue")) 
+Cols <- paste0(Pal(3), "80") #add transparency.
+
 labels <- c("EF \n (Mediterranean)", "EF \n (Mozambique)", "GFB \n", "Osprey \n (America)", "Osprey \n (Europe)", "OHB \n ", "PF \n (America)", "PF \n (Europe)")
 
-variables <- c("wind_support", "delta_t")
+variables <- c("wind_support", "delta_t_5")
 
 X11(width = 12, height = 5) #inches
 
@@ -611,7 +617,7 @@ for(i in 1:length(variables)){
     mtext("Wind support (m/s)", side = 2, las = 3, line = 2, font = 3)
   }
   
-  if(variables[i] == "delta_t"){
+  if(variables[i] == "delta_t_5"){
     mtext(expression(italic(paste(Delta,"T", "(°C)"))), side = 2, las = 3, line = 2)
   }
   

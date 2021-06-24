@@ -256,7 +256,7 @@ points_oversea <- lapply(split(sea_pts, sea_pts$track), function(x){
 
 Sys.time() - b #29 sec
 
-save(points_oversea, file = "R_files/2021/all_spp_2009_2020_overwater_problematic_pts_removed.RData")
+save(points_oversea, file = "R_files/2021/all_spp_2009_2020_overwater_problematic_pts_removed.RData") #for some reason, this doesnt have GFB
 
 ##### STEP 6: append eleonora's falcon from spain #####
 

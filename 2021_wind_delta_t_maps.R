@@ -22,7 +22,7 @@ meters_proj <- CRS("+proj=moll +ellps=WGS84")
 
 #maps ############
 
-#open sea-crossing points, prepared in 2021_all_data_preo_analyze.R
+#open sea-crossing points, prepared in 2021_all_data_prep_analyze.R
 load("R_files/2021/all_2009_2020_overwater_probl_pts_removed.RData") #all_oversea
 
 region <- st_read("/home/enourani/ownCloud/Work/GIS_files/continent_shapefile/continent.shp") %>% 
