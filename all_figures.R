@@ -321,15 +321,16 @@ M_pred$summary.fitted.values[used_na,]
 preds <- data.frame(delta_t = new_data[is.na(new_data$used) ,"delta_t_z"],
                      wind_support = new_data[is.na(new_data$used) ,"wind_support_z"],
                      preds = M_pred$summary.fitted.values[used_na,"mean"]) %>% 
-   mutate(prob_pres = exp(preds)/(1+exp(preds)))
+   mutate(prob_pres = exp(preds)/(1+exp(preds))) #this should be between 0-1
  
  
  plot(preds$delta_t, preds$wind_support, col = as.factor("preds"))
  
  
+ 
  avg_preds <- preds %>% 
    group_by(delta_t, wind_support) %>% 
-   summarise(avg_pres = mean(prob_pres)) %>% 
+   summarise(avg_pres = median(prob_pres)) %>% 
    ungroup() %>% 
    mutate(wspt_backtr = wind_support * attr(all_data$wind_support_z, 'scaled:scale') + attr(all_data$wind_support_z, 'scaled:center'),
           dt_backtr = delta_t * attr(all_data$delta_t_z, 'scaled:scale') + attr(all_data$delta_t_z, 'scaled:center')) %>% 
@@ -342,6 +343,10 @@ preds <- data.frame(delta_t = new_data[is.na(new_data$used) ,"delta_t_z"],
  gridded(avg_preds) <- TRUE
  r <- raster(avg_preds)
  
+ 
+ # coordinates(avg_preds) <-~ delta_t + wind_support
+ # gridded(avg_preds) <- TRUE
+ # r <- raster(avg_preds)
  
  plot(r, ylab = "wind support (m/s)", xlab = "delta_t (°C)")
  
@@ -359,7 +364,37 @@ preds <- data.frame(delta_t = new_data[is.na(new_data$used) ,"delta_t_z"],
  
  plot(rr, ylab = "wind support (m/s)", xlab = "delta_t (°C)")
  
- #plot
+ 
+ 
+###use all predicted values for plot
+all <- data.frame(delta_t = all_data$delta_t,
+                   wind_support = all_data$wind_support_z,
+                   preds = M$summary.fitted.values[,"mean"]) %>%
+   mutate(prob_pres = exp(preds)/(1 + exp(preds))) %>%  #this should be between 0-1
+  drop_na()
+ 
+
+coordinates(all) <-~ delta_t + wind_support
+gridded(all) <- TRUE
+r <- raster(all)
+
+#heatmap
+g <- raster(all)  ## gives an empty 10*10 grid on your extent/crs
+## set the resolution (pixel size x/y)
+res(g) <- c(5, 7)  ## whatever you want
+
+
+##
+coordinates(all) <-~ delta_t + wind_support
+rs <- raster(ncol = 100, nrow = 100, ext = extent(all))
+
+## rasterize by "value" column with na.rm optionally
+r <- rasterize(all, rs, field = all$prob_pres, fun = mean, na.rm = TRUE)
+
+plot(r) 
+ 
+
+#plot
  
  #create a color palette
  cuts <- seq(-1,5,0.01) #set breaks

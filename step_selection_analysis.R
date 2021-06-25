@@ -10,6 +10,7 @@ library(lubridate)
 library(INLA)
 library(corrr)
 library(raster)
+#library(inlabru)
 
 setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/")
 
@@ -90,6 +91,8 @@ new_data <- all_data %>%
   full_join(new)
 
 #save(new_data, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/new_data_jun24.RData")
+
+new <- new_data[is.na(new_data$used),]
 
 #The new_data dataframe is  available on the Dryad repository under name: new_data_for_modeling.RData
 

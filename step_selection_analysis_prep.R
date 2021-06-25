@@ -94,6 +94,15 @@ new_data <- new %>%
 
 save(new_data, file = "2021/public/new_data_48str_lowres.RData")
 
+
+#alternative new data: add one new row to unique strata instead of entire empty copies of strata
+n <- 500
+new_b <- all_data %>%
+  group_by(stratum) %>% 
+  
+
+
+
 #Model formula
 formulaM <- used ~ -1 + delta_t_z * wind_support_z + wind_support_var_z +
   f(stratum, model = "iid", 
@@ -180,7 +189,6 @@ cuts <- seq(-1,5,0.01) #set breaks
 #pal <- colorRampPalette(c("dodgerblue","darkturquoise","goldenrod1","coral","firebrick1"))
 pal <- colorRampPalette(c("dodgerblue","darkturquoise", "goldenrod1","coral","firebrick1","firebrick4"))
 colpal <- pal(570)
-
 
 
 
