@@ -97,9 +97,13 @@ save(new_data, file = "2021/public/new_data_48str_lowres.RData")
 
 #alternative new data: add one new row to unique strata instead of entire empty copies of strata
 n <- 500
-new_b <- all_data %>%
+new_data <- all_data %>%
   group_by(stratum) %>% 
-  
+  slice_sample(n = 1) %>% 
+  ungroup() %>% 
+  slice_sample(n = n, replace = F) %>% 
+  mutate(used = NA) %>% 
+  full_join(all_data)
 
 
 
@@ -129,7 +133,7 @@ formulaM <- used ~ -1 + delta_t_z * wind_support_z + wind_support_var_z +
                           data = new_data, 
                           num.threads = 10,
                           control.predictor = list(compute = TRUE), #this means that NA values will be predicted. link can also be set. but will make the predictions Inf (response is binary but family is poisson.. what is the correct link!!??) # “apply the first link function to everything”.
-                          control.compute = list(openmp.strategy = "huge", config = TRUE))#, mlik = T, waic = T)) 
+                          control.compute = list(openmp.strategy = "huge", config = TRUE, cpo = T))#, mlik = T, waic = T)) 
       Sys.time() - b #1.574914 hours; 49 min; 1.6 min; 2.2 hrs
       #with link = 1, all NaN and Inf values
 

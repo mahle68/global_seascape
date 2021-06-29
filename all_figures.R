@@ -329,12 +329,12 @@ preds <- data.frame(delta_t = new_data[is.na(new_data$used) ,"delta_t_z"],
  
  
  avg_preds <- preds %>% 
-   group_by(delta_t, wind_support) %>% 
+   group_by(delta_t_z, wind_support_z) %>% 
    summarise(avg_pres = median(prob_pres)) %>% 
    ungroup() %>% 
-   mutate(wspt_backtr = wind_support * attr(all_data$wind_support_z, 'scaled:scale') + attr(all_data$wind_support_z, 'scaled:center'),
-          dt_backtr = delta_t * attr(all_data$delta_t_z, 'scaled:scale') + attr(all_data$delta_t_z, 'scaled:center')) %>% 
-   dplyr::select(-c("delta_t","wind_support")) %>% 
+    mutate(wspt_backtr = wind_support_z * attr(all_data$wind_support_z, 'scaled:scale') + attr(all_data$wind_support_z, 'scaled:center'),
+           dt_backtr = delta_t_z * attr(all_data$delta_t_z, 'scaled:scale') + attr(all_data$delta_t_z, 'scaled:center')) %>% 
+    dplyr::select(-c("delta_t_z","wind_support_z")) %>% 
    as.data.frame()
  
  
@@ -343,12 +343,13 @@ preds <- data.frame(delta_t = new_data[is.na(new_data$used) ,"delta_t_z"],
  gridded(avg_preds) <- TRUE
  r <- raster(avg_preds)
  
+ plot(r, ylab = "wind support (m/s)", xlab = "delta_t (°C)")
  
  # coordinates(avg_preds) <-~ delta_t + wind_support
  # gridded(avg_preds) <- TRUE
  # r <- raster(avg_preds)
  
- plot(r, ylab = "wind support (m/s)", xlab = "delta_t (°C)")
+
  
  avg <- preds %>% 
    group_by(delta_t, wind_support) %>% 
@@ -395,7 +396,12 @@ plot(r)
  
 
 #plot
- 
+#raster for irregular data
+my_mesh=expand.grid(seq(min(preds$wind_support),max(preds$wind_support),l=10),
+                    seq(min(preds$delta_t),max(preds$delta_t),l=10))
+
+    
+
  #create a color palette
  cuts <- seq(-1,5,0.01) #set breaks
  #pal <- colorRampPalette(c("dodgerblue","darkturquoise","goldenrod1","coral","firebrick1"))
