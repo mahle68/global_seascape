@@ -75,7 +75,7 @@ new_data <- all_data %>%
          wind_support_var_z = sample(seq(min(all_data$wind_support_var_z),max(all_data$wind_support_var_z), length.out = 10), n, replace = T)) %>% 
   full_join(all_data)
 
-save(new_data, file = "2021/public/new_data_100n_regular.RData")
+save(new_data, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/new_data_500n_regular.RData")
 
 
 #The new_data dataframe is  available on the Dryad repository under name: new_data_for_modeling.RData
@@ -118,13 +118,14 @@ M_pred <- inla(formulaM, family = "Poisson",
                  mean = mean.beta,
                  prec = list(default = prec.beta)),
                data = new_data, 
-               num.threads = 6,
+               num.threads = 10,
                control.predictor = list(compute = TRUE), #this means that NA values will be predicted.
                control.compute = list(openmp.strategy = "huge", config = TRUE, cpo = T))
 Sys.time() - b 
 
-save(M_pred, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/inla_models/M_pred_irreg_50.RData") #2.5 hrs on 6 cores
-save(M_pred, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/inla_models/M_new_pred_reg_cpo.RData") #1.6 hrs;n = 100
+save(M_pred, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/inla_models/M_pred_reg_500.RData") #2.5 hrs on 6 cores
+#save(M_pred, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/inla_models/M_pred_irreg_50.RData") #2.5 hrs on 6 cores
+#save(M_pred, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/inla_models/M_new_pred_reg_cpo.RData") #1.6 hrs;n = 100
 #save(M_pred, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/inla_models/M_new_pred_cpo.RData") #3.300435 hours
 s#ave(M_pred, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/inla_models/M_pred_with_cpo.RData")
 

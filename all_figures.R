@@ -319,97 +319,102 @@ M_pred$summary.fitted.values[used_na,]
  
 #create a raster of predictions
 preds <- data.frame(delta_t = new_data[is.na(new_data$used) ,"delta_t_z"],
-                     wind_support = new_data[is.na(new_data$used) ,"wind_support_z"],
-                     preds = M_pred$summary.fitted.values[used_na,"mean"]) %>% 
-   mutate(prob_pres = exp(preds)/(1+exp(preds))) #this should be between 0-1
- 
- 
- plot(preds$delta_t, preds$wind_support, col = as.factor("preds"))
- 
- 
- 
- avg_preds <- preds %>% 
-   group_by(delta_t_z, wind_support_z) %>% 
-   summarise(avg_pres = median(prob_pres)) %>% 
-   ungroup() %>% 
-    mutate(wspt_backtr = wind_support_z * attr(all_data$wind_support_z, 'scaled:scale') + attr(all_data$wind_support_z, 'scaled:center'),
-           dt_backtr = delta_t_z * attr(all_data$delta_t_z, 'scaled:scale') + attr(all_data$delta_t_z, 'scaled:center')) %>% 
-    dplyr::select(-c("delta_t_z","wind_support_z")) %>% 
-   as.data.frame()
- 
- 
- 
- coordinates(avg_preds) <-~ dt_backtr + wspt_backtr 
- gridded(avg_preds) <- TRUE
- r <- raster(avg_preds)
- 
- plot(r, ylab = "wind support (m/s)", xlab = "delta_t (°C)")
- 
- # coordinates(avg_preds) <-~ delta_t + wind_support
- # gridded(avg_preds) <- TRUE
- # r <- raster(avg_preds)
- 
-
- 
- avg <- preds %>% 
-   group_by(delta_t, wind_support) %>% 
-   summarise(avg_pres = mean(prob_pres)) %>% 
-   ungroup() %>% 
-   as.data.frame()
- 
- 
- coordinates(avg) <-~ delta_t + wind_support 
- gridded(avg) <- TRUE
- rr <- raster(avg)
- 
- 
- plot(rr, ylab = "wind support (m/s)", xlab = "delta_t (°C)")
- 
- 
- 
-###use all predicted values for plot
-all <- data.frame(delta_t = all_data$delta_t,
-                   wind_support = all_data$wind_support_z,
-                   preds = M$summary.fitted.values[,"mean"]) %>%
-   mutate(prob_pres = exp(preds)/(1 + exp(preds))) %>%  #this should be between 0-1
-  drop_na()
- 
-
-coordinates(all) <-~ delta_t + wind_support
-gridded(all) <- TRUE
-r <- raster(all)
-
-#heatmap
-g <- raster(all)  ## gives an empty 10*10 grid on your extent/crs
-## set the resolution (pixel size x/y)
-res(g) <- c(5, 7)  ## whatever you want
+                    wind_support = new_data[is.na(new_data$used) ,"wind_support_z"],
+                    wind_support_var = new_data[is.na(new_data$used) ,"wind_support_var_z"],
+                    preds = M_pred$summary.fitted.values[used_na,"mean"]) %>% 
+  mutate(prob_pres = exp(preds)/(1+exp(preds))) #this should be between 0-1
 
 
-##
-coordinates(all) <-~ delta_t + wind_support
-rs <- raster(ncol = 100, nrow = 100, ext = extent(all))
+plot(preds$delta_t, preds$wind_support, col = as.factor("preds"))
 
-## rasterize by "value" column with na.rm optionally
-r <- rasterize(all, rs, field = all$prob_pres, fun = mean, na.rm = TRUE)
 
-plot(r) 
+
+avg_preds <- preds %>% 
+  group_by(delta_t_z, wind_support_z) %>%  
+  summarise(avg_pres = mean(prob_pres)) %>% 
+  ungroup() %>% 
+  mutate(wspt_backtr = wind_support_z * attr(all_data$wind_support_z, 'scaled:scale') + attr(all_data$wind_support_z, 'scaled:center'),
+         dt_backtr = delta_t_z * attr(all_data$delta_t_z, 'scaled:scale') + attr(all_data$delta_t_z, 'scaled:center')) %>% 
+  dplyr::select(-c("delta_t_z","wind_support_z")) %>% 
+  as.data.frame()
+ 
+ 
+coordinates(avg_preds) <-~ wspt_backtr + dt_backtr 
+gridded(avg_preds) <- TRUE
+r <- raster(avg_preds)
+ 
+#easy plot
+plot(r,  xlab = "wind support (m/s)", ylab = "delta_t (°C)")
  
 
-#plot
-#raster for irregular data
-my_mesh=expand.grid(seq(min(preds$wind_support),max(preds$wind_support),l=10),
-                    seq(min(preds$delta_t),max(preds$delta_t),l=10))
+#interpolate. for visualization purposes
+surf.1 <- Tps(as.matrix(as.data.frame(r,xy = T)[,c(1,2)],col = 2),as.data.frame(r,xy = T)[,3])
 
-    
+grd <- expand.grid(x = seq(from = extent(r)[1],to = extent(r)[2],by = 2),
+                   y = seq(from = extent(r)[3],to = extent(r)[4],by = 2))
 
+grd$coords <- matrix(c(grd$x,grd$y),ncol=2)
+
+surf.1.pred <- predict.Krig(surf.1,grd$coords)
+interpdf <- data.frame(grd$coords,surf.1.pred)
+
+colnames(interpdf) <- c("wind_support","delta_t","prob_pres")
+
+coordinates(interpdf) <- ~ wind_support + delta_t
+gridded(interpdf) <- TRUE
+interpr <- raster(interpdf)
+
+
+
+ #decent plot
  #create a color palette
- cuts <- seq(-1,5,0.01) #set breaks
+ cuts <- c(0, 0.25,0.5,0.75,1)#seq(0,1,0.2) #set breaks
  #pal <- colorRampPalette(c("dodgerblue","darkturquoise","goldenrod1","coral","firebrick1"))
- pal <- colorRampPalette(c("dodgerblue","darkturquoise", "goldenrod1","coral","firebrick1","firebrick4"))
- colpal <- pal(570)
+ #pal <- colorRampPalette(c("dodgerblue","darkturquoise", "goldenrod1","coral","firebrick1","firebrick4"))
+ #pal <- colorRampPalette(c("aliceblue", "lightskyblue1", "olivedrab2","goldenrod1","sandybrown","tomato"))
+ pal <- colorRampPalette(c("aliceblue", "lightskyblue1","khaki2", "navajowhite1","sandybrown","tomato"))
+ pal <- colorRampPalette(c("aliceblue", "lightskyblue1", "khaki2", "sandybrown", "salmon2","tomato"))
+ colpal <- pal(200)
  
+ X11(width = 9, height = 4)
+ par(mfrow=c(1,2), bty="n", #no box around the plot
+     #cex.axis= 0.75, #x and y labels have 0.75% of the default size
+     #font.axis= 0.75, #3: axis labels are in italics
+     #cex.lab = 0.75,
+     cex = 0.7,
+     oma = c(0,3.5,0,0),
+     mar = c(2, 0.5, 0, 1),
+     bty = "n",
+     mgp=c(1,0.5,0)
+ )
+#plot(0, type = "n", labels = FALSE, tck = 0, xlim =  c(-20,29), ylim = c(-9.7,14), xlab = "", ylab = "")
+plot(interpr, col = colpal, axes = F, box = F, legend = F, ext = extent(c(-22, 28.9, -9.7, 14))) #crop to the extent of observed data
  
- 
+#add axes
+axis(side = 1, at = seq(-20,30,10),
+    labels = seq(-20,30,10),
+    tick = T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
+    tck = -.015, line = -4.6, cex.axis = 0.7) #tick marks smaller than default by this proportion
+
+axis(side = 2, at = c(-5, 0,5, 10), labels = c(-5, 0,5, 10), 
+    tick = T ,col = NA, col.ticks = 1, tck = -.015, las = 2, cex.axis = 0.7)
+
+#abline(v =-25.9)
+lines(x = c(-21.9, -21.9), y = c(-9.9,13.9))
+abline(h =-9.9)
+
+#add legend
+plot(interpr, legend.only = T, horizontal = T, col = colpal, legend.args = list("Probability of presence", side = 3, font = 1, line = 0.08, cex = 0.7),
+     smallplot= c(0.18,0.76, 0.06,0.09),
+     axis.args = list(at = seq(0,1,0.25), #same arguments as any axis, to determine the length of the bar and tick marks and labels
+                      labels = seq(0,1,0.25), 
+                      col = NA, #make sure box type in par is set to n, otherwise axes will be drawn on the legend :p
+                      col.ticks = NA,
+                      line = -1, cex.axis = 0.7))
+#axis titles
+mtext("Wind support (m/s)", 1, line = -3, cex = 0.9, font = 3)
+mtext(expression(italic(paste(Delta,"T", "(°C)"))), 2, line = 1.2, cex = 0.9)
+
 #---------- put it all together
  
 # ---------- Fig S1: species-specific coefficients #####
