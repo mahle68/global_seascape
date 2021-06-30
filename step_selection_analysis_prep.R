@@ -105,6 +105,17 @@ new_data <- all_data %>%
   mutate(used = NA) %>% 
   full_join(all_data)
 
+save(new_data, file = "2021/public/new_data_500n_irregular.RData")
+
+new_data <- all_data %>%
+  group_by(stratum) %>% 
+  slice_sample(n = 1) %>% 
+  ungroup() %>% 
+  slice_sample(n = n, replace = F) %>% 
+  mutate(used = NA) %>% 
+  full_join(all_data)
+
+save(new_data, file = "2021/public/new_data_500n_irregular.RData")
 
 
 #Model formula

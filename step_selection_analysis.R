@@ -60,56 +60,10 @@ prec.beta <- 1e-4
 #to be able to produce effect plots for the interaction of wind support and delta-t, we need to add rows to the dataset where the dependent variable is set to NA
 #see Gómez-Rubio 2020 for details of prediction with INLA models (i.e. imputation of missing values)
 
-n <- 2448 #corresponding to 48 unique strata, from 4 individuals per species, 3 strata per individual. 
-
-inds <- all_data %>% 
-  group_by(species) %>%
-  distinct(ind) %>% 
-  sample_n(4, replace = F)
-
-strata <- all_data %>% 
-  filter(ind %in% c(inds$ind)) %>% 
-  group_by(ind) %>% 
-  distinct(stratum) %>% 
-  sample_n(3, replace = F)
-
-
-new <-  data.frame(used = rep(NA,n),
-                   delta_t_z = sample(seq(min(all_data$delta_t_z),max(all_data$delta_t_z), length.out = 10), n, replace = T), #regular intervals for wind support and delta t, so we can make a raster later on
-                   wind_support_z = sample(seq(min(all_data$wind_support_z),max(all_data$wind_support_z), length.out = 10), n, replace = T),
-                   wind_support_var_z = sample(seq(min(all_data$wind_support_var_z),max(all_data$wind_support_var_z), length.out = 10), n, replace = T),
-                   stratum = factor(rep(strata$stratum, 51)),
-                   species1 = factor(rep(inds$species, 51)),
-                   ind1 = factor(rep(inds$ind, 51))) %>% 
-  mutate(species2 = species1,
-         species3 = species1,
-         ind2 = ind1,
-         ind3 = ind1) 
-
-new_data <- all_data %>%
-  dplyr::select(colnames(new)) %>% 
-  full_join(new)
-
-#save(new_data, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/new_data_jun24.RData")
-
-new <- new_data[is.na(new_data$used),]
-
-
-#alternative new data: add one new row to unique strata instead of entire empty copies of strata
+#add one new row to unique strata instead of entire empty copies of strata. assign wind and delta t values on a regular grid (tried with irregular, but range of predictions was off)
 set.seed(200)
-n <- 50
-new_data <- all_data %>%
-  group_by(stratum) %>% 
-  slice_sample(n = 1) %>% 
-  ungroup() %>% 
-  slice_sample(n = n, replace = F) %>% 
-  mutate(used = NA) %>% 
-  full_join(all_data)
 
-save(new_data, file = "2021/public/new_data_50n_irregular.RData")
-
-
-n <- 100
+n <- 500
 new_data <- all_data %>%
   group_by(stratum) %>% 
   slice_sample(n = 1) %>% 
