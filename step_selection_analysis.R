@@ -76,7 +76,7 @@ new_data <- all_data %>%
   full_join(all_data)
 
 save(new_data, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/new_data_500n_regular.RData")
-
+save(new_data, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/Dryad/new_data_for_modeling.RData")
 
 #The new_data dataframe is  available on the Dryad repository under name: new_data_for_modeling.RData
 
@@ -110,6 +110,7 @@ M <- inla(formulaM, family = "Poisson",
 Sys.time() - b 
 
 save(M, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/inla_models/M_with_cpo.RData")
+save(M, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/Dryad/INLA_model.RData")
 
 #Model for predictions
 (b <- Sys.time())
@@ -123,14 +124,8 @@ M_pred <- inla(formulaM, family = "Poisson",
                control.compute = list(openmp.strategy = "huge", config = TRUE, cpo = T))
 Sys.time() - b 
 
-save(M_pred, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/inla_models/M_pred_reg_500.RData") #2.5 hrs on 6 cores
-#save(M_pred, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/inla_models/M_pred_irreg_50.RData") #2.5 hrs on 6 cores
-#save(M_pred, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/inla_models/M_new_pred_reg_cpo.RData") #1.6 hrs;n = 100
-#save(M_pred, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/inla_models/M_new_pred_cpo.RData") #3.300435 hours
-s#ave(M_pred, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/inla_models/M_pred_with_cpo.RData")
-
-#model M_pred is saved as INLA_model.RData in the Dryad repository
-
+save(M_pred, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/inla_models/M_pred_reg_500.RData") 
+save(M_pred, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/Dryad/INLA_model_preds.RData")
 
 #to plot the predictions and coefficients, see all_figures.R (Fig. 3)
 

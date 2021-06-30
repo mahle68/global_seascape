@@ -222,31 +222,26 @@ legend(-130,8, legend = c("Oriental honey buzzard", "Grey-faced buzzard", "Amur 
 
 #load the model and data used to build it (produced in step_selection_analysis.R; also available on the Dryad repository)
  
- 
-load("INLA_model") #M2
- 
-load("INLA_model.RData") #M_pred
-load("new_data_for_modeling.RData") #new_data
- 
- 
+load("INLA_model.RData") #M; final INLA model
+load("INLA_model_preds") #M_pred; INLA model used for predictions
+load("new_data_for_modeling.RData") #new_data; data generated to plot predictions (interaction between delta_t and wind support)
+load("annotated_steps.RData") #ann_cmpl; data used for INLA modeling. This dataframe includes used and alternative steps and can be reproduced using step_generation.R
+
+#calculate z_scores for predictor variables
+all_data <- ann_cmpl %>% 
+  mutate_at(c("delta_t", "wind_speed", "wind_support", "wind_support_var", "abs_cross_wind", "delta_t_var"),
+            list(z = ~(scale(.)))) 
+
 #---------- Prep for 3a: posterior means of coefficients
 
-#easy
-Efxplot(list(M1,M2,M3))
+  
+graph <- as.data.frame(summary(M)$fixed)
+colnames(graph)[which(colnames(graph)%in%c("0.025quant","0.975quant"))]<-c("Lower","Upper")
+colnames(graph)[which(colnames(graph)%in%c("0.05quant","0.95quant"))]<-c("Lower","Upper")
+colnames(graph)[which(colnames(graph)%in%c("mean"))]<-c("Estimate")
 
-#sophisticated
-#ModelList <- list(M1,M2,M3)
-#graphlist<-list()
-#for(i in 1:length(ModelList)){
-#  model<-ModelList[[i]]
-  
-  graph <- as.data.frame(summary(M2)$fixed)
-  colnames(graph)[which(colnames(graph)%in%c("0.025quant","0.975quant"))]<-c("Lower","Upper")
-  colnames(graph)[which(colnames(graph)%in%c("0.05quant","0.95quant"))]<-c("Lower","Upper")
-  colnames(graph)[which(colnames(graph)%in%c("mean"))]<-c("Estimate")
-  
-  #graph$Model<-i
-  graph$Factor <- rownames(graph)
+#graph$Model<-i
+graph$Factor <- rownames(graph)
   
 #  graphlist[[i]]<-graph
 #}
@@ -270,12 +265,11 @@ max <- max(graph$Upper,na.rm = T)
 
 graph$Factor_n <- as.numeric(graph$Factor)
 
-X11(width = 9, height = 2.7)
 
 #pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/coefficients_updated.pdf", width = 4.1, height = 2.7)
 #jpeg("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/coefficients_updated.jpeg", width = 4.1, height = 2.7, units = "in", res = 300)
 
-par(mfrow=c(1,2), bty="n", #no box around the plot
+par(mfrow=c(1,2), bty = "n", #no box around the plot
     #cex.axis= 0.75, #x and y labels have 0.75% of the default size
     #font.axis= 0.75, #3: axis labels are in italics
     #cex.lab = 0.75,
@@ -305,10 +299,6 @@ axis(side= 2, at= c(1:4),
      tick=T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
      tck=-.015 , #tick marks smaller than default by this proportion
      las=2) # text perpendicular to axis label 
-
-
-#dev.off()
-
 
 #----------Prep for 3b: interaction between wind support and delta-t
 
@@ -365,28 +355,30 @@ gridded(interpdf) <- TRUE
 interpr <- raster(interpdf)
 
 
-
- #decent plot
- #create a color palette
- cuts <- c(0, 0.25,0.5,0.75,1)#seq(0,1,0.2) #set breaks
- #pal <- colorRampPalette(c("dodgerblue","darkturquoise","goldenrod1","coral","firebrick1"))
- #pal <- colorRampPalette(c("dodgerblue","darkturquoise", "goldenrod1","coral","firebrick1","firebrick4"))
- #pal <- colorRampPalette(c("aliceblue", "lightskyblue1", "olivedrab2","goldenrod1","sandybrown","tomato"))
- pal <- colorRampPalette(c("aliceblue", "lightskyblue1","khaki2", "navajowhite1","sandybrown","tomato"))
- pal <- colorRampPalette(c("aliceblue", "lightskyblue1", "khaki2", "sandybrown", "salmon2","tomato"))
- colpal <- pal(200)
+#create a color palette
+cuts <- c(0, 0.25,0.5,0.75,1)#seq(0,1,0.2) #set breaks
+#pal <- colorRampPalette(c("dodgerblue","darkturquoise","goldenrod1","coral","firebrick1"))
+#pal <- colorRampPalette(c("dodgerblue","darkturquoise", "goldenrod1","coral","firebrick1","firebrick4"))
+#pal <- colorRampPalette(c("aliceblue", "lightskyblue1", "olivedrab2","goldenrod1","sandybrown","tomato"))
+pal <- colorRampPalette(c("aliceblue", "lightskyblue1","khaki2", "navajowhite1","sandybrown","tomato"))
+pal <- colorRampPalette(c("aliceblue", "lightskyblue1", "khaki2", "sandybrown", "salmon2","tomato"))
+colpal <- pal(200)
  
- X11(width = 9, height = 4)
- par(mfrow=c(1,2), bty="n", #no box around the plot
-     #cex.axis= 0.75, #x and y labels have 0.75% of the default size
-     #font.axis= 0.75, #3: axis labels are in italics
-     #cex.lab = 0.75,
-     cex = 0.7,
+
+
+#plot
+X11(width = 5, height = 4)
+
+pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/coefficients_updated.pdf", width = 5, height = 4)
+par(cex = 0.7,
      oma = c(0,3.5,0,0),
-     mar = c(2, 0.5, 0, 1),
+     mar = c(2, 0.5, 0, 0),
      bty = "n",
      mgp=c(1,0.5,0)
  )
+
+
+#dev.off()
 #plot(0, type = "n", labels = FALSE, tck = 0, xlim =  c(-20,29), ylim = c(-9.7,14), xlab = "", ylab = "")
 plot(interpr, col = colpal, axes = F, box = F, legend = F, ext = extent(c(-22, 28.9, -9.7, 14))) #crop to the extent of observed data
  
@@ -394,7 +386,7 @@ plot(interpr, col = colpal, axes = F, box = F, legend = F, ext = extent(c(-22, 2
 axis(side = 1, at = seq(-20,30,10),
     labels = seq(-20,30,10),
     tick = T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
-    tck = -.015, line = -4.6, cex.axis = 0.7) #tick marks smaller than default by this proportion
+    tck = -.015, line = -4.9, cex.axis = 0.7) #tick marks smaller than default by this proportion
 
 axis(side = 2, at = c(-5, 0,5, 10), labels = c(-5, 0,5, 10), 
     tick = T ,col = NA, col.ticks = 1, tck = -.015, las = 2, cex.axis = 0.7)
@@ -403,46 +395,91 @@ axis(side = 2, at = c(-5, 0,5, 10), labels = c(-5, 0,5, 10),
 lines(x = c(-21.9, -21.9), y = c(-9.9,13.9))
 abline(h =-9.9)
 
+#axis titles
+mtext("Wind support (m/s)", 1, line = -3.1, cex = 0.9, font = 3)
+mtext(expression(italic(paste(Delta,"T", "(°C)"))), 2, line = 1.2, cex = 0.9)
+
 #add legend
 plot(interpr, legend.only = T, horizontal = T, col = colpal, legend.args = list("Probability of presence", side = 3, font = 1, line = 0.08, cex = 0.7),
-     smallplot= c(0.18,0.76, 0.06,0.09),
+     smallplot= c(0.12,0.7, 0.06,0.09),
      axis.args = list(at = seq(0,1,0.25), #same arguments as any axis, to determine the length of the bar and tick marks and labels
                       labels = seq(0,1,0.25), 
                       col = NA, #make sure box type in par is set to n, otherwise axes will be drawn on the legend :p
                       col.ticks = NA,
                       line = -1, cex.axis = 0.7))
+
+#with vertical legend------------------
+X11(width = 5, height = 4)
+par(cex = 0.7,
+    oma = c(0,3.5,0,0),
+    mar = c(0, 0, 0, 1.5),
+    bty = "n",
+    mgp = c(1,0.5,0)
+)
+
+
+#dev.off()
+#plot(0, type = "n", labels = FALSE, tck = 0, xlim =  c(-20,29), ylim = c(-9.7,14), xlab = "", ylab = "")
+plot(interpr, col = colpal, axes = F, box = F, legend = F, ext = extent(c(-22, 28.9, -9.7, 14))) #crop to the extent of observed data
+
+#add axes
+axis(side = 1, at = seq(-20,30,10),
+     labels = seq(-20,30,10),
+     tick = T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
+     tck = -.015, line = -5.6, cex.axis = 0.7) #tick marks smaller than default by this proportion
+
+axis(side = 2, at = c(-5, 0,5, 10), labels = c(-5, 0,5, 10), 
+     tick = T ,col = NA, col.ticks = 1, tck = -.015, las = 2, cex.axis = 0.7)
+
+#abline(v =-25.9)
+lines(x = c(-21.9, -21.9), y = c(-9.9,13.9))
+abline(h =-9.9)
+
 #axis titles
-mtext("Wind support (m/s)", 1, line = -3, cex = 0.9, font = 3)
+mtext("Wind support (m/s)", 1, line = -4, cex = 0.9, font = 3)
 mtext(expression(italic(paste(Delta,"T", "(°C)"))), 2, line = 1.2, cex = 0.9)
 
-#---------- put it all together
+#add legend
+plot(interpr, legend.only = T, horizontal = F, col = colpal, legend.args = list("Probability of use", side = 4, font = 1, line = 1.5, cex = 0.7),
+     legend.shrink = 0.4,
+     #smallplot= c(0.12,0.7, 0.06,0.09),
+     axis.args = list(at = seq(0,1,0.25), #same arguments as any axis, to determine the length of the bar and tick marks and labels
+                      labels = seq(0,1,0.25), 
+                      col = NA, #make sure box type in par is set to n, otherwise axes will be drawn on the legend :p
+                      col.ticks = NA,
+                      line = -0.8, cex.axis = 0.7))
+
+
+
+
+
  
 # ---------- Fig S1: species-specific coefficients #####
 
 #original code by Virgilio Gomez-Rubio (Bayesian inference with INLA, 2020)
 
 #load the INLA model
-load("INLA_model.RData") #M2
+load("INLA_model.RData") #M
 
 #species
 species_names <- c("O", "PF", "EF", "OHB")
 
-tab_dt <- data.frame(ID = as.factor(M2$summary.random$species1$ID),
-                     mean = M2$summary.random$species1$mean,
-                     IClower = M2$summary.random$species1[, 4],
-                     ICupper = M2$summary.random$species1[, 6])
+tab_dt <- data.frame(ID = as.factor(M$summary.random$species1$ID),
+                     mean = M$summary.random$species1$mean,
+                     IClower = M$summary.random$species1[, 4],
+                     ICupper = M$summary.random$species1[, 6])
 
 
-tab_wspt <- data.frame(ID = as.factor(M2$summary.random$species2$ID),
-                       mean = M2$summary.random$species2$mean,
-                       IClower = M2$summary.random$species2[, 4],
-                       ICupper = M2$summary.random$species2[, 6])
+tab_wspt <- data.frame(ID = as.factor(M$summary.random$species2$ID),
+                       mean = M$summary.random$species2$mean,
+                       IClower = M$summary.random$species2[, 4],
+                       ICupper = M$summary.random$species2[, 6])
 
 
-tab_wspt_var <- data.frame(ID = as.factor(M2$summary.random$species4$ID),
-                       mean = M2$summary.random$species4$mean,
-                       IClower = M2$summary.random$species4[, 4],
-                       ICupper = M2$summary.random$species4[, 6])
+tab_wspt_var <- data.frame(ID = as.factor(M$summary.random$species4$ID),
+                       mean = M$summary.random$species4$mean,
+                       IClower = M$summary.random$species4[, 4],
+                       ICupper = M$summary.random$species4[, 6])
 
 X11(width = 4, height = 4)
 
