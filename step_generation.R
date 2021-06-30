@@ -1,6 +1,6 @@
 # Scripts for generating alternative steps for sea-crossing tracks
-# This is script 1 of 6 for reproducing the results of Nourani et al 2021, ProcB.
-# Elham Nourani, PhD. Jun.10. 2021
+# This is script 1 of 4 for reproducing the results of Nourani et al 2021, ProcB.
+# Elham Nourani, PhD. June. 2021; enourani@ab.mpg.de
 #-----------------------------------------------------------------
 
 #to do: add the wind support functions to functions.R

@@ -1,6 +1,6 @@
 # Scripts for producing the figures (main text and supplementary)
-# This is script 6 of 6 for reproducing the results of Nourani et al 2021, ProcB.
-# Elham Nourani, PhD. Jun.10. 2021
+# This is script 4 of 4 for reproducing the results of Nourani et al 2021, ProcB.
+# Elham Nourani, PhD. June. 2021; enourani@ab.mpg.de
 #-----------------------------------------------------------------
 
 library(TeachingDemos) #for subplot

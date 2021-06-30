@@ -1,6 +1,6 @@
 # Scripts for step selection function analysis
-# This is script 2 of 6 for reproducing the results of Nourani et al 2021, ProcB.
-# Elham Nourani, PhD. Jun.10. 2021
+# This is script 2 of 4 for reproducing the results of Nourani et al 2021, ProcB.
+# Elham Nourani, PhD. June. 2021; enourani@ab.mpg.de
 #-----------------------------------------------------------------
 
 #to do: add the wind support functions to functions.R
