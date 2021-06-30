@@ -9,8 +9,11 @@ library(mgcv)
 library(sf)
 library(move)
 library(scales)
+library(maptools)
 
 source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/global_seascape/functions.R")
+wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
+
 
 # ---------- Fig 1: w_star #####
 
@@ -218,13 +221,10 @@ legend(-130,8, legend = c("Oriental honey buzzard", "Grey-faced buzzard", "Amur 
 
  
  
-# ---------- Fig 3: INLA results #####
+# ---------- Fig 3: INLA results: coefficients #####
 
 #load the model and data used to build it (produced in step_selection_analysis.R; also available on the Dryad repository)
- 
 load("INLA_model.RData") #M; final INLA model
-load("INLA_model_preds") #M_pred; INLA model used for predictions
-load("new_data_for_modeling.RData") #new_data; data generated to plot predictions (interaction between delta_t and wind support)
 load("annotated_steps.RData") #ann_cmpl; data used for INLA modeling. This dataframe includes used and alternative steps and can be reproduced using step_generation.R
 
 #calculate z_scores for predictor variables
@@ -297,7 +297,13 @@ axis(side= 2, at= c(1:4),
      tck=-.015 , #tick marks smaller than default by this proportion
      las=2) # text perpendicular to axis label 
 
-#----------Prep for 3b: interaction between wind support and delta-t
+# ---------- Fig 4: INLA results: interaction effect plot #####
+#plot the interaction between wind support and delta-t
+
+#load data (prepared in step_selection_analysis.R)
+
+load("INLA_model_preds") #M_pred; INLA model used for predictions
+load("new_data_for_modeling.RData") #new_data; data generated to plot predictions (interaction between delta_t and wind support)
 
 #extract predicted values
 used_na <- which(is.na(new_data$used))
@@ -686,6 +692,7 @@ variables <- c("wind_support", "delta_t")
 
 X11(width = 12, height = 5.5) #inches
 
+pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/procB/revision_first/submission_material/initiation_boxplots_updated.pdf",width = 12, height = 5.5)
 par(mfrow= c(2,1), 
     oma = c(3,0,2.5,0), 
     mar = c(0.5,4,0.2,0.2),
@@ -703,12 +710,12 @@ for(i in 1:length(variables)){
   boxplot(starts_all[,variables[i]] ~ starts_all[,"group"], data = starts_all, boxfill = NA, border = NA, xlab = "", ylab = "", xaxt = "n")
   abline(h = 0, lty = 2, col = alpha("black", 0.6), lwd = 0.3)
 
-  points(jitter((as.numeric(starts_all[starts_all$sun_elev == "high","group"]) -0.3),0.3), starts_all[starts_all$sun_elev == "high", variables[i]], 
+  points(jitter((as.numeric(starts_all[starts_all$sun_elev == "high","group"]) -0.28),0.3), starts_all[starts_all$sun_elev == "high", variables[i]], 
          yaxt = "n", xaxt = "n", pch = 20, cex = 0.8, col = alpha("black", 0.6))
   
   boxplot(starts_all[starts_all$sun_elev == "high", variables[i]] ~ starts_all[starts_all$sun_elev == "high","group"], 
           yaxt = "n", xaxt = "n", add = T, boxfill = Cols[1], outline = FALSE, lwd = 0.5, 
-          boxwex = 0.25, at = 1:length(unique(starts_all$group)) - 0.3)
+          boxwex = 0.25, at = 1:length(unique(starts_all$group)) -0.28)
   
   points(jitter(as.numeric(starts_all[starts_all$sun_elev == "low","group"]),0.3), starts_all[starts_all$sun_elev == "low", variables[i]], 
          yaxt = "n", xaxt = "n", pch = 20, cex = 0.8, col = alpha("black", 0.6))
@@ -717,12 +724,12 @@ for(i in 1:length(variables)){
           yaxt = "n", xaxt = "n", add = T, boxfill = Cols[2], outline = FALSE,  lwd = 0.5, 
           boxwex = 0.25, at = 1:length(unique(starts_all$group))+ 0)
   
-  points(jitter((as.numeric(starts_all[starts_all$sun_elev == "night","group"]) +0.3),0.3), starts_all[starts_all$sun_elev == "night", variables[i]], 
+  points(jitter((as.numeric(starts_all[starts_all$sun_elev == "night","group"]) +0.28),0.3), starts_all[starts_all$sun_elev == "night", variables[i]], 
          yaxt = "n", xaxt = "n", pch = 20, cex = 0.8, col = alpha("black", 0.6))
   
   boxplot(starts_all[starts_all$sun_elev == "night", variables[i]] ~ starts_all[starts_all$sun_elev == "night", "group"], 
           yaxt = "n", xaxt = "n", add = T, boxfill = Cols[3], outline=FALSE,  lwd = 0.5, 
-          boxwex = 0.25, at = 1:length(unique(starts_all$group))+ 0.3)
+          boxwex = 0.25, at = 1:length(unique(starts_all$group))+ 0.28)
   
   
   if(i == length(variables)){
