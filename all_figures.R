@@ -269,28 +269,25 @@ graph$Factor_n <- as.numeric(graph$Factor)
 #pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/coefficients_updated.pdf", width = 4.1, height = 2.7)
 #jpeg("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/coefficients_updated.jpeg", width = 4.1, height = 2.7, units = "in", res = 300)
 
-par(mfrow=c(1,2), bty = "n", #no box around the plot
-    #cex.axis= 0.75, #x and y labels have 0.75% of the default size
-    #font.axis= 0.75, #3: axis labels are in italics
-    #cex.lab = 0.75,
-    cex = 0.7,
+X11(width = 4.1, height = 2.7)
+par(cex = 0.7,
     oma = c(0,3.7,0,0),
     mar = c(3, 4.1, 0.5, 1),
     bty = "l"
 )
 
-plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(-2,3), ylim = c(0.2,4.3), xlab = "Estimate", ylab = "")
+plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(-1.6,2.7), ylim = c(0.7,4.3), xlab = "Estimate", ylab = "")
 
 #add vertical line for zero
 abline(v = 0, col = "grey30",lty = 2)
 #add points and error bars
-points(graph$Estimate, graph$Factor_n, col = "steelblue1", pch = 20, cex = 1.3)
+points(graph$Estimate, graph$Factor_n, col = "cornflowerblue", pch = 20, cex = 2)
 arrows(graph$Lower, graph$Factor_n,
        graph$Upper, graph$Factor_n,
-       col = "steelblue1", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+       col = "cornflowerblue", code = 3, length = 0.03, angle = 90, lwd = 2) #angle of 90 to make the arrow head as straight as a line
 
 #add axes
-axis(side= 1, at= c(-2,0,2,4), labels= c("-2", "0", "2", "4"), 
+axis(side= 1, at= c(-1,0, 1,2), labels= c("-1", "0", "1", "2"), 
      tick=T ,col = NA, col.ticks = 1, tck=-.015)
 
 axis(side= 2, at= c(1:4),
@@ -369,47 +366,7 @@ colpal <- pal(200)
 #plot
 X11(width = 5, height = 4)
 
-pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/coefficients_updated.pdf", width = 5, height = 4)
-par(cex = 0.7,
-     oma = c(0,3.5,0,0),
-     mar = c(2, 0.5, 0, 0),
-     bty = "n",
-     mgp=c(1,0.5,0)
- )
-
-
-#dev.off()
-#plot(0, type = "n", labels = FALSE, tck = 0, xlim =  c(-20,29), ylim = c(-9.7,14), xlab = "", ylab = "")
-plot(interpr, col = colpal, axes = F, box = F, legend = F, ext = extent(c(-22, 28.9, -9.7, 14))) #crop to the extent of observed data
- 
-#add axes
-axis(side = 1, at = seq(-20,30,10),
-    labels = seq(-20,30,10),
-    tick = T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
-    tck = -.015, line = -4.9, cex.axis = 0.7) #tick marks smaller than default by this proportion
-
-axis(side = 2, at = c(-5, 0,5, 10), labels = c(-5, 0,5, 10), 
-    tick = T ,col = NA, col.ticks = 1, tck = -.015, las = 2, cex.axis = 0.7)
-
-#abline(v =-25.9)
-lines(x = c(-21.9, -21.9), y = c(-9.9,13.9))
-abline(h =-9.9)
-
-#axis titles
-mtext("Wind support (m/s)", 1, line = -3.1, cex = 0.9, font = 3)
-mtext(expression(italic(paste(Delta,"T", "(°C)"))), 2, line = 1.2, cex = 0.9)
-
-#add legend
-plot(interpr, legend.only = T, horizontal = T, col = colpal, legend.args = list("Probability of presence", side = 3, font = 1, line = 0.08, cex = 0.7),
-     smallplot= c(0.12,0.7, 0.06,0.09),
-     axis.args = list(at = seq(0,1,0.25), #same arguments as any axis, to determine the length of the bar and tick marks and labels
-                      labels = seq(0,1,0.25), 
-                      col = NA, #make sure box type in par is set to n, otherwise axes will be drawn on the legend :p
-                      col.ticks = NA,
-                      line = -1, cex.axis = 0.7))
-
-#with vertical legend------------------
-X11(width = 5, height = 4)
+#pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/interaction_plot.pdf", width = 5, height = 4)
 par(cex = 0.7,
     oma = c(0,3.5,0,0),
     mar = c(0, 0, 0, 1.5),
@@ -426,14 +383,14 @@ plot(interpr, col = colpal, axes = F, box = F, legend = F, ext = extent(c(-22, 2
 axis(side = 1, at = seq(-20,30,10),
      labels = seq(-20,30,10),
      tick = T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
-     tck = -.015, line = -5.6, cex.axis = 0.7) #tick marks smaller than default by this proportion
+     tck = -.015, line = -5.75, cex.axis = 0.7) #tick marks smaller than default by this proportion
 
 axis(side = 2, at = c(-5, 0,5, 10), labels = c(-5, 0,5, 10), 
      tick = T ,col = NA, col.ticks = 1, tck = -.015, las = 2, cex.axis = 0.7)
 
 #abline(v =-25.9)
 lines(x = c(-21.9, -21.9), y = c(-9.9,13.9))
-abline(h =-9.9)
+abline(h =-10)
 
 #axis titles
 mtext("Wind support (m/s)", 1, line = -4, cex = 0.9, font = 3)
@@ -450,7 +407,7 @@ plot(interpr, legend.only = T, horizontal = F, col = colpal, legend.args = list(
                       line = -0.8, cex.axis = 0.7))
 
 
-
+#dev.off()
 
 
  
@@ -463,6 +420,7 @@ load("INLA_model.RData") #M
 
 #species
 species_names <- c("O", "PF", "EF", "OHB")
+species_names <- c("Osprey", "Peregrine \n falcon", "Eleonora's \n falcom", "Oriental \n honey buzzard")
 
 tab_dt <- data.frame(ID = as.factor(M$summary.random$species1$ID),
                      mean = M$summary.random$species1$mean,
@@ -476,33 +434,29 @@ tab_wspt <- data.frame(ID = as.factor(M$summary.random$species2$ID),
                        ICupper = M$summary.random$species2[, 6])
 
 
-tab_wspt_var <- data.frame(ID = as.factor(M$summary.random$species4$ID),
-                       mean = M$summary.random$species4$mean,
-                       IClower = M$summary.random$species4[, 4],
-                       ICupper = M$summary.random$species4[, 6])
+tab_wspt_var <- data.frame(ID = as.factor(M$summary.random$species3$ID),
+                       mean = M$summary.random$species3$mean,
+                       IClower = M$summary.random$species3[, 4],
+                       ICupper = M$summary.random$species3[, 6])
 
 X11(width = 4, height = 4)
 
-pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/species_var_updated.pdf", width = 4, height = 3)
+#pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/species_var_updated.pdf", width = 4, height = 4)
 
-par(mfrow = c(1,1), bty="n", #no box around the plot
-    #cex.axis= 0.75, #x and y labels have 0.75% of the default size
-    #font.axis= 0.75, #3: axis labels are in italics
-    #cex.lab = 0.75,
+par(mfrow = c(1,1), bty="n",
     cex = 0.7,
     oma = c(0,3.5,0,0),
-    mar = c(3, 2, 0.5, 1),
-    bty = "l"
+    mar = c(3, 2, 0.5, 1)
 )
 
 
-plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(-2,3), ylim = c(0.5,4.5), xlab = "", ylab = "")
+plot(0, bty = "l", labels = FALSE, tck = 0, xlim = c(-1.2,2.5), ylim = c(0.5,4.5), xlab = "", ylab = "")
 #add vertical line for zero
 abline(v = 0, col = "grey30",lty = 2)
 
-points(tab_dt$mean, as.numeric(tab_dt$ID) - 0.3, col = "darkgoldenrod2", pch = 19, cex = 1.3)
-arrows(tab_dt$IClower, as.numeric(tab_dt$ID) - 0.3,
-       tab_dt$ICupper, as.numeric(tab_dt$ID) - 0.3,
+points(tab_dt$mean, as.numeric(tab_dt$ID) - 0.2, col = "darkgoldenrod2", pch = 19, cex = 1.3)
+arrows(tab_dt$IClower, as.numeric(tab_dt$ID) - 0.2,
+       tab_dt$ICupper, as.numeric(tab_dt$ID) - 0.2,
        col = "darkgoldenrod2", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
 
 points(tab_wspt$mean, as.numeric(tab_wspt$ID) , col = "cornflowerblue", pch = 19, cex = 1.3)
@@ -510,26 +464,26 @@ arrows(tab_wspt$IClower, as.numeric(tab_wspt$ID) ,
        tab_wspt$ICupper, as.numeric(tab_wspt$ID) ,
        col = "cornflowerblue", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
 
-points(tab_wspt_var$mean, as.numeric(tab_wspt_var$ID) + 0.3, col = "pink1", pch = 19, cex = 1.3)
-arrows(tab_wspt_var$IClower, as.numeric(tab_wspt_var$ID) + 0.3,
-       tab_wspt_var$ICupper, as.numeric(tab_wspt_var$ID) + 0.3,
+points(tab_wspt_var$mean, as.numeric(tab_wspt_var$ID) + 0.2, col = "pink1", pch = 19, cex = 1.3)
+arrows(tab_wspt_var$IClower, as.numeric(tab_wspt_var$ID) + 0.2,
+       tab_wspt_var$ICupper, as.numeric(tab_wspt_var$ID) + 0.2,
        col = "pink1", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
 
-axis(side= 1, at= c(-4,-2,0,2,4), labels= c("-4","-2", "0", "2","4"), 
+axis(side= 1, at = c(-1,0,1,2), labels = c(-1,0,1,2), 
      tick=T ,col = NA, col.ticks = 1, tck=-.015)
 
 axis(side= 2, at= c(1:4), #line = 6, 
-     labels = tab_dt$ID,# c( "Eleonora's falcon","Osprey", "Oriental\n honey buzzard", "Peregrine falcon"), #same order as tab_dt$ID
+     labels =  tab_dt$ID, #same order as tab_dt$ID
      tick = T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
      tck = -.015 , #tick marks smaller than default by this proportion
      las = 2) # text perpendicular to axis label 
 
 #add legend
-legend(x = 1.4, y = 4.5, legend = c( "Wind support var", "Wind support", expression(italic(paste(Delta,"T")))), 
+legend(x = 1.3, y = 4.5, legend = c( "Wind support var", "Wind support", expression(italic(paste(Delta,"T")))), 
        col = c("pink1", "cornflowerblue","darkgoldenrod1"), #coords indicate top-left
        pch = 19, bg="white",bty="n", cex = 0.9)
 
-dev.off()
+#dev.off()
 
 
 # ---------- Fig S2: boxplot comparing used and available steps #####
