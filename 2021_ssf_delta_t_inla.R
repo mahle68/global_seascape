@@ -537,6 +537,13 @@ form_8 <- formula(used ~  delta_t_z * wind_support_z + delta_t_z * abs_cross_win
 form_9 <- formula(used ~ delta_t_z * wind_support_z + s_elev_angle +
                     strata(stratum))
 
+form_10 <- formula(used ~ delta_t_z * wind_support_z +  wind_support_var_z + I(delta_t_z^2) +
+                    strata(stratum))
+
+form_11 <- formula(used ~ delta_t_z * wind_support_z +  wind_support_var_z +
+                     strata(stratum))
+
+
 m1 <- clogit(form_1, data = all_data) #when zone is added, delta t coeff becomes positive. still not sig, but positive. but wind support is negative. but interaction of wind support with zones is positive. so, only negative in the arctic
 m1a <- clogit(form_original, data = all_data)
 m1b <- clogit(form_2, data = all_data)
@@ -545,8 +552,8 @@ m1d <- clogit(form_4, data= all_data)
 m1e <- clogit(form_5, data = all_data)
 m1f <- clogit(form_6, data = all_data)
 m1g <- clogit(form_7, data = all_data)
-m1h <- clogit(form_8, data = all_data)
-m1i <- clogit(form_9, data = all_data)
+m1h <- clogit(form_11, data = all_data)
+m1i <- clogit(form_10, data = all_data)
 
 #only during the day:
 day <- all_data[all_data$sun_elev != "night",]

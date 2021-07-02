@@ -1,5 +1,6 @@
 # Scripts for estimating the energy seascape; i.e. GAMs for predicting uplift as a function of location and time
 # This is script 3 of 4 for reproducing the results of Nourani et al 2021, ProcB.
+# session info is provided at the end of script 4 (all_figures.R)
 # Elham Nourani, PhD. June. 2021; enourani@ab.mpg.de
 #-----------------------------------------------------------------
 
@@ -9,7 +10,7 @@ library(fields) #for Tps
 
 # ---------- STEP 1: load data #####
 # data was downloaded from the ECMWF Era-interim data set (see manuscript for details). 
-#In addition to sea-surface temperature, temperature at 2m above ground, sun elevation categories were assigned (see code w_star_estimation.R) 
+#In addition to sea-surface temperature, temperature at 2m above ground, sun elevation categories were assigned
 
 load("input_regional_gams.RData") #data_ls_sun. contains one list per region
 

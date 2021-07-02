@@ -1,5 +1,6 @@
 # Scripts for producing the figures (main text and supplementary)
 # This is script 4 of 4 for reproducing the results of Nourani et al 2021, ProcB.
+# session info is provided at the end of script 4 (all_figures.R)
 # Elham Nourani, PhD. June. 2021; enourani@ab.mpg.de
 #-----------------------------------------------------------------
 
@@ -11,7 +12,7 @@ library(move)
 library(scales)
 library(maptools)
 
-source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/global_seascape/functions.R")
+source("functions.R") #as a part of the repository on Github
 wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
 
 
@@ -60,7 +61,7 @@ levels(data$shape) <- c(0,1,2,3,4,5)
 
 
 #Plot
-X11(width = 5.2, height = 3)
+X11(width = 5.2, height = 3) #inches
 
 par(mfrow=c(1,1), 
     bty = "l",
@@ -232,9 +233,8 @@ all_data <- ann_cmpl %>%
   mutate_at(c("delta_t", "wind_speed", "wind_support", "wind_support_var", "abs_cross_wind", "delta_t_var"),
             list(z = ~(scale(.)))) 
 
-#---------- Prep for 3a: posterior means of coefficients
+# posterior means of coefficients
 
-  
 graph <- as.data.frame(summary(M)$fixed)
 colnames(graph)[which(colnames(graph)%in%c("0.025quant","0.975quant"))]<-c("Lower","Upper")
 colnames(graph)[which(colnames(graph)%in%c("0.05quant","0.95quant"))]<-c("Lower","Upper")
@@ -242,17 +242,6 @@ colnames(graph)[which(colnames(graph)%in%c("mean"))]<-c("Estimate")
 
 #graph$Model<-i
 graph$Factor <- rownames(graph)
-  
-#  graphlist[[i]]<-graph
-#}
-
-#graph <- bind_rows(graphlist)
-
-#graph$Sig <- with(graph, ifelse(Lower*Upper>0, "*", ""))
-
-#graph$Model <- as.factor(graph$Model)
-
-#position <- ifelse(length(unique(graph$Model))  ==  1, "none", "right")
 
 VarOrder <- rev(unique(graph$Factor))
 VarNames <- VarOrder
@@ -265,10 +254,7 @@ max <- max(graph$Upper,na.rm = T)
 
 graph$Factor_n <- as.numeric(graph$Factor)
 
-
-#pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/coefficients_updated.pdf", width = 4.1, height = 2.7)
-#jpeg("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/coefficients_updated.jpeg", width = 4.1, height = 2.7, units = "in", res = 300)
-
+#plot
 X11(width = 4.1, height = 2.7)
 par(cex = 0.7,
     oma = c(0,3.7,0,0),
@@ -301,27 +287,21 @@ axis(side= 2, at= c(1:4),
 #plot the interaction between wind support and delta-t
 
 #load data (prepared in step_selection_analysis.R)
-
-load("INLA_model_preds") #M_pred; INLA model used for predictions
+load("INLA_model_preds.RData") #M_pred; INLA model used for predictions
 load("new_data_for_modeling.RData") #new_data; data generated to plot predictions (interaction between delta_t and wind support)
 
 #extract predicted values
 used_na <- which(is.na(new_data$used))
-M_pred$summary.fitted.values[used_na,]
  
  
-#create a raster of predictions
+#extract information for rows that had NAs as response variables
 preds <- data.frame(delta_t = new_data[is.na(new_data$used) ,"delta_t_z"],
                     wind_support = new_data[is.na(new_data$used) ,"wind_support_z"],
                     wind_support_var = new_data[is.na(new_data$used) ,"wind_support_var_z"],
                     preds = M_pred$summary.fitted.values[used_na,"mean"]) %>% 
   mutate(prob_pres = exp(preds)/(1+exp(preds))) #this should be between 0-1
 
-
-plot(preds$delta_t, preds$wind_support, col = as.factor("preds"))
-
-
-
+#create a raster of predictions
 avg_preds <- preds %>% 
   group_by(delta_t_z, wind_support_z) %>%  
   summarise(avg_pres = mean(prob_pres)) %>% 
@@ -335,9 +315,6 @@ avg_preds <- preds %>%
 coordinates(avg_preds) <-~ wspt_backtr + dt_backtr 
 gridded(avg_preds) <- TRUE
 r <- raster(avg_preds)
- 
-#easy plot
-plot(r,  xlab = "wind support (m/s)", ylab = "delta_t (°C)")
  
 
 #interpolate. for visualization purposes
@@ -359,11 +336,7 @@ interpr <- raster(interpdf)
 
 
 #create a color palette
-cuts <- c(0, 0.25,0.5,0.75,1)#seq(0,1,0.2) #set breaks
-#pal <- colorRampPalette(c("dodgerblue","darkturquoise","goldenrod1","coral","firebrick1"))
-#pal <- colorRampPalette(c("dodgerblue","darkturquoise", "goldenrod1","coral","firebrick1","firebrick4"))
-#pal <- colorRampPalette(c("aliceblue", "lightskyblue1", "olivedrab2","goldenrod1","sandybrown","tomato"))
-pal <- colorRampPalette(c("aliceblue", "lightskyblue1","khaki2", "navajowhite1","sandybrown","tomato"))
+cuts <- c(0, 0.25,0.5,0.75,1) #set breaks
 pal <- colorRampPalette(c("aliceblue", "lightskyblue1", "khaki2", "sandybrown", "salmon2","tomato"))
 colpal <- pal(200)
  
@@ -372,7 +345,6 @@ colpal <- pal(200)
 #plot
 X11(width = 5, height = 4)
 
-#pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/interaction_plot.pdf", width = 5, height = 4)
 par(cex = 0.7,
     oma = c(0,3.5,0,0),
     mar = c(0, 0, 0, 1.5),
@@ -381,8 +353,6 @@ par(cex = 0.7,
 )
 
 
-#dev.off()
-#plot(0, type = "n", labels = FALSE, tck = 0, xlim =  c(-20,29), ylim = c(-9.7,14), xlab = "", ylab = "")
 plot(interpr, col = colpal, axes = F, box = F, legend = F, ext = extent(c(-22, 28.9, -9.7, 14))) #crop to the extent of observed data
 
 #add axes
@@ -394,7 +364,6 @@ axis(side = 1, at = seq(-20,30,10),
 axis(side = 2, at = c(-5, 0,5, 10), labels = c(-5, 0,5, 10), 
      tick = T ,col = NA, col.ticks = 1, tck = -.015, las = 2, cex.axis = 0.7)
 
-#abline(v =-25.9)
 lines(x = c(-21.9, -21.9), y = c(-9.9,13.9))
 abline(h =-10)
 
@@ -413,10 +382,6 @@ plot(interpr, legend.only = T, horizontal = F, col = colpal, legend.args = list(
                       line = -0.8, cex.axis = 0.7))
 
 
-#dev.off()
-
-
- 
 # ---------- Fig S1: species-specific coefficients #####
 
 #original code by Virgilio Gomez-Rubio (Bayesian inference with INLA, 2020)
@@ -445,9 +410,8 @@ tab_wspt_var <- data.frame(ID = as.factor(M$summary.random$species3$ID),
                        IClower = M$summary.random$species3[, 4],
                        ICupper = M$summary.random$species3[, 6])
 
+#plot
 X11(width = 4, height = 4)
-
-#pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/species_var_updated.pdf", width = 4, height = 4)
 
 par(mfrow = c(1,1), bty="n",
     cex = 0.7,
@@ -478,18 +442,16 @@ arrows(tab_wspt_var$IClower, as.numeric(tab_wspt_var$ID) + 0.2,
 axis(side= 1, at = c(-1,0,1,2), labels = c(-1,0,1,2), 
      tick=T ,col = NA, col.ticks = 1, tck=-.015)
 
-axis(side= 2, at= c(1:4), #line = 6, 
-     labels =  tab_dt$ID, #same order as tab_dt$ID
-     tick = T ,col = NA, col.ticks = 1, # NULL would mean to use the defult color specified by "fg" in par
-     tck = -.015 , #tick marks smaller than default by this proportion
-     las = 2) # text perpendicular to axis label 
+axis(side= 2, at= c(1:4), 
+     labels =  tab_dt$ID, 
+     tick = T ,col = NA, col.ticks = 1, 
+     tck = -.015 , 
+     las = 2) 
 
 #add legend
 legend(x = 1.3, y = 4.5, legend = c( "Wind support var", "Wind support", expression(italic(paste(Delta,"T")))), 
        col = c("pink1", "cornflowerblue","darkgoldenrod1"), #coords indicate top-left
        pch = 19, bg="white",bty="n", cex = 0.9)
-
-#dev.off()
 
 
 # ---------- Fig S2: boxplot comparing used and available steps #####
@@ -626,7 +588,6 @@ clip(-99, 144, -30, 71)
 abline(h = 0, col = "grey70",lty = 2)
 abline(h = 30, col = "grey70",lty = 2)
 abline(h = 60, col = "grey70",lty = 2)
-#text(x = -125, y = c(2,32,62), labels = c("0° ", "30° N", "60° N"), cex = 0.6, col = "grey65")
 text(x = -95, y = c(32,62), labels = c("30° N", "60° N"), cex = 0.6, col = "grey65")
 
 #add a frame for the sub-plots and legend
@@ -683,16 +644,14 @@ starts_all$group <- fct_relevel(starts_all$group, c("O_A", "PF_A", "O_E", "PF_E"
 Pal <- colorRampPalette(c("darkgoldenrod1","lightpink1", "mediumblue")) 
 Cols <- paste0(Pal(3), "80") #add transparency.
 
-#labels <- c("EF \n (Mediterranean)", "EF \n (Mozambique)", "GFB \n", "Osprey \n (America)", "Osprey \n (Europe)", "OHB \n ", "PF \n (America)", "PF \n (Europe)")
-
 labels <- c("Pandion haliaetus \n (America)", "Falco peregrinus \n (America)", "Pandion haliaetus \n (Europe)", "Falco peregrinus \n (Europe)",
             "Falco eleonorae \n (Mediterranean)",  "Falco eleonorae \n (Mozambique)", "Butastur indicus \n" ,"Pernis ptilorhynchus \n")
 
 variables <- c("wind_support", "delta_t")
 
+#plot
 X11(width = 12, height = 5.5) #inches
 
-pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/procB/revision_first/submission_material/initiation_boxplots_updated.pdf",width = 12, height = 5.5)
 par(mfrow= c(2,1), 
     oma = c(3,0,2.5,0), 
     mar = c(0.5,4,0.2,0.2),
@@ -750,3 +709,36 @@ mtext("Atmospheric conditions at the start of sea-crossing tracks", side = 3, ou
 
 legend(x = 7.5, y = 21.6, legend = c("daytime: high sun", "daytime: low sun", "night"), col = Cols,
        cex = 0.78, pt.cex = 1.1, bg = "white", bty = "n", pch = 15, horiz = F, xpd = NA)
+
+
+
+
+
+# SESSION INFO
+# R version 4.0.3 (2020-10-10)
+# Platform: x86_64-pc-linux-gnu (64-bit)
+# Running under: Pop!_OS 20.10
+# 
+# Matrix products: default
+# BLAS:   /usr/lib/x86_64-linux-gnu/blas/libblas.so.3.9.0
+# LAPACK: /usr/lib/x86_64-linux-gnu/lapack/liblapack.so.3.9.0
+# 
+# locale:
+#   [1] LC_CTYPE=en_US.UTF-8       LC_NUMERIC=C               LC_TIME=en_US.UTF-8        LC_COLLATE=en_US.UTF-8     LC_MONETARY=en_US.UTF-8    LC_MESSAGES=en_US.UTF-8    LC_PAPER=en_US.UTF-8      
+# [8] LC_NAME=C                  LC_ADDRESS=C               LC_TELEPHONE=C             LC_MEASUREMENT=en_US.UTF-8 LC_IDENTIFICATION=C       
+# 
+# attached base packages:
+#   [1] grid      parallel  stats     graphics  grDevices utils     datasets  methods   base     
+# 
+# other attached packages:
+#   [1] scales_1.1.1       itsadug_2.4        plotfunctions_1.4  TeachingDemos_2.12 fields_11.6        spam_2.6-0         dotCall64_1.0-1    mgcv_1.8-34        nlme_3.1-152       corrr_0.4.3       
+# [11] INLA_21.02.23      foreach_1.5.1      Matrix_1.3-2       maptools_1.1-1     sf_0.9-8           move_4.0.6         rgdal_1.5-23       raster_3.4-5       sp_1.4-5           geosphere_1.5-10  
+# [21] lubridate_1.7.10   forcats_0.5.1      stringr_1.4.0      dplyr_1.0.5        purrr_0.3.4        readr_1.4.0        tidyr_1.1.3        tibble_3.1.0       ggplot2_3.3.3      tidyverse_1.3.0   
+# 
+# loaded via a namespace (and not attached):
+#   [1] httr_1.4.2         maps_3.3.0         jsonlite_1.7.2     splines_4.0.3      modelr_0.1.8       assertthat_0.2.1   cellranger_1.1.0   pillar_1.5.1       backports_1.2.1    lattice_0.20-41   
+# [11] glue_1.4.2         rvest_1.0.0        colorspace_2.0-0   pkgconfig_2.0.3    broom_0.7.6        haven_2.3.1        proxy_0.4-25       farver_2.1.0       generics_0.1.0     ellipsis_0.3.1    
+# [21] cachem_1.0.4       withr_2.4.1        cli_2.4.0          magrittr_2.0.1     crayon_1.4.1       readxl_1.3.1       memoise_2.0.0      fs_1.5.0           fansi_0.4.2        xml2_1.3.2        
+# [31] foreign_0.8-81     class_7.3-18       tools_4.0.3        hms_1.0.0          lifecycle_1.0.0    munsell_0.5.0      reprex_2.0.0       packrat_0.6.0      compiler_4.0.3     e1071_1.7-6       
+# [41] rlang_0.4.10       classInt_0.4-3     units_0.7-1        iterators_1.0.13   rstudioapi_0.13    gtable_0.3.0       codetools_0.2-18   DBI_1.1.1          R6_2.5.0           fastmap_1.1.0     
+# [51] utf8_1.2.1         KernSmooth_2.23-18 stringi_1.5.3      Rcpp_1.0.6         vctrs_0.3.7        dbplyr_2.1.1       tidyselect_1.1.0  

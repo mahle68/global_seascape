@@ -1,29 +1,28 @@
 # Scripts for generating alternative steps for sea-crossing tracks
 # This is script 1 of 4 for reproducing the results of Nourani et al 2021, ProcB.
+# session info is provided at the end of script 4 (all_figures.R)
 # Elham Nourani, PhD. June. 2021; enourani@ab.mpg.de
 #-----------------------------------------------------------------
-
-#to do: add the wind support functions to functions.R
 
 library(tidyverse)
 library(lubridate)
 library(move)
 library(sp)
 library(sf)
+library(raster)
 library(parallel)
 library(maptools)
 
-setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/")
 
 # ---------- STEP 1: load data #####
 
 #load sea-crossing segments of migratory tracks
-load("2021/public/move_ls.RData") #move_ls; this list contains sea-crossing tracks. There is one move object for each unique species-flyway
+load("move_ls.RData") #move_ls; this list contains sea-crossing tracks. There is one move object for each unique species-flyway
 
 wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
 meters_proj <- CRS("+proj=moll +ellps=WGS84")#Mollweide projection (in meters) for accurate calculation of length
 
-source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/global_seascape/functions.R")
+source("functions.R") #as a part of the repository on Github
 
 # ---------- STEP 2: generate alternative steps #####
 
@@ -341,7 +340,6 @@ lapply(c(1:length(chunks)), function(i){
 
 
 #---- after annotation in movebank, download the annotated file and append to the file with instantaneous annotations
-
 
 #calculate long-term metrics and merge with previously annotated data
 ann_40_ls <- list.files("your_path/40_yr_annotations/",pattern = ".csv", recursive = T, full.names = T) #list all the files within the 40_yr_annotations folder

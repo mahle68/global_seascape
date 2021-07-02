@@ -1,5 +1,6 @@
 # Scripts for step selection function analysis
 # This is script 2 of 4 for reproducing the results of Nourani et al 2021, ProcB.
+# session info is provided at the end of script 4 (all_figures.R)
 # Elham Nourani, PhD. June. 2021; enourani@ab.mpg.de
 #-----------------------------------------------------------------
 
@@ -10,9 +11,7 @@ library(lubridate)
 library(INLA)
 library(corrr)
 library(raster)
-#library(inlabru)
 
-setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/")
 
 # ---------- STEP 1: load data #####
 
@@ -30,6 +29,7 @@ ann_cmpl %>%
 
 #corr test to include in the paper
 cor.test(ann_cmpl$wind_support_var, ann_cmpl$delta_t_var)
+cor.test(ann_cmpl$delta_t, ann_cmpl$delta_t_var)
 
 # ---------- STEP 3: z-transformation (i.e. scale all predictor variables) #####
 
@@ -75,10 +75,8 @@ new_data <- all_data %>%
          wind_support_var_z = sample(seq(min(all_data$wind_support_var_z),max(all_data$wind_support_var_z), length.out = 10), n, replace = T)) %>% 
   full_join(all_data)
 
-save(new_data, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/new_data_500n_regular.RData")
-save(new_data, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/Dryad/new_data_for_modeling.RData")
 
-#The new_data dataframe is  available on the Dryad repository under name: new_data_for_modeling.RData
+#The new_data dataframe is available on the Dryad repository under name: new_data_for_modeling.RData
 
 #Model formula
 formulaM <- used ~ -1 + delta_t_z * wind_support_z + wind_support_var_z +
@@ -109,8 +107,7 @@ M <- inla(formulaM, family = "Poisson",
                control.compute = list(openmp.strategy = "huge", config = TRUE, cpo = T))
 Sys.time() - b 
 
-save(M, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/inla_models/M_with_cpo.RData")
-save(M, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/Dryad/INLA_model.RData")
+#This model is available on the Dryad repository under name: INLA_model.RData
 
 #Model for predictions
 (b <- Sys.time())
@@ -124,11 +121,70 @@ M_pred <- inla(formulaM, family = "Poisson",
                control.compute = list(openmp.strategy = "huge", config = TRUE, cpo = T))
 Sys.time() - b 
 
-save(M_pred, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/inla_models/M_pred_reg_500.RData") 
-save(M_pred, file = "/home/enourani/ownCloud/Work/Projects/delta_t/R_files/2021/public/Dryad/INLA_model_preds.RData")
 
-#to plot the predictions and coefficients, see all_figures.R (Fig. 3)
+#This model is available on the Dryad repository under name: INLA_model_preds.RData
+
+#to plot the predictions and coefficients, see all_figures.R (Fig. 3 and 4)
 
 
 
+##### not in public
+#trying the model with a smooth term for delta-t (response to the reviewer)
+
+all_data$delta_t_cw_group <- inla.group(all_data$delta_t_z, n = 50, method = "cut")
+
+f <- used ~ -1 + delta_t_z * wind_support_z +
+  f(delta_t_cw_group, model = "rw2", constr = F) + 
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T)))
+
+(b <- Sys.time())
+m2a <- inla(f, family ="Poisson", 
+            control.fixed = list(
+              mean = mean.beta,
+              prec = list(default = prec.beta)),
+            data = all_data,
+            num.threads = 10,
+            control.predictor = list(compute = T),
+            control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T))
+Sys.time() - b #11.31979 mins
+
+
+
+
+tab.rw2 <- data.frame(x = m2a$summary.random$delta_t_cw_group[, "ID"],
+                      y = m2a$summary.random$delta_t_cw_group[, "mean"],
+                      ll95 = m2a$summary.random$delta_t_cw_group[,"0.025quant"],
+                      ul95 = m2a$summary.random$delta_t_cw_group[,"0.975quant"]
+)
+
+plot(tab.rw2$x,tab.rw2$y)
+plot(tab.rw2$x,exp(tab.rw2$y)/(1+exp(tab.rw2$y)), xlab = "delta_t", ylab = "Probability of use", cex.lab = 2, type = "l") 
+
+
+X11(width = 4, height = 4)
+par(mar = c(5, 5, 4, 2), cex = 1.1)
+plot(x = all_data$delta_t_cw_group, y = all_data$used, col = "grey70", xlab = "delta t", ylab = "Probability of use", cex.lab = 1.5)
+lines(tab.rw2$x,exp(tab.rw2$y)/(1+exp(tab.rw2$y)), lwd = 1.2) 
+polygon(x = c(tab.rw2$x, rev(tab.rw2$x)), y = c(exp(tab.rw2$ll95)/(1+exp(tab.rw2$ll95)), exp(tab.rw2$ul95)/(1+exp(tab.rw2$ul95))), 
+                                                                   col = adjustcolor("grey", alpha.f = 0.7), border = NA)
+
+
+
+
+## quadratic term
+f <- used ~ -1 + delta_t_z * wind_support_z + I(delta_t_z ^ 2) +
+  f(stratum, model = "iid", 
+    hyper = list(theta = list(initial = log(1e-6),fixed = T)))
+
+(b <- Sys.time())
+m3a <- inla(f, family ="Poisson", 
+            control.fixed = list(
+              mean = mean.beta,
+              prec = list(default = prec.beta)),
+            data = all_data,
+            num.threads = 10,
+            control.predictor = list(compute = T),
+            control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T))
+Sys.time() - b #11.31979 mins
 
