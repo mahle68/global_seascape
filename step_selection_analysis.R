@@ -188,3 +188,13 @@ m3a <- inla(f, family ="Poisson",
             control.compute = list(openmp.strategy="huge", config = TRUE, mlik = T, waic = T))
 Sys.time() - b #11.31979 mins
 
+
+########## summary stats
+ann_cmpl %>% 
+group_by(group) %>% 
+  summarise(yrs_min = min(year(date_time)),
+            yrs_max = max(year(date_time)),
+            n_ind = n_distinct(ind),
+            n_tracks = n_distinct(track),
+            n_steps = n_distinct(stratum))
+
