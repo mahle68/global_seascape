@@ -103,9 +103,9 @@ M <- inla(formulaM, family = "Poisson",
                  prec = list(default = prec.beta)),
                data = all_data, 
                num.threads = 10,
-               control.predictor = list(compute = TRUE), #this means that NA values will be predicted.
-               control.compute = list(openmp.strategy = "huge", config = TRUE, cpo = T))
-Sys.time() - b 
+               control.predictor = list(compute = TRUE, link = 1), #this means that NA values will be predicted.
+               control.compute = list(openmp.strategy = "huge", config = TRUE, cpo = F))
+Sys.time() - b #51 min
 
 #This model is available on the Dryad repository under name: INLA_model.RData
 
