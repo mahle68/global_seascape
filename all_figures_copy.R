@@ -235,7 +235,6 @@ all_data <- ann_cmpl %>%
             list(z = ~(scale(.)))) 
 
 # posterior means of coefficients
-
 graph <- as.data.frame(summary(M)$fixed)
 colnames(graph)[which(colnames(graph)%in%c("0.025quant","0.975quant"))]<-c("Lower","Upper")
 colnames(graph)[which(colnames(graph)%in%c("0.05quant","0.95quant"))]<-c("Lower","Upper")
@@ -259,11 +258,11 @@ graph$Factor_n <- as.numeric(graph$Factor)
 X11(width = 4.1, height = 2.7)
 par(cex = 0.7,
     oma = c(0,3.7,0,0),
-    mar = c(3, 4.1, 0.5, 1),
+    mar = c(3, 4.15, 0.5, 1),
     bty = "l"
 )
 
-plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(-1.6,2.7), ylim = c(0.7,4.3), xlab = "Estimate", ylab = "")
+plot(0, type = "n", labels = FALSE, tck = 0, xlim = c(-2,3), ylim = c(0.7,4.3), xlab = "Estimate", ylab = "")
 
 #add vertical line for zero
 abline(v = 0, col = "grey30",lty = 2)
@@ -274,7 +273,7 @@ arrows(graph$Lower, graph$Factor_n,
        col = "cornflowerblue", code = 3, length = 0.03, angle = 90, lwd = 2) #angle of 90 to make the arrow head as straight as a line
 
 #add axes
-axis(side= 1, at= c(-1,0, 1,2), labels= c("-1", "0", "1", "2"), 
+axis(side= 1, at = c(-2, -1, 0, 1, 2, 3), labels = c(-2, -1, 0, 1, 2, 3), 
      tick=T ,col = NA, col.ticks = 1, tck=-.015)
 
 axis(side= 2, at= c(1:4),
@@ -421,26 +420,26 @@ par(mfrow = c(1,1), bty="n",
 )
 
 
-plot(0, bty = "l", labels = FALSE, tck = 0, xlim = c(-1.2,2.5), ylim = c(0.5,4.5), xlab = "", ylab = "")
+plot(0, bty = "l", labels = FALSE, tck = 0, xlim = c(-2.5,3), ylim = c(0.5,4.5), xlab = "", ylab = "")
 #add vertical line for zero
 abline(v = 0, col = "grey30",lty = 2)
 
 points(tab_dt$mean, as.numeric(tab_dt$ID) - 0.2, col = "darkgoldenrod2", pch = 19, cex = 1.3)
 arrows(tab_dt$IClower, as.numeric(tab_dt$ID) - 0.2,
        tab_dt$ICupper, as.numeric(tab_dt$ID) - 0.2,
-       col = "darkgoldenrod2", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+       col = "darkgoldenrod2", code = 3, length = 0.03, angle = 90, lwd = 2) #angle of 90 to make the arrow head as straight as a line
 
 points(tab_wspt$mean, as.numeric(tab_wspt$ID) , col = "cornflowerblue", pch = 19, cex = 1.3)
 arrows(tab_wspt$IClower, as.numeric(tab_wspt$ID) ,
        tab_wspt$ICupper, as.numeric(tab_wspt$ID) ,
-       col = "cornflowerblue", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+       col = "cornflowerblue", code = 3, length = 0.03, angle = 90, lwd = 2) 
 
 points(tab_wspt_var$mean, as.numeric(tab_wspt_var$ID) + 0.2, col = "pink1", pch = 19, cex = 1.3)
 arrows(tab_wspt_var$IClower, as.numeric(tab_wspt_var$ID) + 0.2,
        tab_wspt_var$ICupper, as.numeric(tab_wspt_var$ID) + 0.2,
-       col = "pink1", code = 3, length = 0.03, angle = 90) #angle of 90 to make the arrow head as straight as a line
+       col = "pink1", code = 3, length = 0.03, angle = 90, lwd = 2) 
 
-axis(side= 1, at = c(-1,0,1,2), labels = c(-1,0,1,2), 
+axis(side= 1, at = c(-2,-1,0,1,2), labels = c(-2,-1,0,1,2), 
      tick=T ,col = NA, col.ticks = 1, tck=-.015)
 
 axis(side= 2, at= c(1:4), 
@@ -450,7 +449,7 @@ axis(side= 2, at= c(1:4),
      las = 2) 
 
 #add legend
-legend(x = 1.3, y = 4.5, legend = c( "Wind support var", "Wind support", expression(italic(paste(Delta,"T")))), 
+legend(x = 1.25, y = 4.5, legend = c( "Wind support var", "Wind support", expression(italic(paste(Delta,"T")))), 
        col = c("pink1", "cornflowerblue","darkgoldenrod1"), #coords indicate top-left
        pch = 19, bg="white",bty="n", cex = 0.9)
 
@@ -459,21 +458,21 @@ legend(x = 1.3, y = 4.5, legend = c( "Wind support var", "Wind support", express
 
 load("annotated_steps.RData") #ann_cmpl; This dataframe includes used and alternative steps and can be reproduced using step_generation.R
 
-X11(width = 6, height = 7)
+X11(width = 9, height = 7)
 
-par(mfrow= c(2,2), 
+par(mfrow= c(2,3), 
     oma = c(0,0,3,0), 
     las = 1)
 
-labels <- c(expression(italic(paste(Delta,"T"))), "Wind support")
-variables <- c("delta_t", "wind_support")
-v_variables <- c("delta_t_var", "wind_support_var")
+labels <- c(expression(italic(paste(Delta,"T"))), "Wind support", "Wind speed")
+variables <- c("delta_t", "wind_support", "wind_speed")
+v_variables <- c("delta_t_var", "wind_support_var","wind_speed_var")
 
 for(i in 1:length(variables)){
   
   boxplot(ann_cmpl[,variables[i]] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = labels[i], xlab = "", ylab = "")
   if(i == 1){
-    legend("topleft", legend = c("used","available"), fill = c(alpha("darkgoldenrod1", 0.9),"gray"), bty = "n", cex = 0.75)
+    legend("topleft", legend = c("used","available"), fill = c(alpha("darkgoldenrod1", 0.9),"gray"), bty = "n")
   }
   boxplot(ann_cmpl[ann_cmpl$used == 1, variables[i]] ~ ann_cmpl[ann_cmpl$used == 1,"species"], outcol = alpha("black", 0.2),
           yaxt = "n", xaxt = "n", add = T, boxfill = alpha("darkgoldenrod1", 0.9),  lwd = 0.7, outpch = 20, outcex = 0.8,
@@ -489,7 +488,7 @@ for(i in 1:length(v_variables)){
   
   boxplot(ann_cmpl[,v_variables[i]] ~ ann_cmpl[,"species"], data = ann_cmpl, boxfill = NA, border = NA, main = labels[i], xlab = "", ylab = "")
   if(i == 1){
-    legend("topleft", legend = c("used","available"), fill = c(alpha("darkgoldenrod1", 0.9),"gray"), bty = "n",cex = 0.75)
+    legend("topleft", legend = c("used","available"), fill = c(alpha("darkgoldenrod1", 0.9),"gray"), bty = "n")
   }
   boxplot(ann_cmpl[ann_cmpl$used == 1,v_variables[i]] ~ ann_cmpl[ann_cmpl$used == 1,"species"], outcol = alpha("black", 0.2),
           yaxt = "n",xaxt = "n", add = T, boxfill = alpha("darkgoldenrod1", 0.9), lwd = 0.7,  outpch = 20, outcex = 0.8,
@@ -499,7 +498,7 @@ for(i in 1:length(v_variables)){
           boxwex = 0.25, at = 1:length(unique(ann_cmpl$species)) + 0.15)
 } 
 
-mtext("40-year variances at each step", side = 3, outer = T, cex = 1.3, line = -19.7)
+mtext("40-year variances at each step", side = 3, outer = T, cex = 1.3, line = -25)
 
 
 # ---------- Fig S3: maps with annotated tracking points #####
@@ -509,7 +508,7 @@ load("raw_sea_points_for_maps_mv.RData") #mv
 
 #add shapefile as the map background
 region <- st_read("continent_shapefile/continent.shp") %>% 
-  #st_crop(xmin = -99, xmax = 144, ymin = -30, ymax = 71) %>%
+  st_crop(xmin = -99, xmax = 144, ymin = -30, ymax = 71) %>%
   st_union()
 
 #add a categorical variable for wind levels
@@ -517,13 +516,15 @@ breaks_w <- c(-20,-10,-5,0,5,10,15,35)
 tags_w <- c("< -10","-10 to -5","-5 to 0","0 to 5","5 to 10","10 to 15", "> 15")
 #add a categorical variable for delta_t levels
 breaks_dt <- c(-5,-2,0,2,5,10)
-tags_dt <- c("< -2","-2 to 0","0 to 2","2 to 5", "> 5")
+tags_dt <- c("< -5","-5 to -2","0 to 2","2 to 5", "> 5")
 
 #create color palettes and select colors for positive and negative values.
 Pal_p <- colorRampPalette(c("darkgoldenrod2", "indianred1")) #colors for positive values
 Pal_n <- colorRampPalette(c("mediumblue", "cornflowerblue")) #colors for negative values
 Cols_w <- paste0(c(Pal_n(3),Pal_p(4)), "80") #add transparency
 Cols_dt <- paste0(c(Pal_n(2),Pal_p(3)), "80")
+
+
 
 df <- mv %>% 
   as.data.frame() %>% 
@@ -542,9 +543,6 @@ df_sp <- SpatialPointsDataFrame(coords = df[,c("coords.x1", "coords.x2")], proj4
 
 #plot
 X11(width = 12, height = 11.5) #in inches
-
-pdf("/home/enourani/ownCloud/Work/Projects/delta_t/paper_prep/figures/2021/raw_wind_dt_updated.pdf",width = 12, height = 11.5)
-
 par(mfrow=c(2,1),
     bty="n", #no box around the plot
     cex.axis= 0.6, #x and y labels have 0.75% of the default size

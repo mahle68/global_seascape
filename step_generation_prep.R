@@ -21,7 +21,7 @@ setwd("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/")
 load("2021/public/move_ls.RData") #move_ls; this list contains sea-crossing tracks. There is one move object for each unique species-flyway
 
 wgs <- CRS("+proj=longlat +datum=WGS84 +no_defs")
-meters_proj <- CRS("+proj=moll +ellps=WGS84")#Mollweide projection (in meters) for accurate calculation of length
+meters_proj <- CRS("+proj=moll +ellps=WGS84") #Mollweide projection (in meters) for accurate calculation of length
 
 source("/home/enourani/ownCloud/Work/Projects/delta_t/R_files/global_seascape/functions.R")
 
